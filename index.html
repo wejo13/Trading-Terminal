@@ -66,7 +66,7 @@
   .stat.above .num{color:var(--green);}
   .stat.below .num{color:var(--red);}
 
-  table{width:100%;max-width:480px;border-collapse:collapse;font-size:13px;}
+  table{width:100%;max-width:560px;border-collapse:collapse;font-size:13px;}
   thead th{
     text-align:left;font-size:10px;color:var(--dim);letter-spacing:0.6px;
     padding:6px 14px 6px 10px;border-bottom:1px solid var(--line);cursor:pointer;
@@ -76,6 +76,7 @@
   thead th.sorted{color:var(--green);}
   th.col-symbol, td.sym{width:auto;}
   th.col-dist, td.num{width:1%;}
+  th.col-rvol, td.rvol-cell{width:1%;}
   th.col-status, td.status-cell{width:1%;}
   tbody tr{border-bottom:1px solid var(--line);}
   tbody tr:hover{background:#0f1419;}
@@ -83,10 +84,23 @@
   td.sym{font-weight:700;}
   td.num{text-align:right;font-variant-numeric:tabular-nums;}
   th.col-dist{text-align:right;}
+  th.col-rvol{text-align:right;}
   td.status-cell{text-align:right;}
   .pct{font-weight:700;}
   .pct.pos{color:var(--green);}
   .pct.neg{color:var(--red);}
+
+  .rvol-badge{
+    font-size:10px;color:var(--dim);font-weight:600;
+  }
+  .rvol-badge.hot{color:var(--amber);font-weight:700;}
+
+  .setup-badge{
+    font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.3px;
+    margin-left:4px;display:inline-block;vertical-align:middle;
+  }
+  .setup-badge.reclaim{background:rgba(244,244,244,0.12);color:#f4f4f4;border:1px solid rgba(244,244,244,0.3);}
+  .setup-badge.watch{background:rgba(90,169,230,0.12);color:#5aa9e6;border:1px solid rgba(90,169,230,0.3);}
 
   .strip{
     display:inline-block;width:38px;height:8px;border-radius:2px;margin-right:8px;
@@ -148,6 +162,8 @@
   .legend .dot.resting{background:var(--dim);border-radius:0;width:10px;height:2px;}
   .legend .dot.swept{background:#5aa9e6;border-radius:0;width:10px;height:2px;}
   .legend .dot.reclaimed{background:#f4f4f4;border-radius:0;width:10px;height:2px;}
+  .legend .dot.fib{background:#5c6e78;border-radius:0;width:10px;height:2px;border-top:1px dashed var(--text);background:none;height:0;border-bottom:1px dashed var(--dim);}
+  .legend .dot.fibote{background:var(--amber);border-radius:0;width:10px;height:2px;opacity:0.7;}
   #chartCanvas{width:100%;display:block;background:#0a0d0f;border-radius:4px;}
   .chart-loading{padding:60px;text-align:center;color:var(--dim);font-size:12px;}
 
@@ -184,7 +200,7 @@
   <header>
     <div>
       <div class="title">EMA<span>200</span>/4H WATCH</div>
-      <div class="subtitle">market structure context · 4H timeframe · liquidity sweep confluence not auto-detected</div>
+      <div class="subtitle">top 100 USDT pairs by volume · market structure context · 4H timeframe · liquidity sweep confluence auto-flagged, not auto-traded</div>
     </div>
     <div class="meta">
       <div id="lastUpdated">—</div>
@@ -241,23 +257,64 @@
       <span><span class="dot up"></span>close above open</span>
       <span><span class="dot down"></span>close below open</span>
       <span><span class="dot ema"></span>4H 200 EMA (native, 4H chart only)</span>
-      <span><span class="dot ema4h"></span>4H 200 EMA level (reference, all TFs)</span>
+      <span><span class="dot ema4h"></span>4H 200 EMA level (reference, 12H/1D/3D/1W only)</span>
     </div>
     <div class="legend" style="margin-top:6px;">
       <span><span class="dot resting"></span>resting liquidity (untouched swing low)</span>
       <span><span class="dot swept"></span>swept, not reclaimed</span>
       <span><span class="dot reclaimed"></span>swept + reclaimed (bullish close above)</span>
     </div>
+    <div class="legend" style="margin-top:6px;">
+      <span><span class="dot fib"></span>fib retracement of last structure-break leg (4H only)</span>
+      <span><span class="dot fibote"></span>0.618–0.79 OTE zone</span>
+    </div>
   </div>
 </div>
 
 <script>
-const CRYPTO_SYMBOLS = [
+// Fallback list used only if the live ranking fetch fails (e.g. offline).
+const FALLBACK_CRYPTO_SYMBOLS = [
   "BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","ADAUSDT","DOGEUSDT","AVAXUSDT",
   "LINKUSDT","TONUSDT","SUIUSDT","DOTUSDT","LTCUSDT","NEARUSDT","APTUSDT","ARBUSDT",
   "OPUSDT","INJUSDT","ATOMUSDT","FILUSDT","RNDRUSDT","TIAUSDT","SEIUSDT","ETCUSDT",
   "HBARUSDT","UNIUSDT","AAVEUSDT","MKRUSDT","PEPEUSDT","WIFUSDT"
 ];
+
+const SYMBOL_LIST_CACHE_KEY = 'ema_watch_top100_symbols_v1';
+const SYMBOL_LIST_CACHE_TTL = 24 * 60 * 60 * 1000; // re-rank once a day; otherwise reuse cached list
+
+let CRYPTO_SYMBOLS = FALLBACK_CRYPTO_SYMBOLS;
+
+// Pulls all USDT spot pairs from Binance's 24hr ticker, ranks by quote volume
+// (the actual USD-denominated volume, which is the correct way to rank "top by volume"
+// rather than raw base-asset volume), and keeps the top 100. Cached for a day so we
+// don't re-rank on every single page load.
+async function loadTop100SymbolsByVolume(){
+  try{
+    const cached = JSON.parse(localStorage.getItem(SYMBOL_LIST_CACHE_KEY) || 'null');
+    if(cached && cached.timestamp && (Date.now() - cached.timestamp) < SYMBOL_LIST_CACHE_TTL && cached.symbols?.length){
+      return cached.symbols;
+    }
+  } catch(e){ /* fall through to live fetch */ }
+
+  const res = await fetch('https://api.binance.com/api/v3/ticker/24hr');
+  if(!res.ok) throw new Error('ticker fetch failed');
+  const all = await res.json();
+
+  const usdtPairs = all.filter(t =>
+    t.symbol.endsWith('USDT') &&
+    !t.symbol.includes('UP') && !t.symbol.includes('DOWN') &&
+    !t.symbol.includes('BULL') && !t.symbol.includes('BEAR')
+  );
+  usdtPairs.sort((a,b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume));
+  const top100 = usdtPairs.slice(0,100).map(t => t.symbol);
+
+  try{
+    localStorage.setItem(SYMBOL_LIST_CACHE_KEY, JSON.stringify({ timestamp: Date.now(), symbols: top100 }));
+  } catch(e){ /* storage full or unavailable, non-fatal */ }
+
+  return top100;
+}
 
 // Stocks: Stooq has no native 4H bars, so we build 4H bars from 1H data when available,
 // otherwise fall back gracefully. We mark these clearly as approximate.
@@ -346,6 +403,90 @@ function detectFractalLows(candles, side){
   return lows;
 }
 
+// Detects fractal swing HIGHS (mirror of detectFractalLows) - needed to identify
+// when a candle's close breaks structure to the upside.
+function detectFractalHighs(candles, side){
+  const highs = [];
+  const n = candles.length;
+  for(let i=side; i<n-side; i++){
+    const center = candles[i].h;
+    let isHigh = true;
+    for(let j=i-side; j<=i+side; j++){
+      if(j===i) continue;
+      if(candles[j].h > center){ isHigh = false; break; }
+    }
+    if(isHigh) highs.push({ index: i, price: center });
+  }
+  return highs;
+}
+
+// Finds the most recent bullish "impulsive leg" that broke market structure, and
+// returns the fib retracement levels for it.
+//   Point A (fib 0%)   = the high of the breakout candle (the wick that broke structure)
+//   Point B (fib 100%) = the low of the candle that started the impulsive move
+//                         (defined here as the most recent fractal low BEFORE the breakout,
+//                         i.e. the swept/launch point of the move)
+// Standard SMC retracement levels are returned: 0.5, 0.618, 0.705, 0.79 (OTE zone), 1.0
+function detectStructureBreakFib(candles, side){
+  const swingHighs = detectFractalHighs(candles, side);
+  const swingLows = detectFractalLows(candles, side);
+  if(!swingHighs.length || !swingLows.length) return null;
+
+  const n = candles.length;
+  // walk forward through candles, tracking the most recent confirmed swing high.
+  // a "structure break" = a candle's CLOSE trades above that swing high's price.
+  let lastConfirmedHighIdx = -1;
+  let lastConfirmedHighPrice = -Infinity;
+  let breakCandle = null; // { breakIndex, structureHighPrice }
+
+  const highsByIndex = {};
+  swingHighs.forEach(h => { highsByIndex[h.index] = h.price; });
+
+  for(let i=0;i<n;i++){
+    // a fractal high at i-side becomes "confirmed" once we've passed it (side candles later)
+    if(highsByIndex[i-side] !== undefined){
+      if(highsByIndex[i-side] > lastConfirmedHighPrice){
+        lastConfirmedHighPrice = highsByIndex[i-side];
+        lastConfirmedHighIdx = i-side;
+      }
+    }
+    if(lastConfirmedHighIdx === -1) continue;
+    if(candles[i].c > lastConfirmedHighPrice && i > lastConfirmedHighIdx){
+      // structure break confirmed at candle i
+      breakCandle = { breakIndex: i, structureHighPrice: lastConfirmedHighPrice };
+      // keep scanning - we want the MOST RECENT break, so don't stop; but reset
+      // tracking so we find the next structure level after this break too.
+      lastConfirmedHighPrice = -Infinity;
+      lastConfirmedHighIdx = -1;
+    }
+  }
+
+  if(!breakCandle) return null;
+
+  // Point A: the high of the actual breakout candle (the wick that broke structure)
+  const breakoutCandle = candles[breakCandle.breakIndex];
+  const pointA = breakoutCandle.h;
+  const pointAIndex = breakCandle.breakIndex;
+
+  // Point B: the low of the candle that started the impulsive move. We define this as
+  // the most recent swing low that occurred BEFORE the breakout candle.
+  const priorLows = swingLows.filter(l => l.index < pointAIndex);
+  if(!priorLows.length) return null;
+  const launchLow = priorLows[priorLows.length-1];
+  const pointB = launchLow.price;
+  const pointBIndex = launchLow.index;
+
+  if(pointA <= pointB) return null; // sanity check - A must be above B for a bullish leg
+
+  const range = pointA - pointB;
+  const levels = [0, 0.236, 0.382, 0.5, 0.618, 0.705, 0.79, 1].map(pct => ({
+    pct,
+    price: pointA - range*pct
+  }));
+
+  return { pointA, pointAIndex, pointB, pointBIndex, levels };
+}
+
 async function fetchBinanceCandles(symbol, interval){
   const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=1000`;
   const res = await fetch(url);
@@ -355,6 +496,7 @@ async function fetchBinanceCandles(symbol, interval){
   const emaSeries = emaSeriesFull(closes, 200);
   const candles = raw.map((c,i)=>({
     t: c[0], o: parseFloat(c[1]), h: parseFloat(c[2]), l: parseFloat(c[3]), c: parseFloat(c[4]),
+    v: parseFloat(c[5]), // base asset volume for this candle
     ema: emaSeries[i]
   }));
   return candles;
@@ -367,6 +509,14 @@ async function fetchBinance4h(symbol){
   const prevClose = closes[closes.length-2];
   const e = ema(closes, 200);
   candleCache[symbol+'_4h'] = candles;
+
+  // relative volume: current candle's volume vs the average of the prior 20 candles.
+  // a spike here often coincides with a sweep or a real breakout, not just noise.
+  const lastCandle = candles[candles.length-1];
+  const lookback = candles.slice(-21, -1); // 20 candles before the current one
+  const avgVol = lookback.length ? lookback.reduce((s,c)=>s+c.v,0)/lookback.length : null;
+  const relVol = (avgVol && avgVol > 0) ? (lastCandle.v / avgVol) : null;
+
   return {
     symbol: symbol.replace('USDT',''),
     rawSymbol: symbol,
@@ -375,14 +525,17 @@ async function fetchBinance4h(symbol){
     above: lastClose > e,
     distPct: ((lastClose - e)/e)*100,
     chg4h: ((lastClose - prevClose)/prevClose)*100,
+    relVol,
     candles
   };
 }
 
 async function loadCrypto(){
+  CRYPTO_SYMBOLS = await loadTop100SymbolsByVolume().catch(()=>FALLBACK_CRYPTO_SYMBOLS);
   const results = [];
   const chunks = [];
-  for(let i=0;i<CRYPTO_SYMBOLS.length;i+=6) chunks.push(CRYPTO_SYMBOLS.slice(i,i+6));
+  const CHUNK_SIZE = 10; // 100 symbols / 10 per chunk = 10 sequential batches, keeps Binance happy
+  for(let i=0;i<CRYPTO_SYMBOLS.length;i+=CHUNK_SIZE) chunks.push(CRYPTO_SYMBOLS.slice(i,i+CHUNK_SIZE));
   for(const chunk of chunks){
     const settled = await Promise.allSettled(chunk.map(fetchBinance4h));
     settled.forEach(r => { if(r.status==='fulfilled') results.push(r.value); });
@@ -451,13 +604,24 @@ function render(){
 
   const isApproxMarket = currentMarket === 'stocks';
 
-  let rows = sorted.map(d=>`
+  let rows = sorted.map(d=>{
+    const setup = computeSetupSignal(d);
+    const rvol = d.relVol;
+    const rvolHigh = rvol != null && rvol >= 1.5;
+    const rvolBadge = rvol != null
+      ? `<span class="rvol-badge ${rvolHigh?'hot':''}" title="current 4H volume vs 20-candle average">${rvol.toFixed(1)}x</span>`
+      : '';
+    const setupBadge = setup
+      ? `<span class="setup-badge ${setup.type}" title="${setup.title}">${setup.label}</span>`
+      : '';
+    return `
     <tr class="clickable" onclick="openChart('${d.rawSymbol||d.symbol}')">
-      <td class="sym"><span class="strip ${d.above?'above':'below'}"></span>${d.symbol}</td>
+      <td class="sym"><span class="strip ${d.above?'above':'below'}"></span>${d.symbol} ${setupBadge}</td>
       <td class="num pct ${d.distPct>=0?'pos':'neg'}">${d.distPct>=0?'+':''}${d.distPct.toFixed(2)}%</td>
+      <td class="num rvol-cell">${rvolBadge}</td>
       <td class="status-cell"><span class="badge ${d.above?'above':'below'}">${d.above?'ABOVE':'BELOW'}</span></td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
 
   const note = isApproxMarket
     ? `<div style="font-size:10px;color:var(--dim);margin-bottom:10px;">stocks: no free intraday 4H feed available client-side — showing <b>daily</b> closes vs daily-equivalent 200EMA as a trend proxy. chart view not available for stocks yet.</div>`
@@ -470,12 +634,32 @@ function render(){
         <tr>
           <th class="col-symbol ${sortKey==='symbol'?'sorted':''}" onclick="sortBy('symbol')">SYMBOL</th>
           <th class="col-dist ${sortKey==='distPct'?'sorted':''}" onclick="sortBy('distPct')">DIST % FROM 200EMA</th>
+          <th class="col-rvol">RVOL</th>
           <th class="col-status">STATUS</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>
   `;
+}
+
+// Looks at the cached 4H candles for a symbol and flags whether a fresh sweep+reclaim
+// setup just happened near the current price (the exact pattern: old fractal low swept,
+// then reclaimed with a bullish 4H close). "Fresh" = within the last 3 candles, so the
+// table surfaces setups worth opening the chart for without checking every coin manually.
+function computeSetupSignal(d){
+  if(!d.candles || d.candles.length < 20) return null;
+  const fractals = detectFractalLows(d.candles, 3);
+  const n = d.candles.length;
+  const freshReclaims = fractals.filter(f => f.status === 'swept_reclaimed' && f.sweepIndex != null && (n - 1 - f.sweepIndex) <= 3);
+  if(freshReclaims.length){
+    return { type: 'reclaim', label: '⚡ RECLAIM', title: 'fresh sweep + bullish reclaim of an old swing low in the last 3 candles' };
+  }
+  const freshOpenSweeps = fractals.filter(f => f.status === 'swept_open' && f.sweepIndex != null && (n - 1 - f.sweepIndex) <= 1);
+  if(freshOpenSweeps.length){
+    return { type: 'watch', label: '◷ SWEPT', title: 'an old swing low was just swept — watch for a bullish reclaim candle' };
+  }
+  return null;
 }
 
 function sortBy(key){
@@ -555,7 +739,19 @@ function renderTimeframe(tf, candles){
   document.getElementById('modalSub').textContent = TF_LABELS[tf];
   document.getElementById('chartArea').innerHTML = '<canvas id="chartCanvas" height="360"></canvas>';
   const n = TF_BAR_COUNTS[tf] || 120;
-  requestAnimationFrame(() => drawChart(candles.slice(-n), currentChart4hEma, tf));
+  // fib is computed on the FULL series (so we don't miss a structure break that
+  // happened just before the visible window), only drawn on the 4H chart since
+  // that's this system's defining timeframe for impulsive legs.
+  const fib = (tf === '4h') ? detectStructureBreakFib(candles, 3) : null;
+  const sliceStart = Math.max(0, candles.length - n);
+  const visible = candles.slice(sliceStart);
+  // translate fib indices from full-series space into visible-slice space
+  const fibAdjusted = fib ? {
+    ...fib,
+    pointAIndex: fib.pointAIndex - sliceStart,
+    pointBIndex: fib.pointBIndex - sliceStart
+  } : null;
+  requestAnimationFrame(() => drawChart(visible, currentChart4hEma, tf, fibAdjusted));
 }
 
 function closeModal(){
@@ -564,7 +760,7 @@ function closeModal(){
 
 document.addEventListener('keydown', e => { if(e.key === 'Escape') closeModal(); });
 
-function drawChart(candles, ema4hLevel, tf){
+function drawChart(candles, ema4hLevel, tf, fib){
   const canvas = document.getElementById('chartCanvas');
   if(!canvas) return;
   const dpr = window.devicePixelRatio || 1;
@@ -593,8 +789,9 @@ function drawChart(candles, ema4hLevel, tf){
   const lows = candles.map(c=>c.l);
   const emaVals = showNativeEma ? candles.map(c=>c.ema).filter(v=>v!=null) : [];
   const refVals = (ema4hLevel!=null) ? [ema4hLevel] : [];
-  let max = Math.max(...highs, ...emaVals, ...refVals);
-  let min = Math.min(...lows, ...emaVals, ...refVals);
+  const fibVals = (fib && fib.pointAIndex >= 0) ? fib.levels.map(l=>l.price) : [];
+  let max = Math.max(...highs, ...emaVals, ...refVals, ...fibVals);
+  let min = Math.min(...lows, ...emaVals, ...refVals, ...fibVals);
   const pad = (max-min)*0.06 || max*0.01;
   max += pad; min -= pad;
 
@@ -657,8 +854,9 @@ function drawChart(candles, ema4hLevel, tf){
     ctx.lineWidth = 1;
   }
 
-  // 4H 200EMA reference line (dashed, violet) - shown on every timeframe for context
-  if(ema4hLevel != null && ema4hLevel >= min && ema4hLevel <= max){
+  // 4H 200EMA reference line (dashed, violet) - shown on higher timeframes for context.
+  // hidden on the 4H chart itself since it would be an exact duplicate of the solid native line above.
+  if(!showNativeEma && ema4hLevel != null && ema4hLevel >= min && ema4hLevel <= max){
     const y = yOf(ema4hLevel);
     ctx.save();
     ctx.strokeStyle = '#8b7fe8';
@@ -719,6 +917,48 @@ function drawChart(candles, ema4hLevel, tf){
     ctx.fill();
     ctx.restore();
   });
+
+  // fibonacci retracement of the most recent impulsive leg that broke structure.
+  // drawn from the breakout candle's high (0%) down to the launch low (100%).
+  // only drawn when point A falls within the visible window.
+  if(fib && fib.pointAIndex >= 0 && fib.pointAIndex < n){
+    const xA = xOf(fib.pointAIndex);
+    const xRight = padL + w; // levels extend from point A to the right edge of the chart
+    const fibColors = {
+      0: '#f4f4f4', 0.236: '#3a4a55', 0.382: '#3a4a55', 0.5: '#5aa9e6',
+      0.618: '#f0b429', 0.705: '#f0b429', 0.79: '#f0b429', 1: '#f4f4f4'
+    };
+    ctx.save();
+    fib.levels.forEach(lvl=>{
+      if(lvl.price < min || lvl.price > max) return;
+      const y = yOf(lvl.price);
+      const isOTE = lvl.pct >= 0.618 && lvl.pct <= 0.79; // the "optimal trade entry" zone
+      ctx.strokeStyle = fibColors[lvl.pct] || '#5c6e78';
+      ctx.lineWidth = isOTE ? 1.3 : 1;
+      ctx.setLineDash(lvl.pct===0||lvl.pct===1 ? [] : [3,3]);
+      ctx.globalAlpha = isOTE ? 0.9 : 0.55;
+      ctx.beginPath();
+      ctx.moveTo(xA, y);
+      ctx.lineTo(xRight, y);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.setLineDash([]);
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.font = '9px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText((lvl.pct*100).toFixed(1)+'%', xRight - 34, y - 3);
+    });
+    // shade the OTE zone (0.618-0.79) for quick visual scanning
+    const oteTop = fib.levels.find(l=>l.pct===0.618);
+    const oteBottom = fib.levels.find(l=>l.pct===0.79);
+    if(oteTop && oteBottom){
+      const yTop = yOf(Math.max(oteTop.price, oteBottom.price));
+      const yBottom = yOf(Math.min(oteTop.price, oteBottom.price));
+      ctx.fillStyle = 'rgba(240,180,41,0.07)';
+      ctx.fillRect(xA, yTop, xRight-xA, yBottom-yTop);
+    }
+    ctx.restore();
+  }
 }
 
 // ---- touch alert system ----

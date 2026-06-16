@@ -874,10 +874,24 @@ function render(){
 // window after the original window let stale sweeps (weeks old) still score as Excellent.
 const SWEEP_FRESHNESS_WINDOWS = { '4H': 3, '12H': 1, '3D': 1 };
 
-function getRecentSweepInfo(candles, side, recentWindow){
+// How many recent candles' worth of fractal lows are even ELIGIBLE to be considered,
+// before the freshness window is applied on top. This MUST match what the chart modal
+// actually displays (TF_BAR_COUNTS), otherwise the scorer can find an ancient fractal
+// low from outside the visible chart - one with no relevance to current structure - and
+// flag a coincidental dip below it as a "fresh sweep" even though nothing meaningful
+// just happened on the chart the user is actually looking at. This was a real bug: a
+// coin could score Excellent purely because price brushed some swing low from months
+// ago that isn't even visible in the 120-candle chart window.
+const FRACTAL_LOOKBACK_WINDOWS = { '4H': 120, '12H': 120, '3D': 100 };
+
+function getRecentSweepInfo(candles, side, recentWindow, lookbackWindow){
   if(!candles || candles.length < side*2+2) return null;
-  const fractals = detectFractalLows(candles, side);
-  const n = candles.length;
+  // restrict to the same recent slice the chart itself shows, so fractal lows from
+  // outside that visible window are never even considered
+  const scoped = lookbackWindow ? candles.slice(-lookbackWindow) : candles;
+  if(scoped.length < side*2+2) return null;
+  const fractals = detectFractalLows(scoped, side);
+  const n = scoped.length;
   let best = null; // tracks the LOWEST candlesAgo (freshest) qualifying sweep
   fractals.forEach(f => {
     if((f.status === 'swept_open' || f.status === 'swept_reclaimed') && f.sweepIndex != null){
@@ -891,19 +905,19 @@ function getRecentSweepInfo(candles, side, recentWindow){
 }
 
 // kept for any external callers expecting a boolean - now backed by getRecentSweepInfo
-function hasRecentSweep(candles, side, recentWindow){
-  return getRecentSweepInfo(candles, side, recentWindow) !== null;
+function hasRecentSweep(candles, side, recentWindow, lookbackWindow){
+  return getRecentSweepInfo(candles, side, recentWindow, lookbackWindow) !== null;
 }
 
 // Returns which of the 4H/12H/3D timeframes have a recent swept structural low, along
 // with how fresh each sweep is, so the UI can show exactly where (and how recently)
-// the liquidity was taken. Each timeframe uses its OWN freshness window per
-// SWEEP_FRESHNESS_WINDOWS above.
+// the liquidity was taken. Each timeframe uses its OWN freshness window AND its own
+// lookback scope (matching the chart's visible window) per the constants above.
 function findSweptTimeframes(candleSets){
   const hit = [];
   const tfConfigs = [['4H','4h'], ['12H','12h'], ['3D','3d']];
   tfConfigs.forEach(([label, key]) => {
-    const info = getRecentSweepInfo(candleSets[key], 3, SWEEP_FRESHNESS_WINDOWS[label]);
+    const info = getRecentSweepInfo(candleSets[key], 3, SWEEP_FRESHNESS_WINDOWS[label], FRACTAL_LOOKBACK_WINDOWS[label]);
     if(info) hit.push({ label, candlesAgo: info.candlesAgo });
   });
   return hit;

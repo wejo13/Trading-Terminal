@@ -95,6 +95,9 @@
   .badge.above{background:var(--green-dim);color:var(--green);}
   .badge.below{background:var(--red-dim);color:var(--red);}
 
+  tbody tr.clickable{cursor:pointer;}
+  tbody tr.clickable:hover td.sym{color:var(--green);}
+
   .loading,.err{padding:40px;text-align:center;color:var(--dim);font-size:12px;}
   .err{color:var(--red);}
 
@@ -102,6 +105,33 @@
 
   ::-webkit-scrollbar{height:6px;width:6px;}
   ::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px;}
+
+  /* chart modal */
+  .modal-bg{
+    position:fixed;inset:0;background:rgba(0,0,0,0.7);
+    display:none;align-items:center;justify-content:center;z-index:50;padding:16px;
+  }
+  .modal-bg.open{display:flex;}
+  .modal{
+    background:var(--panel);border:1px solid var(--line);border-radius:6px;
+    width:100%;max-width:760px;padding:18px;position:relative;
+  }
+  .modal-close{
+    position:absolute;top:12px;right:14px;background:none;border:none;color:var(--dim);
+    font-size:18px;cursor:pointer;line-height:1;
+  }
+  .modal-close:hover{color:var(--text);}
+  .modal-head{display:flex;align-items:baseline;gap:12px;margin-bottom:4px;}
+  .modal-head .sym{font-size:18px;font-weight:700;}
+  .modal-head .dist{font-size:12px;font-weight:700;}
+  .modal-sub{font-size:11px;color:var(--dim);margin-bottom:14px;}
+  .legend{display:flex;gap:16px;font-size:10px;color:var(--dim);margin-top:8px;}
+  .legend .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:middle;}
+  .legend .dot.up{background:var(--green);}
+  .legend .dot.down{background:var(--red);}
+  .legend .dot.ema{background:var(--amber);border-radius:0;width:12px;height:2px;}
+  #chartCanvas{width:100%;display:block;background:#0a0d0f;border-radius:4px;}
+  .chart-loading{padding:60px;text-align:center;color:var(--dim);font-size:12px;}
 </style>
 </head>
 <body>
@@ -137,6 +167,23 @@
 
 </div>
 
+<div class="modal-bg" id="modalBg" onclick="if(event.target===this) closeModal()">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <div class="modal-head">
+      <div class="sym" id="modalSym">—</div>
+      <div class="dist" id="modalDist"></div>
+    </div>
+    <div class="modal-sub" id="modalSub">4H · last 120 candles</div>
+    <div id="chartArea"><div class="chart-loading">drawing chart…</div></div>
+    <div class="legend">
+      <span><span class="dot up"></span>close above open</span>
+      <span><span class="dot down"></span>close below open</span>
+      <span><span class="dot ema"></span>200 EMA</span>
+    </div>
+  </div>
+</div>
+
 <script>
 const CRYPTO_SYMBOLS = [
   "BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","ADAUSDT","DOGEUSDT","AVAXUSDT",
@@ -169,6 +216,21 @@ function ema(values, period){
   return prev;
 }
 
+// returns an array same length as values, with EMA at each index from `period-1` onward (null before that)
+function emaSeriesFull(values, period){
+  const k = 2/(period+1);
+  const out = new Array(values.length).fill(null);
+  if(values.length < period) return out;
+  let sma = values.slice(0,period).reduce((a,b)=>a+b,0)/period;
+  let prev = sma;
+  out[period-1] = sma;
+  for(let i=period;i<values.length;i++){
+    prev = values[i]*k + prev*(1-k);
+    out[i] = prev;
+  }
+  return out;
+}
+
 async function fetchBinance4h(symbol){
   // 1000 candles of 4h history -> plenty of warmup for EMA200
   const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=4h&limit=1000`;
@@ -179,13 +241,20 @@ async function fetchBinance4h(symbol){
   const lastClose = closes[closes.length-1];
   const prevClose = closes[closes.length-2];
   const e = ema(closes, 200);
+  const emaSeries = emaSeriesFull(closes, 200);
+  const candles = raw.map((c,i)=>({
+    t: c[0], o: parseFloat(c[1]), h: parseFloat(c[2]), l: parseFloat(c[3]), c: parseFloat(c[4]),
+    ema: emaSeries[i]
+  }));
   return {
     symbol: symbol.replace('USDT',''),
+    rawSymbol: symbol,
     price: lastClose,
     ema200: e,
     above: lastClose > e,
     distPct: ((lastClose - e)/e)*100,
-    chg4h: ((lastClose - prevClose)/prevClose)*100
+    chg4h: ((lastClose - prevClose)/prevClose)*100,
+    candles
   };
 }
 
@@ -262,19 +331,15 @@ function render(){
   const isApproxMarket = currentMarket === 'stocks';
 
   let rows = sorted.map(d=>`
-    <tr>
+    <tr class="clickable" onclick="openChart('${d.rawSymbol||d.symbol}')">
       <td class="sym"><span class="strip ${d.above?'above':'below'}"></span>${d.symbol}</td>
-      <td class="num">${fmtPrice(d.price)}</td>
-      <td class="num">${fmtPrice(d.ema200)}</td>
       <td class="num pct ${d.distPct>=0?'pos':'neg'}">${d.distPct>=0?'+':''}${d.distPct.toFixed(2)}%</td>
-      <td class="num pct ${d.chg4h>=0?'pos':'neg'}">${d.chg4h>=0?'+':''}${d.chg4h.toFixed(2)}%</td>
       <td><span class="badge ${d.above?'above':'below'}">${d.above?'ABOVE':'BELOW'}</span></td>
     </tr>
   `).join('');
 
-  const chgLabel = isApproxMarket ? '1D %' : '4H %';
   const note = isApproxMarket
-    ? `<div style="font-size:10px;color:var(--dim);margin-bottom:10px;">stocks: no free intraday 4H feed available client-side — showing <b>daily</b> closes vs daily-equivalent 200EMA as a trend proxy. treat as directional, not exact 4H confluence.</div>`
+    ? `<div style="font-size:10px;color:var(--dim);margin-bottom:10px;">stocks: no free intraday 4H feed available client-side — showing <b>daily</b> closes vs daily-equivalent 200EMA as a trend proxy. chart view not available for stocks yet.</div>`
     : '';
 
   content.innerHTML = `
@@ -283,10 +348,7 @@ function render(){
       <thead>
         <tr>
           <th onclick="sortBy('symbol')" class="${sortKey==='symbol'?'sorted':''}">SYMBOL</th>
-          <th onclick="sortBy('price')" class="${sortKey==='price'?'sorted':''}">PRICE</th>
-          <th onclick="sortBy('ema200')" class="${sortKey==='ema200'?'sorted':''}">200 EMA</th>
-          <th onclick="sortBy('distPct')" class="${sortKey==='distPct'?'sorted':''}">DIST %</th>
-          <th onclick="sortBy('chg4h')" class="${sortKey==='chg4h'?'sorted':''}">${chgLabel}</th>
+          <th onclick="sortBy('distPct')" class="${sortKey==='distPct'?'sorted':''}">DIST % FROM 200EMA</th>
           <th>STATUS</th>
         </tr>
       </thead>
@@ -321,6 +383,118 @@ async function loadAll(){
   document.getElementById('lastUpdated').textContent = 'updated ' + new Date().toLocaleString();
   btn.disabled = false;
   render();
+}
+
+function openChart(rawSymbol){
+  const item = cryptoData.find(d => d.rawSymbol === rawSymbol);
+  if(!item || !item.candles){
+    return; // stocks have no chart data yet
+  }
+  document.getElementById('modalSym').textContent = item.symbol + ' / USDT';
+  const distEl = document.getElementById('modalDist');
+  distEl.textContent = (item.distPct>=0?'+':'') + item.distPct.toFixed(2) + '% from 200EMA';
+  distEl.style.color = item.distPct>=0 ? 'var(--green)' : 'var(--red)';
+  document.getElementById('modalSub').textContent = '4H · last 120 candles';
+  document.getElementById('chartArea').innerHTML = '<canvas id="chartCanvas" height="360"></canvas>';
+  document.getElementById('modalBg').classList.add('open');
+  requestAnimationFrame(() => drawChart(item.candles.slice(-120)));
+}
+
+function closeModal(){
+  document.getElementById('modalBg').classList.remove('open');
+}
+
+document.addEventListener('keydown', e => { if(e.key === 'Escape') closeModal(); });
+
+function drawChart(candles){
+  const canvas = document.getElementById('chartCanvas');
+  if(!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const cssWidth = canvas.parentElement.clientWidth;
+  const cssHeight = 360;
+  canvas.style.width = cssWidth + 'px';
+  canvas.style.height = cssHeight + 'px';
+  canvas.width = cssWidth * dpr;
+  canvas.height = cssHeight * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const padL = 56, padR = 12, padT = 14, padB = 22;
+  const w = cssWidth - padL - padR;
+  const h = cssHeight - padT - padB;
+
+  const highs = candles.map(c=>c.h);
+  const lows = candles.map(c=>c.l);
+  const emaVals = candles.map(c=>c.ema).filter(v=>v!=null);
+  let max = Math.max(...highs, ...emaVals);
+  let min = Math.min(...lows, ...emaVals);
+  const pad = (max-min)*0.06 || max*0.01;
+  max += pad; min -= pad;
+
+  const n = candles.length;
+  const slotW = w / n;
+  const bodyW = Math.max(1, slotW*0.62);
+
+  const yOf = v => padT + h - ((v-min)/(max-min))*h;
+  const xOf = i => padL + i*slotW + slotW/2;
+
+  ctx.clearRect(0,0,cssWidth,cssHeight);
+
+  // grid + price labels
+  ctx.strokeStyle = '#1c2730';
+  ctx.fillStyle = '#5c6e78';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'right';
+  const gridLines = 5;
+  for(let i=0;i<=gridLines;i++){
+    const v = min + (max-min)*i/gridLines;
+    const y = yOf(v);
+    ctx.beginPath();
+    ctx.moveTo(padL, y);
+    ctx.lineTo(padL+w, y);
+    ctx.stroke();
+    ctx.fillText(fmtPrice(v), padL-6, y+3);
+  }
+
+  // candles
+  for(let i=0;i<n;i++){
+    const c = candles[i];
+    const x = xOf(i);
+    const up = c.c >= c.o;
+    ctx.strokeStyle = up ? '#2dd4a0' : '#ff5d5d';
+    ctx.fillStyle = up ? '#2dd4a0' : '#ff5d5d';
+    // wick
+    ctx.beginPath();
+    ctx.moveTo(x, yOf(c.h));
+    ctx.lineTo(x, yOf(c.l));
+    ctx.stroke();
+    // body
+    const yO = yOf(c.o), yC = yOf(c.c);
+    const top = Math.min(yO,yC), bh = Math.max(1, Math.abs(yO-yC));
+    ctx.fillRect(x-bodyW/2, top, bodyW, bh);
+  }
+
+  // ema line
+  ctx.strokeStyle = '#f0b429';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  let started = false;
+  for(let i=0;i<n;i++){
+    if(candles[i].ema == null) continue;
+    const x = xOf(i), y = yOf(candles[i].ema);
+    if(!started){ ctx.moveTo(x,y); started = true; } else { ctx.lineTo(x,y); }
+  }
+  ctx.stroke();
+  ctx.lineWidth = 1;
+
+  // time labels (first / mid / last)
+  ctx.fillStyle = '#5c6e78';
+  ctx.textAlign = 'center';
+  [0, Math.floor(n/2), n-1].forEach(i=>{
+    const d = new Date(candles[i].t);
+    const label = d.getMonth()+1 + '/' + d.getDate();
+    ctx.fillText(label, xOf(i), cssHeight-6);
+  });
 }
 
 loadAll();

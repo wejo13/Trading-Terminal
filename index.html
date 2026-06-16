@@ -110,6 +110,27 @@
   }
   .swept-tfs.none{color:var(--dim);font-weight:400;}
 
+  /* tiny dot next to DIST% showing how far price has extended from the 4H 200EMA -
+     deliberately subtle since this is supporting context, not a primary signal */
+  .dist-tier-dot{
+    display:inline-block;width:5px;height:5px;border-radius:50%;
+    margin-left:5px;vertical-align:middle;cursor:help;
+  }
+  .dist-tier-dot.tight{background:var(--dim);opacity:0.5;}
+  .dist-tier-dot.extended{background:var(--amber);opacity:0.6;}
+  .dist-tier-dot.very_extended{background:var(--red);opacity:0.7;}
+
+  /* small funding-rate/OI confluence indicator next to the score badge - intentionally
+     quiet (a small dot, not a column) per the request to keep volume/funding/OI
+     visible but not too visible */
+  .conf-dot{
+    display:inline-block;width:6px;height:6px;border-radius:50%;
+    margin-left:5px;vertical-align:middle;cursor:help;
+  }
+  .conf-dot.neg{background:var(--green);opacity:0.55;}
+  .conf-dot.pos{background:var(--red);opacity:0.55;}
+  .conf-dot.flat{background:var(--dim);opacity:0.4;}
+
   .strip{
     display:inline-block;width:38px;height:8px;border-radius:2px;margin-right:8px;
     vertical-align:middle;
@@ -418,6 +439,11 @@ const STOCK_SYMBOLS = [
 ];
 
 const SCORE_LABELS = { excellent: 'EXCELLENT', good: 'GOOD', bad: 'BAD' };
+const DIST_TIER_LABELS = {
+  tight: 'tight to 4H 200EMA (within 2%)',
+  extended: 'extended from 4H 200EMA (2-8%)',
+  very_extended: 'very extended from 4H 200EMA (8%+) - chasing risk'
+};
 
 let currentMarket = 'crypto';
 let cryptoData = [];
@@ -516,6 +542,56 @@ function detectFractalHighs(candles, side){
   return highs;
 }
 
+// Fetches funding rates for ALL USDM futures symbols in ONE call (premiumIndex with no
+// symbol param returns the full list, weight 10). Not every spot symbol has a matching
+// perpetual contract, so this returns a partial map - missing symbols just show no data,
+// which is expected, not a bug. Returns Map of symbol -> { fundingRate, nextFundingTime }.
+async function fetchAllFundingRates(){
+  const url = 'https://fapi.binance.com/fapi/v1/premiumIndex';
+  const res = await fetch(url);
+  if(!res.ok) throw new Error('funding rate fetch failed');
+  const list = await res.json();
+  const map = new Map();
+  list.forEach(item => {
+    map.set(item.symbol, {
+      fundingRate: parseFloat(item.lastFundingRate),
+      nextFundingTime: item.nextFundingTime
+    });
+  });
+  return map;
+}
+
+// Fetches open interest delta for a single symbol: current OI value vs ~24h ago.
+// Uses the 1h-period historical OI endpoint and looks back 24 buckets. No bulk endpoint
+// exists for this on Binance, so it's one call per symbol - kept to symbols actually
+// being displayed, not run during the broader ranking/filtering step.
+// Returns null if the symbol has no futures contract or the data is unavailable.
+async function fetchOIDelta(symbol){
+  try{
+    const url = `https://fapi.binance.com/futures/data/openInterestHist?symbol=${symbol}&period=1h&limit=25`;
+    const res = await fetch(url);
+    if(!res.ok) return null;
+    const list = await res.json();
+    if(!list || list.length < 2) return null;
+    const oldest = parseFloat(list[0].sumOpenInterestValue);
+    const newest = parseFloat(list[list.length-1].sumOpenInterestValue);
+    if(!oldest || isNaN(oldest) || isNaN(newest)) return null;
+    return { deltaPct: ((newest - oldest) / oldest) * 100, current: newest };
+  } catch(e){
+    return null; // missing futures contract or rate-limited - treated as "no data", not an error
+  }
+}
+
+// Classifies how far price has extended from the 4H 200EMA. A coin chasing 14% above
+// the line is a structurally different entry than one sitting 0.3% above it fresh off
+// a reclaim, even though both currently read "above EMA" - this tier surfaces that.
+function classifyEmaDistance(distPct){
+  const abs = Math.abs(distPct);
+  if(abs <= 2) return 'tight';
+  if(abs <= 8) return 'extended';
+  return 'very_extended';
+}
+
 async function fetchBinanceCandles(symbol, interval){
   const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=1000`;
   const res = await fetch(url);
@@ -531,13 +607,15 @@ async function fetchBinanceCandles(symbol, interval){
   return candles;
 }
 
-async function fetchBinance4h(symbol){
-  // fetch 4H (primary) plus 12H and 3D candles, since the scoring system needs to check
-  // for swept structural lows across all three timeframes, not just 4H.
-  const [candles, candles12h, candles3d] = await Promise.all([
+async function fetchBinance4h(symbol, fundingMap){
+  // fetch 4H (primary), 12H, 3D candles, plus OI delta - all in parallel since they're
+  // independent requests and this keeps total wait time down rather than adding a 4th
+  // sequential step on top of the existing three.
+  const [candles, candles12h, candles3d, oiDelta] = await Promise.all([
     fetchBinanceCandles(symbol, '4h'),
     fetchBinanceCandles(symbol, '12h'),
-    fetchBinanceCandles(symbol, '3d')
+    fetchBinanceCandles(symbol, '3d'),
+    fetchOIDelta(symbol)
   ]);
   const closes = candles.map(c=>c.c);
   const lastClose = closes[closes.length-1];
@@ -557,6 +635,12 @@ async function fetchBinance4h(symbol){
   const above = lastClose > e;
   const score = computeSetupScore(above, { '4h': candles, '12h': candles12h, '3d': candles3d });
   const SCORE_RANK = { excellent: 3, good: 2, bad: 1 };
+  const distPct = ((lastClose - e)/e)*100;
+
+  // funding rate isn't available for every spot symbol (not all have a perpetual
+  // contract on Binance futures) - fundingInfo is null in that case, which the UI
+  // treats as "no data" rather than an error
+  const fundingInfo = fundingMap ? fundingMap.get(symbol) : null;
 
   return {
     symbol: symbol.replace('USDT',''),
@@ -564,23 +648,35 @@ async function fetchBinance4h(symbol){
     price: lastClose,
     ema200: e,
     above,
-    distPct: ((lastClose - e)/e)*100,
+    distPct,
+    distTier: classifyEmaDistance(distPct),
     chg4h: ((lastClose - prevClose)/prevClose)*100,
     relVol,
     score,
     scoreRank: SCORE_RANK[score.tier],
+    fundingRate: fundingInfo ? fundingInfo.fundingRate : null,
+    oiDeltaPct: oiDelta ? oiDelta.deltaPct : null,
     candles
   };
 }
 
 async function loadCrypto(){
   CRYPTO_SYMBOLS = await loadTop100SymbolsByVolume().catch(()=>FALLBACK_CRYPTO_SYMBOLS);
+
+  // fetch funding rates ONCE for everything (one bulk call), rather than per-symbol -
+  // if this fails (e.g. futures API unreachable), we proceed with fundingMap = null and
+  // every coin just shows no funding data, which degrades gracefully instead of breaking the page
+  const fundingMap = await fetchAllFundingRates().catch(e => {
+    console.error('funding rate fetch failed, proceeding without funding data', e);
+    return null;
+  });
+
   const results = [];
   const chunks = [];
   const CHUNK_SIZE = 10; // 100 symbols / 10 per chunk = 10 sequential batches, keeps Binance happy
   for(let i=0;i<CRYPTO_SYMBOLS.length;i+=CHUNK_SIZE) chunks.push(CRYPTO_SYMBOLS.slice(i,i+CHUNK_SIZE));
   for(const chunk of chunks){
-    const settled = await Promise.allSettled(chunk.map(fetchBinance4h));
+    const settled = await Promise.allSettled(chunk.map(sym => fetchBinance4h(sym, fundingMap)));
     settled.forEach(r => { if(r.status==='fulfilled') results.push(r.value); });
   }
   return results;
@@ -660,12 +756,40 @@ function render(){
     const sweptLabel = score && score.sweptTFs.length
       ? `<span class="swept-tfs">${score.sweptTFs.join('+')}</span>`
       : '<span class="swept-tfs none">—</span>';
+
+    // distance tier shown as a tiny dot next to the % rather than its own column -
+    // tight=dim, extended=amber, very_extended=red, signalling "chasing" without shouting
+    const distDot = `<span class="dist-tier-dot ${d.distTier}" title="${DIST_TIER_LABELS[d.distTier]}"></span>`;
+
+    // funding rate + OI delta folded into one small "confluence" indicator rather than
+    // two more columns, per the instruction to keep this visible but quiet. Only shown
+    // when at least one of the two has real data (some symbols have no futures contract).
+    let confluenceHtml = '';
+    const hasFunding = d.fundingRate != null;
+    const hasOI = d.oiDeltaPct != null;
+    if(hasFunding || hasOI){
+      const parts = [];
+      if(hasFunding) parts.push(`funding ${d.fundingRate>=0?'+':''}${(d.fundingRate*100).toFixed(3)}%`);
+      if(hasOI) parts.push(`OI ${d.oiDeltaPct>=0?'+':''}${d.oiDeltaPct.toFixed(1)}% (24h)`);
+
+      // tone prioritizes funding rate when available (negative funding = crowded shorts,
+      // a contrarian-bullish tell that pairs well with this system's sweep-hunting logic),
+      // falling back to OI delta direction when funding data is missing for this symbol
+      let tone = 'flat';
+      if(hasFunding){
+        tone = d.fundingRate < 0 ? 'neg' : (d.fundingRate > 0.0003 ? 'pos' : 'flat');
+      } else if(hasOI){
+        tone = d.oiDeltaPct > 5 ? 'pos' : (d.oiDeltaPct < -5 ? 'neg' : 'flat');
+      }
+      confluenceHtml = `<span class="conf-dot ${tone}" title="${parts.join(' · ')}"></span>`;
+    }
+
     return `
     <tr class="clickable" onclick="openChart('${d.rawSymbol||d.symbol}')">
       <td class="sym"><span class="strip ${d.above?'above':'below'}"></span>${d.symbol}</td>
-      <td class="num pct ${d.distPct>=0?'pos':'neg'}">${d.distPct>=0?'+':''}${d.distPct.toFixed(2)}%</td>
+      <td class="num pct ${d.distPct>=0?'pos':'neg'}">${d.distPct>=0?'+':''}${d.distPct.toFixed(2)}%${distDot}</td>
       <td class="num rvol-cell">${rvolBadge}</td>
-      <td class="score-cell">${scoreBadge}</td>
+      <td class="score-cell">${scoreBadge}${confluenceHtml}</td>
       <td class="swept-cell">${sweptLabel}</td>
     </tr>`;
   }).join('');

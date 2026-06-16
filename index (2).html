@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>4H 200EMA WATCH</title>
+<style>
+  :root{
+    --bg:#0a0d0f;
+    --panel:#10151a;
+    --line:#1c2730;
+    --text:#d8e2e8;
+    --dim:#5c6e78;
+    --green:#2dd4a0;
+    --green-dim:#163029;
+    --red:#ff5d5d;
+    --red-dim:#311518;
+    --amber:#f0b429;
+    --mono: 'JetBrains Mono','SF Mono',Consolas,monospace;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--mono);
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:980px;margin:0 auto;padding:28px 18px 60px;}
+
+  header{
+    display:flex;justify-content:space-between;align-items:flex-end;
+    border-bottom:1px solid var(--line);
+    padding-bottom:14px;margin-bottom:18px;flex-wrap:wrap;gap:10px;
+  }
+  .title{
+    font-size:20px;font-weight:700;letter-spacing:0.5px;color:var(--text);
+  }
+  .title span{color:var(--green);}
+  .subtitle{font-size:11px;color:var(--dim);margin-top:4px;letter-spacing:0.5px;}
+  .meta{font-size:11px;color:var(--dim);text-align:right;}
+  #refreshBtn{
+    background:none;border:1px solid var(--line);color:var(--text);
+    font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:3px;
+    cursor:pointer;margin-top:6px;
+  }
+  #refreshBtn:hover{border-color:var(--green);color:var(--green);}
+  #refreshBtn:disabled{opacity:0.4;cursor:default;}
+
+  .tabs{display:flex;gap:6px;margin-bottom:16px;}
+  .tab{
+    background:none;border:1px solid var(--line);color:var(--dim);
+    font-family:var(--mono);font-size:11px;padding:6px 14px;border-radius:3px;
+    cursor:pointer;letter-spacing:0.5px;
+  }
+  .tab.active{color:var(--bg);background:var(--green);border-color:var(--green);font-weight:700;}
+
+  .stats{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
+  .stat{
+    background:var(--panel);border:1px solid var(--line);border-radius:4px;
+    padding:10px 16px;flex:1;min-width:120px;
+  }
+  .stat .num{font-size:22px;font-weight:700;}
+  .stat .lbl{font-size:10px;color:var(--dim);letter-spacing:0.5px;margin-top:2px;}
+  .stat.above .num{color:var(--green);}
+  .stat.below .num{color:var(--red);}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  thead th{
+    text-align:left;font-size:10px;color:var(--dim);letter-spacing:0.6px;
+    padding:6px 10px;border-bottom:1px solid var(--line);cursor:pointer;
+    user-select:none;white-space:nowrap;
+  }
+  thead th:hover{color:var(--text);}
+  thead th.sorted{color:var(--green);}
+  tbody tr{border-bottom:1px solid var(--line);}
+  tbody tr:hover{background:#0f1419;}
+  td{padding:9px 10px;white-space:nowrap;}
+  td.sym{font-weight:700;}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;}
+  .pct{font-weight:700;}
+  .pct.pos{color:var(--green);}
+  .pct.neg{color:var(--red);}
+
+  .strip{
+    display:inline-block;width:38px;height:8px;border-radius:2px;margin-right:8px;
+    vertical-align:middle;
+  }
+  .strip.above{background:var(--green);box-shadow:0 0 6px rgba(45,212,160,0.5);}
+  .strip.below{background:var(--red);box-shadow:0 0 6px rgba(255,93,93,0.4);}
+
+  .badge{
+    font-size:10px;font-weight:700;padding:2px 7px;border-radius:3px;letter-spacing:0.4px;
+  }
+  .badge.above{background:var(--green-dim);color:var(--green);}
+  .badge.below{background:var(--red-dim);color:var(--red);}
+
+  .loading,.err{padding:40px;text-align:center;color:var(--dim);font-size:12px;}
+  .err{color:var(--red);}
+
+  footer{margin-top:24px;font-size:10px;color:var(--dim);line-height:1.6;}
+
+  ::-webkit-scrollbar{height:6px;width:6px;}
+  ::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <div class="title">EMA<span>200</span>/4H WATCH</div>
+      <div class="subtitle">market structure context · 4H timeframe · liquidity sweep confluence not auto-detected</div>
+    </div>
+    <div class="meta">
+      <div id="lastUpdated">—</div>
+      <button id="refreshBtn" onclick="loadAll()">↻ refresh</button>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active" data-mkt="crypto" onclick="setMarket('crypto')">CRYPTO</button>
+    <button class="tab" data-mkt="stocks" onclick="setMarket('stocks')">STOCKS</button>
+  </div>
+
+  <div class="stats">
+    <div class="stat above"><div class="num" id="aboveCount">–</div><div class="lbl">ABOVE 200EMA</div></div>
+    <div class="stat below"><div class="num" id="belowCount">–</div><div class="lbl">BELOW 200EMA</div></div>
+    <div class="stat"><div class="num" id="totalCount">–</div><div class="lbl">TRACKED</div></div>
+  </div>
+
+  <div id="content"><div class="loading">loading 4H candles…</div></div>
+
+  <footer>
+    4H closes only · EMA200 computed client-side from raw OHLC, seeded with a 1000-candle SMA warmup (Binance) for accuracy · crypto via Binance public API, stocks via Stooq daily-derived approx (see note on stocks tab) · this is a structural filter, not a signal — combine with HH/HL structure and liquidity sweep confirmation per your system.
+  </footer>
+
+</div>
+
+<script>
+const CRYPTO_SYMBOLS = [
+  "BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","ADAUSDT","DOGEUSDT","AVAXUSDT",
+  "LINKUSDT","TONUSDT","SUIUSDT","DOTUSDT","LTCUSDT","NEARUSDT","APTUSDT","ARBUSDT",
+  "OPUSDT","INJUSDT","ATOMUSDT","FILUSDT","RNDRUSDT","TIAUSDT","SEIUSDT","ETCUSDT",
+  "HBARUSDT","UNIUSDT","AAVEUSDT","MKRUSDT","PEPEUSDT","WIFUSDT"
+];
+
+// Stocks: Stooq has no native 4H bars, so we build 4H bars from 1H data when available,
+// otherwise fall back gracefully. We mark these clearly as approximate.
+const STOCK_SYMBOLS = [
+  "AAPL","MSFT","NVDA","AMZN","GOOGL","META","TSLA","AMD","NFLX","AVGO",
+  "COIN","MSTR","SPY","QQQ","SMCI","PLTR","CRM","ORCL","JPM","XOM"
+];
+
+let currentMarket = 'crypto';
+let cryptoData = [];
+let stockData = [];
+let sortKey = 'distPct';
+let sortDir = -1;
+
+function ema(values, period){
+  const k = 2/(period+1);
+  // seed with SMA of first `period` values
+  let sma = values.slice(0,period).reduce((a,b)=>a+b,0)/period;
+  let prev = sma;
+  for(let i=period;i<values.length;i++){
+    prev = values[i]*k + prev*(1-k);
+  }
+  return prev;
+}
+
+async function fetchBinance4h(symbol){
+  // 1000 candles of 4h history -> plenty of warmup for EMA200
+  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=4h&limit=1000`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error('binance fetch failed '+symbol);
+  const raw = await res.json();
+  const closes = raw.map(c => parseFloat(c[4]));
+  const lastClose = closes[closes.length-1];
+  const prevClose = closes[closes.length-2];
+  const e = ema(closes, 200);
+  return {
+    symbol: symbol.replace('USDT',''),
+    price: lastClose,
+    ema200: e,
+    above: lastClose > e,
+    distPct: ((lastClose - e)/e)*100,
+    chg4h: ((lastClose - prevClose)/prevClose)*100
+  };
+}
+
+async function loadCrypto(){
+  const results = [];
+  const chunks = [];
+  for(let i=0;i<CRYPTO_SYMBOLS.length;i+=6) chunks.push(CRYPTO_SYMBOLS.slice(i,i+6));
+  for(const chunk of chunks){
+    const settled = await Promise.allSettled(chunk.map(fetchBinance4h));
+    settled.forEach(r => { if(r.status==='fulfilled') results.push(r.value); });
+  }
+  return results;
+}
+
+async function fetchStooqDaily(symbol){
+  // Stooq free endpoint, daily bars, used as best-effort approximation
+  // for a 4H-style trend read on equities (no free intraday 4H feed without a key).
+  const url = `https://stooq.com/q/d/l/?s=${symbol.toLowerCase()}.us&i=d`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error('stooq fetch failed '+symbol);
+  const text = await res.text();
+  const lines = text.trim().split('\n').slice(1);
+  const closes = lines.map(l => parseFloat(l.split(',')[4])).filter(n=>!isNaN(n));
+  if(closes.length < 50) throw new Error('not enough data '+symbol);
+  const lastClose = closes[closes.length-1];
+  const prevClose = closes[closes.length-2];
+  const period = Math.min(200, closes.length-1);
+  const e = ema(closes, period);
+  return {
+    symbol,
+    price: lastClose,
+    ema200: e,
+    above: lastClose > e,
+    distPct: ((lastClose - e)/e)*100,
+    chg4h: ((lastClose - prevClose)/prevClose)*100,
+    approx: period < 200
+  };
+}
+
+async function loadStocks(){
+  const results = [];
+  const chunks = [];
+  for(let i=0;i<STOCK_SYMBOLS.length;i+=5) chunks.push(STOCK_SYMBOLS.slice(i,i+5));
+  for(const chunk of chunks){
+    const settled = await Promise.allSettled(chunk.map(fetchStooqDaily));
+    settled.forEach(r => { if(r.status==='fulfilled') results.push(r.value); });
+  }
+  return results;
+}
+
+function fmtPrice(p){
+  if(p >= 1000) return p.toLocaleString(undefined,{maximumFractionDigits:2});
+  if(p >= 1) return p.toFixed(2);
+  return p.toFixed(6);
+}
+
+function render(){
+  const data = currentMarket === 'crypto' ? cryptoData : stockData;
+  const content = document.getElementById('content');
+  if(!data.length){
+    content.innerHTML = '<div class="err">no data loaded — check connection or refresh</div>';
+    return;
+  }
+  const sorted = [...data].sort((a,b)=>{
+    if(sortKey === 'symbol') return a.symbol.localeCompare(b.symbol)*sortDir*-1;
+    return (a[sortKey]-b[sortKey])*sortDir;
+  });
+
+  const above = data.filter(d=>d.above).length;
+  document.getElementById('aboveCount').textContent = above;
+  document.getElementById('belowCount').textContent = data.length-above;
+  document.getElementById('totalCount').textContent = data.length;
+
+  const isApproxMarket = currentMarket === 'stocks';
+
+  let rows = sorted.map(d=>`
+    <tr>
+      <td class="sym"><span class="strip ${d.above?'above':'below'}"></span>${d.symbol}</td>
+      <td class="num">${fmtPrice(d.price)}</td>
+      <td class="num">${fmtPrice(d.ema200)}</td>
+      <td class="num pct ${d.distPct>=0?'pos':'neg'}">${d.distPct>=0?'+':''}${d.distPct.toFixed(2)}%</td>
+      <td class="num pct ${d.chg4h>=0?'pos':'neg'}">${d.chg4h>=0?'+':''}${d.chg4h.toFixed(2)}%</td>
+      <td><span class="badge ${d.above?'above':'below'}">${d.above?'ABOVE':'BELOW'}</span></td>
+    </tr>
+  `).join('');
+
+  const chgLabel = isApproxMarket ? '1D %' : '4H %';
+  const note = isApproxMarket
+    ? `<div style="font-size:10px;color:var(--dim);margin-bottom:10px;">stocks: no free intraday 4H feed available client-side — showing <b>daily</b> closes vs daily-equivalent 200EMA as a trend proxy. treat as directional, not exact 4H confluence.</div>`
+    : '';
+
+  content.innerHTML = `
+    ${note}
+    <table>
+      <thead>
+        <tr>
+          <th onclick="sortBy('symbol')" class="${sortKey==='symbol'?'sorted':''}">SYMBOL</th>
+          <th onclick="sortBy('price')" class="${sortKey==='price'?'sorted':''}">PRICE</th>
+          <th onclick="sortBy('ema200')" class="${sortKey==='ema200'?'sorted':''}">200 EMA</th>
+          <th onclick="sortBy('distPct')" class="${sortKey==='distPct'?'sorted':''}">DIST %</th>
+          <th onclick="sortBy('chg4h')" class="${sortKey==='chg4h'?'sorted':''}">${chgLabel}</th>
+          <th>STATUS</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function sortBy(key){
+  if(sortKey === key) sortDir *= -1;
+  else { sortKey = key; sortDir = -1; }
+  render();
+}
+
+function setMarket(mkt){
+  currentMarket = mkt;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.mkt===mkt));
+  render();
+}
+
+async function loadAll(){
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true;
+  document.getElementById('content').innerHTML = '<div class="loading">pulling 4H candles…</div>';
+  try{
+    const [c, s] = await Promise.allSettled([loadCrypto(), loadStocks()]);
+    cryptoData = c.status === 'fulfilled' ? c.value : [];
+    stockData = s.status === 'fulfilled' ? s.value : [];
+  } catch(e){
+    console.error(e);
+  }
+  document.getElementById('lastUpdated').textContent = 'updated ' + new Date().toLocaleString();
+  btn.disabled = false;
+  render();
+}
+
+loadAll();
+</script>
+</body>
+</html>

@@ -654,9 +654,9 @@ async function fetchBinance4h(symbol, fundingMap){
   const relVol = (avgVol && avgVol > 0) ? (lastCandle.v / avgVol) : null;
 
   const above = lastClose > e;
-  const score = computeSetupScore(above, { '4h': candles, '12h': candles12h, '3d': candles3d });
-  const SCORE_RANK = { excellent_plus: 4, excellent: 3, good: 2, bad: 1 };
   const distPct = ((lastClose - e)/e)*100;
+  const score = computeSetupScore(above, { '4h': candles, '12h': candles12h, '3d': candles3d }, distPct);
+  const SCORE_RANK = { excellent_plus: 4, excellent: 3, good: 2, bad: 1 };
 
   // funding rate isn't available for every spot symbol (not all have a perpetual
   // contract on Binance futures) - fundingInfo is null in that case, which the UI
@@ -931,7 +931,29 @@ function findSweptTimeframes(candleSets){
 //                at once - multiple timeframes lining up on the same liquidity event is
 //                a meaningfully stronger signal than a sweep showing up on just one
 // (HH/HL structure check intentionally omitted for now per user request - may be added later)
-function computeSetupScore(above, candleSets){
+//
+// On top of the above, EMA distance acts as a CAP on the final tier (not a replacement -
+// the small dist-tier dot in the UI still independently shows tight/extended/very_extended
+// regardless of this cap). The reasoning: a coin can have a textbook-perfect sweep and
+// still be a bad trade if price has already run too far from the EMA, since this system
+// never chases. Distance <=2% applies no cap (sweep logic decides freely). Distance 2-6%
+// caps the result at Good even if the sweep logic alone would say Excellent/Excellent+.
+// Distance >6% caps the result at Bad regardless of how clean the sweep looks.
+const SCORE_TIER_ORDER = ['bad', 'good', 'excellent', 'excellent_plus'];
+
+function capScoreByDistance(tier, distPct){
+  const abs = Math.abs(distPct);
+  let capTier;
+  if(abs <= 2) capTier = 'excellent_plus'; // no real cap - excellent_plus is the ceiling anyway
+  else if(abs <= 6) capTier = 'good';
+  else capTier = 'bad';
+
+  const tierRank = SCORE_TIER_ORDER.indexOf(tier);
+  const capRank = SCORE_TIER_ORDER.indexOf(capTier);
+  return tierRank <= capRank ? tier : capTier;
+}
+
+function computeSetupScore(above, candleSets, distPct){
   const sweptTFs = findSweptTimeframes(candleSets);
   const hasSweep = sweptTFs.length > 0;
 
@@ -943,6 +965,8 @@ function computeSetupScore(above, candleSets){
   } else {
     tier = 'bad';
   }
+
+  if(distPct != null) tier = capScoreByDistance(tier, distPct);
 
   return { tier, sweptTFs };
 }

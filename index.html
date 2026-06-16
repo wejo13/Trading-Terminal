@@ -200,7 +200,7 @@
   <header>
     <div>
       <div class="title">EMA<span>200</span>/4H WATCH</div>
-      <div class="subtitle">top 100 USDT pairs by 7-day avg volume, $1B+ market cap only · market structure context · 4H timeframe · setup score below</div>
+      <div class="subtitle">top 100 USDT pairs by 7-day avg volume, $1B+ market cap, stablecoins excluded · market structure context · 4H timeframe · setup score below</div>
     </div>
     <div class="meta">
       <div id="lastUpdated">—</div>
@@ -276,7 +276,7 @@ const FALLBACK_CRYPTO_SYMBOLS = [
   "HBARUSDT","UNIUSDT","AAVEUSDT","MKRUSDT","PEPEUSDT","WIFUSDT"
 ];
 
-const SYMBOL_LIST_CACHE_KEY = 'ema_watch_top100_symbols_v3_mcap1b';
+const SYMBOL_LIST_CACHE_KEY = 'ema_watch_top100_symbols_v4_nostable';
 const SYMBOL_LIST_CACHE_TTL = 24 * 60 * 60 * 1000; // re-rank once a day; otherwise reuse cached list
 
 let CRYPTO_SYMBOLS = FALLBACK_CRYPTO_SYMBOLS;
@@ -299,6 +299,14 @@ const INITIAL_POOL_SIZE = 300;
 // coins. $1B was chosen as a starting point per the user's request to "try under 1 bil
 // and see how many coins there are".
 const MARKET_CAP_FLOOR = 1_000_000_000;
+
+// Known stablecoins to exclude entirely - these trivially "trade above their 200EMA"
+// with meaningless sub-1% moves since they're pegged to $1, which pollutes the
+// EXCELLENT tier with noise that has nothing to do with the trading system.
+const STABLECOIN_BLOCKLIST = new Set([
+  "USD1","RLUSD","BFUSD","USDS","USDC","USDE","DAI","FDUSD","TUSD",
+  "PYUSD","USDP","GUSD","USTC","FRAX","LUSD","USDD"
+]);
 
 async function fetch7DayAvgVolume(symbol){
   const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1d&limit=7`;
@@ -353,7 +361,8 @@ async function loadTop100SymbolsByVolume(){
   const usdtPairs = all.filter(t =>
     t.symbol.endsWith('USDT') &&
     !t.symbol.includes('UP') && !t.symbol.includes('DOWN') &&
-    !t.symbol.includes('BULL') && !t.symbol.includes('BEAR')
+    !t.symbol.includes('BULL') && !t.symbol.includes('BEAR') &&
+    !STABLECOIN_BLOCKLIST.has(t.symbol.replace(/USDT$/, ''))
   );
   // initial broad cut by 24h volume, just to keep the next step (7-day lookups) to a
   // manageable number of API calls instead of querying every USDT pair on Binance

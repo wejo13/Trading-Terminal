@@ -113,8 +113,9 @@
     font-size:10px;font-weight:700;color:var(--violet);letter-spacing:0.3px;
   }
   .swept-tfs.none{color:var(--dim);font-weight:400;}
-  /* freshness fade: a sweep from a few candles ago is more actionable right now than
-     one approaching the edge of the 12-candle window, so aging sweeps dim down */
+  /* with the tightened per-timeframe freshness windows (max 3 bars on 4H, 1 on 12H/3D),
+     anything that still qualifies for a score is inherently fresh - .aging is unused
+     now but left defined in case freshness windows are loosened again later */
   .swept-tfs.fresh{opacity:1;}
   .swept-tfs.aging{opacity:0.55;}
   .swept-ago{
@@ -784,14 +785,15 @@ function render(){
       ? `<span class="score-badge ${score.tier}" title="${sweptSummaryForTooltip}">${SCORE_LABELS[score.tier]}</span>`
       : '';
 
-    // swept label shows which timeframe(s) + how fresh the most recent sweep is, fading
-    // toward the dim/quiet end as it ages past the middle of the 12-candle freshness window
+    // swept label shows which timeframe(s) + exactly how many candles ago the sweep
+    // happened. With the tightened per-timeframe freshness windows (max 3 bars on 4H,
+    // 1 bar on 12H/3D), anything that still qualifies is inherently fresh by definition -
+    // there's no longer a meaningful "aging but still counted" middle ground to fade.
     let sweptLabel = '<span class="swept-tfs none">—</span>';
     if(score && score.sweptTFs.length){
       const tfText = score.sweptTFs.map(s => s.label).join('+');
       const freshestAgo = Math.min(...score.sweptTFs.map(s => s.candlesAgo));
-      const freshness = freshestAgo <= RECENT_SWEEP_WINDOW/2 ? 'fresh' : 'aging';
-      sweptLabel = `<span class="swept-tfs ${freshness}">${tfText}</span><span class="swept-ago">${freshestAgo}c ago</span>`;
+      sweptLabel = `<span class="swept-tfs fresh">${tfText}</span><span class="swept-ago">${freshestAgo}c ago</span>`;
     }
 
     // distance tier shown as a tiny dot next to the % rather than its own column -
@@ -863,9 +865,16 @@ function render(){
 // shift handled separately by the above/below-EMA check.
 // Returns null if no recent sweep, or { candlesAgo } for the MOST RECENT qualifying sweep
 // on this timeframe (lower candlesAgo = fresher = more actionable right now).
-const RECENT_SWEEP_WINDOW = 12; // ~last 12 candles on the given timeframe counts as "recent"
+//
+// Per-timeframe freshness windows (max bars old a sweep can be and still count toward
+// the score): 3 candles on 4H, but only 1 candle on 12H and 1 on 3D, since a single
+// 12H/3D candle already spans far more real time than 3 4H candles - this keeps
+// "freshness" roughly equivalent across timeframes rather than one timeframe staying
+// "fresh" for an unreasonably long stretch. Tightened down from a uniform 12-candle
+// window after the original window let stale sweeps (weeks old) still score as Excellent.
+const SWEEP_FRESHNESS_WINDOWS = { '4H': 3, '12H': 1, '3D': 1 };
 
-function getRecentSweepInfo(candles, side){
+function getRecentSweepInfo(candles, side, recentWindow){
   if(!candles || candles.length < side*2+2) return null;
   const fractals = detectFractalLows(candles, side);
   const n = candles.length;
@@ -873,7 +882,7 @@ function getRecentSweepInfo(candles, side){
   fractals.forEach(f => {
     if((f.status === 'swept_open' || f.status === 'swept_reclaimed') && f.sweepIndex != null){
       const candlesAgo = n - 1 - f.sweepIndex;
-      if(candlesAgo <= RECENT_SWEEP_WINDOW && (best === null || candlesAgo < best)){
+      if(candlesAgo <= recentWindow && (best === null || candlesAgo < best)){
         best = candlesAgo;
       }
     }
@@ -882,18 +891,19 @@ function getRecentSweepInfo(candles, side){
 }
 
 // kept for any external callers expecting a boolean - now backed by getRecentSweepInfo
-function hasRecentSweep(candles, side){
-  return getRecentSweepInfo(candles, side) !== null;
+function hasRecentSweep(candles, side, recentWindow){
+  return getRecentSweepInfo(candles, side, recentWindow) !== null;
 }
 
 // Returns which of the 4H/12H/3D timeframes have a recent swept structural low, along
 // with how fresh each sweep is, so the UI can show exactly where (and how recently)
-// the liquidity was taken.
+// the liquidity was taken. Each timeframe uses its OWN freshness window per
+// SWEEP_FRESHNESS_WINDOWS above.
 function findSweptTimeframes(candleSets){
   const hit = [];
   const tfConfigs = [['4H','4h'], ['12H','12h'], ['3D','3d']];
   tfConfigs.forEach(([label, key]) => {
-    const info = getRecentSweepInfo(candleSets[key], 3);
+    const info = getRecentSweepInfo(candleSets[key], 3, SWEEP_FRESHNESS_WINDOWS[label]);
     if(info) hit.push({ label, candlesAgo: info.candlesAgo });
   });
   return hit;

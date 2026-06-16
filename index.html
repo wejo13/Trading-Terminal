@@ -120,12 +120,21 @@
   .dist-tier-dot.extended{background:var(--amber);opacity:0.6;}
   .dist-tier-dot.very_extended{background:var(--red);opacity:0.7;}
 
+  /* funding rate shown as small inline text (readable without hovering), with the
+     OI delta still tucked into the dot's tooltip alongside it */
+  .funding-text{
+    font-size:9px;font-weight:600;margin-left:6px;letter-spacing:0.2px;
+  }
+  .funding-text.neg{color:var(--green);opacity:0.85;}
+  .funding-text.pos{color:var(--red);opacity:0.85;}
+  .funding-text.flat{color:var(--dim);}
+
   /* small funding-rate/OI confluence indicator next to the score badge - intentionally
      quiet (a small dot, not a column) per the request to keep volume/funding/OI
      visible but not too visible */
   .conf-dot{
     display:inline-block;width:6px;height:6px;border-radius:50%;
-    margin-left:5px;vertical-align:middle;cursor:help;
+    margin-left:4px;vertical-align:middle;cursor:help;
   }
   .conf-dot.neg{background:var(--green);opacity:0.55;}
   .conf-dot.pos{background:var(--red);opacity:0.55;}
@@ -733,6 +742,13 @@ function render(){
   }
   const sorted = [...data].sort((a,b)=>{
     if(sortKey === 'symbol') return a.symbol.localeCompare(b.symbol)*sortDir*-1;
+    if(sortKey === 'distPct'){
+      // default view: above-EMA coins grouped first, below-EMA coins after, and within
+      // EACH group sorted by closest-to-EMA-distance at the top (using absolute distance
+      // so "closest" means smallest gap regardless of direction within that group)
+      if(a.above !== b.above) return a.above ? -1 : 1;
+      return Math.abs(a.distPct) - Math.abs(b.distPct);
+    }
     return (a[sortKey]-b[sortKey])*sortDir;
   });
 
@@ -761,16 +777,16 @@ function render(){
     // tight=dim, extended=amber, very_extended=red, signalling "chasing" without shouting
     const distDot = `<span class="dist-tier-dot ${d.distTier}" title="${DIST_TIER_LABELS[d.distTier]}"></span>`;
 
-    // funding rate + OI delta folded into one small "confluence" indicator rather than
-    // two more columns, per the instruction to keep this visible but quiet. Only shown
-    // when at least one of the two has real data (some symbols have no futures contract).
+    // funding rate is shown inline (small text) since the user wants it readable
+    // without hovering. OI delta stays tooltip-only on the dot, since that one wasn't
+    // asked to be made visible inline.
     let confluenceHtml = '';
     const hasFunding = d.fundingRate != null;
     const hasOI = d.oiDeltaPct != null;
     if(hasFunding || hasOI){
-      const parts = [];
-      if(hasFunding) parts.push(`funding ${d.fundingRate>=0?'+':''}${(d.fundingRate*100).toFixed(3)}%`);
-      if(hasOI) parts.push(`OI ${d.oiDeltaPct>=0?'+':''}${d.oiDeltaPct.toFixed(1)}% (24h)`);
+      const tooltipParts = [];
+      if(hasFunding) tooltipParts.push(`funding ${d.fundingRate>=0?'+':''}${(d.fundingRate*100).toFixed(3)}%`);
+      if(hasOI) tooltipParts.push(`OI ${d.oiDeltaPct>=0?'+':''}${d.oiDeltaPct.toFixed(1)}% (24h)`);
 
       // tone prioritizes funding rate when available (negative funding = crowded shorts,
       // a contrarian-bullish tell that pairs well with this system's sweep-hunting logic),
@@ -781,7 +797,11 @@ function render(){
       } else if(hasOI){
         tone = d.oiDeltaPct > 5 ? 'pos' : (d.oiDeltaPct < -5 ? 'neg' : 'flat');
       }
-      confluenceHtml = `<span class="conf-dot ${tone}" title="${parts.join(' · ')}"></span>`;
+
+      const fundingText = hasFunding
+        ? `<span class="funding-text ${tone}">${d.fundingRate>=0?'+':''}${(d.fundingRate*100).toFixed(3)}%</span>`
+        : '';
+      confluenceHtml = `${fundingText}<span class="conf-dot ${tone}" title="${tooltipParts.join(' · ')}"></span>`;
     }
 
     return `

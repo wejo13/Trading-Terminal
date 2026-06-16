@@ -227,9 +227,21 @@
   .legend-group p:last-child{margin-bottom:0;}
   .legend-group p b{color:var(--text);font-weight:700;}
 
+  /* main two-column layout: above-EMA table + below-EMA collapsible on the left,
+     trade journal on the right, independent heights, journal narrower than table */
+  .main-grid{
+    display:flex;gap:24px;align-items:flex-start;
+  }
+  .grid-col-table{flex:0 1 620px;min-width:0;}
+  .grid-col-journal{flex:1 1 280px;min-width:260px;}
+  @media (max-width:920px){
+    .main-grid{flex-direction:column;}
+    .grid-col-journal{min-width:0;width:100%;}
+  }
+
   /* --- trade journal --- */
   .journal-section{
-    margin-top:24px;border:1px solid var(--line);border-radius:6px;
+    border:1px solid var(--line);border-radius:6px;
     background:var(--panel);padding:18px 18px 20px;
   }
   .journal-title{
@@ -410,7 +422,87 @@
     <button id="clearLogBtn" onclick="clearAlertLog()">clear log</button>
   </div>
 
-  <div id="content"><div class="loading">loading 4H candles…</div></div>
+  <div class="main-grid">
+    <div class="grid-col-table">
+      <div id="content"><div class="loading">loading 4H candles…</div></div>
+    </div>
+    <div class="grid-col-journal">
+    <section class="journal-section">
+      <h2 class="journal-title">TRADE JOURNAL</h2>
+  
+      <div class="journal-summary" id="journalSummary"></div>
+  
+      <form id="journalForm" class="journal-form" onsubmit="submitJournalEntry(event)">
+        <div class="jf-row">
+          <label>date/time<input type="datetime-local" id="jf-datetime" required></label>
+          <label>ticker
+            <input type="text" id="jf-ticker" list="jf-ticker-list" placeholder="e.g. BTC" autocomplete="off" required>
+            <datalist id="jf-ticker-list"></datalist>
+          </label>
+          <label>direction
+            <select id="jf-direction">
+              <option value="long">long</option>
+              <option value="short">short</option>
+            </select>
+          </label>
+        </div>
+  
+        <div class="jf-checks">
+          <div class="jf-checks-title">setup checklist</div>
+          <label class="jf-check"><input type="checkbox" id="jf-check-1"> price above 4H EMA</label>
+          <label class="jf-check"><input type="checkbox" id="jf-check-2"> price not too far from EMA</label>
+          <label class="jf-check"><input type="checkbox" id="jf-check-3"> swept liquidity</label>
+          <label class="jf-check"><input type="checkbox" id="jf-check-4"> price making HHs and HLs</label>
+          <label class="jf-check"><input type="checkbox" id="jf-check-5"> impulsive candle with FVG</label>
+          <label class="jf-check"><input type="checkbox" id="jf-check-6"> retrace into OTE spot (fibs)</label>
+          <div class="jf-check-note" id="jf-autofill-note"></div>
+        </div>
+  
+        <div class="jf-row">
+          <label>notional size ($)<input type="number" id="jf-notional" step="any" placeholder="e.g. 1000"></label>
+          <label>SL amount ($)<input type="number" id="jf-sl-usd" step="any" placeholder="e.g. 20"></label>
+          <label>SL amount (%)<input type="number" id="jf-sl-pct" step="any" placeholder="e.g. 2"></label>
+        </div>
+  
+        <div class="jf-row">
+          <label>entry price<input type="number" id="jf-entry" step="any" placeholder="optional"></label>
+          <label>exit price<input type="number" id="jf-exit" step="any" placeholder="optional, fill in later"></label>
+          <label>outcome
+            <select id="jf-outcome">
+              <option value="open">open / not closed yet</option>
+              <option value="win">win</option>
+              <option value="loss">loss</option>
+              <option value="breakeven">breakeven</option>
+            </select>
+          </label>
+        </div>
+  
+        <label class="jf-notes-label">notes
+          <textarea id="jf-notes" rows="2" placeholder="anything that doesn't fit a checkbox..."></textarea>
+        </label>
+  
+        <div class="jf-actions">
+          <button type="submit">log trade</button>
+          <button type="button" onclick="exportJournalCSV()">export CSV</button>
+          <button type="button" onclick="exportJournalJSON()">export JSON</button>
+        </div>
+      </form>
+  
+      <div class="journal-log">
+        <table id="journalTable">
+          <thead>
+            <tr>
+              <th>date</th><th>ticker</th><th>dir</th><th>checks</th>
+              <th>notional</th><th>SL $</th><th>SL %</th>
+              <th>entry</th><th>exit</th><th>outcome</th><th>R</th><th>notes</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="journalTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+    </div>
+  </div>
 
   <details class="legend-section">
     <summary>what does this all mean? (click to expand)</summary>
@@ -469,81 +561,6 @@
 
     </div>
   </details>
-
-  <section class="journal-section">
-    <h2 class="journal-title">TRADE JOURNAL</h2>
-
-    <div class="journal-summary" id="journalSummary"></div>
-
-    <form id="journalForm" class="journal-form" onsubmit="submitJournalEntry(event)">
-      <div class="jf-row">
-        <label>date/time<input type="datetime-local" id="jf-datetime" required></label>
-        <label>ticker
-          <input type="text" id="jf-ticker" list="jf-ticker-list" placeholder="e.g. BTC" autocomplete="off" required>
-          <datalist id="jf-ticker-list"></datalist>
-        </label>
-        <label>direction
-          <select id="jf-direction">
-            <option value="long">long</option>
-            <option value="short">short</option>
-          </select>
-        </label>
-      </div>
-
-      <div class="jf-checks">
-        <div class="jf-checks-title">setup checklist</div>
-        <label class="jf-check"><input type="checkbox" id="jf-check-1"> price above 4H EMA</label>
-        <label class="jf-check"><input type="checkbox" id="jf-check-2"> price not too far from EMA</label>
-        <label class="jf-check"><input type="checkbox" id="jf-check-3"> swept liquidity</label>
-        <label class="jf-check"><input type="checkbox" id="jf-check-4"> price making HHs and HLs</label>
-        <label class="jf-check"><input type="checkbox" id="jf-check-5"> impulsive candle with FVG</label>
-        <label class="jf-check"><input type="checkbox" id="jf-check-6"> retrace into OTE spot (fibs)</label>
-        <div class="jf-check-note" id="jf-autofill-note"></div>
-      </div>
-
-      <div class="jf-row">
-        <label>notional size ($)<input type="number" id="jf-notional" step="any" placeholder="e.g. 1000"></label>
-        <label>SL amount ($)<input type="number" id="jf-sl-usd" step="any" placeholder="e.g. 20"></label>
-        <label>SL amount (%)<input type="number" id="jf-sl-pct" step="any" placeholder="e.g. 2"></label>
-      </div>
-
-      <div class="jf-row">
-        <label>entry price<input type="number" id="jf-entry" step="any" placeholder="optional"></label>
-        <label>exit price<input type="number" id="jf-exit" step="any" placeholder="optional, fill in later"></label>
-        <label>outcome
-          <select id="jf-outcome">
-            <option value="open">open / not closed yet</option>
-            <option value="win">win</option>
-            <option value="loss">loss</option>
-            <option value="breakeven">breakeven</option>
-          </select>
-        </label>
-      </div>
-
-      <label class="jf-notes-label">notes
-        <textarea id="jf-notes" rows="2" placeholder="anything that doesn't fit a checkbox..."></textarea>
-      </label>
-
-      <div class="jf-actions">
-        <button type="submit">log trade</button>
-        <button type="button" onclick="exportJournalCSV()">export CSV</button>
-        <button type="button" onclick="exportJournalJSON()">export JSON</button>
-      </div>
-    </form>
-
-    <div class="journal-log">
-      <table id="journalTable">
-        <thead>
-          <tr>
-            <th>date</th><th>ticker</th><th>dir</th><th>checks</th>
-            <th>notional</th><th>SL $</th><th>SL %</th>
-            <th>entry</th><th>exit</th><th>outcome</th><th>R</th><th>notes</th><th></th>
-          </tr>
-        </thead>
-        <tbody id="journalTableBody"></tbody>
-      </table>
-    </div>
-  </section>
 
 </div>
 

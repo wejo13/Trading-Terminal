@@ -66,7 +66,7 @@
   .stat.above .num{color:var(--green);}
   .stat.below .num{color:var(--red);}
 
-  table{width:100%;max-width:560px;border-collapse:collapse;font-size:13px;}
+  table{width:100%;max-width:620px;border-collapse:collapse;font-size:13px;}
   thead th{
     text-align:left;font-size:10px;color:var(--dim);letter-spacing:0.6px;
     padding:6px 14px 6px 10px;border-bottom:1px solid var(--line);cursor:pointer;
@@ -77,7 +77,8 @@
   th.col-symbol, td.sym{width:auto;}
   th.col-dist, td.num{width:1%;}
   th.col-rvol, td.rvol-cell{width:1%;}
-  th.col-status, td.status-cell{width:1%;}
+  th.col-score, td.score-cell{width:1%;}
+  th.col-swept, td.swept-cell{width:1%;}
   tbody tr{border-bottom:1px solid var(--line);}
   tbody tr:hover{background:#0f1419;}
   td{padding:9px 14px 9px 10px;white-space:nowrap;}
@@ -85,7 +86,8 @@
   td.num{text-align:right;font-variant-numeric:tabular-nums;}
   th.col-dist{text-align:right;}
   th.col-rvol{text-align:right;}
-  td.status-cell{text-align:right;}
+  td.score-cell{text-align:center;}
+  td.swept-cell{text-align:center;}
   .pct{font-weight:700;}
   .pct.pos{color:var(--green);}
   .pct.neg{color:var(--red);}
@@ -95,12 +97,18 @@
   }
   .rvol-badge.hot{color:var(--amber);font-weight:700;}
 
-  .setup-badge{
-    font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.3px;
-    margin-left:4px;display:inline-block;vertical-align:middle;
+  .score-badge{
+    font-size:9px;font-weight:700;padding:3px 8px;border-radius:3px;letter-spacing:0.4px;
+    display:inline-block;
   }
-  .setup-badge.reclaim{background:rgba(244,244,244,0.12);color:#f4f4f4;border:1px solid rgba(244,244,244,0.3);}
-  .setup-badge.watch{background:rgba(90,169,230,0.12);color:#5aa9e6;border:1px solid rgba(90,169,230,0.3);}
+  .score-badge.bad{background:var(--red-dim);color:var(--red);}
+  .score-badge.good{background:rgba(240,180,41,0.12);color:var(--amber);border:1px solid rgba(240,180,41,0.3);}
+  .score-badge.excellent{background:var(--green-dim);color:var(--green);border:1px solid rgba(45,212,160,0.4);}
+
+  .swept-tfs{
+    font-size:10px;font-weight:700;color:var(--violet);letter-spacing:0.3px;
+  }
+  .swept-tfs.none{color:var(--dim);font-weight:400;}
 
   .strip{
     display:inline-block;width:38px;height:8px;border-radius:2px;margin-right:8px;
@@ -108,12 +116,6 @@
   }
   .strip.above{background:var(--green);box-shadow:0 0 6px rgba(45,212,160,0.5);}
   .strip.below{background:var(--red);box-shadow:0 0 6px rgba(255,93,93,0.4);}
-
-  .badge{
-    font-size:10px;font-weight:700;padding:2px 7px;border-radius:3px;letter-spacing:0.4px;
-  }
-  .badge.above{background:var(--green-dim);color:var(--green);}
-  .badge.below{background:var(--red-dim);color:var(--red);}
 
   tbody tr.clickable{cursor:pointer;}
   tbody tr.clickable:hover td.sym{color:var(--green);}
@@ -162,8 +164,6 @@
   .legend .dot.resting{background:var(--dim);border-radius:0;width:10px;height:2px;}
   .legend .dot.swept{background:#5aa9e6;border-radius:0;width:10px;height:2px;}
   .legend .dot.reclaimed{background:#f4f4f4;border-radius:0;width:10px;height:2px;}
-  .legend .dot.fib{background:#5c6e78;border-radius:0;width:10px;height:2px;border-top:1px dashed var(--text);background:none;height:0;border-bottom:1px dashed var(--dim);}
-  .legend .dot.fibote{background:var(--amber);border-radius:0;width:10px;height:2px;opacity:0.7;}
   #chartCanvas{width:100%;display:block;background:#0a0d0f;border-radius:4px;}
   .chart-loading{padding:60px;text-align:center;color:var(--dim);font-size:12px;}
 
@@ -200,7 +200,7 @@
   <header>
     <div>
       <div class="title">EMA<span>200</span>/4H WATCH</div>
-      <div class="subtitle">top 100 USDT pairs by 7-day avg volume · market structure context · 4H timeframe · liquidity sweep + FVG confluence auto-flagged, not auto-traded</div>
+      <div class="subtitle">top 100 USDT pairs by 7-day avg volume · market structure context · 4H timeframe · setup score below</div>
     </div>
     <div class="meta">
       <div id="lastUpdated">—</div>
@@ -263,10 +263,6 @@
       <span><span class="dot resting"></span>resting liquidity (untouched swing low)</span>
       <span><span class="dot swept"></span>swept, not reclaimed</span>
       <span><span class="dot reclaimed"></span>swept + reclaimed (bullish close above)</span>
-    </div>
-    <div class="legend" style="margin-top:6px;">
-      <span><span class="dot fib"></span>fib of last structure-break leg that left an FVG (4H only)</span>
-      <span><span class="dot fibote"></span>0.618–0.79 OTE zone</span>
     </div>
   </div>
 </div>
@@ -360,6 +356,8 @@ const STOCK_SYMBOLS = [
   "COIN","MSTR","SPY","QQQ","SMCI","PLTR","CRM","ORCL","JPM","XOM"
 ];
 
+const SCORE_LABELS = { excellent: 'EXCELLENT', good: 'GOOD', bad: 'BAD' };
+
 let currentMarket = 'crypto';
 let cryptoData = [];
 let stockData = [];
@@ -440,8 +438,8 @@ function detectFractalLows(candles, side){
   return lows;
 }
 
-// Detects fractal swing HIGHS (mirror of detectFractalLows) - needed to identify
-// when a candle's close breaks structure to the upside.
+// Detects fractal swing HIGHS (mirror of detectFractalLows). Used by the setup
+// scoring system and kept available for future HH/HL structure checks.
 function detectFractalHighs(candles, side){
   const highs = [];
   const n = candles.length;
@@ -455,98 +453,6 @@ function detectFractalHighs(candles, side){
     if(isHigh) highs.push({ index: i, price: center });
   }
   return highs;
-}
-
-// Checks whether a bullish Fair Value Gap exists with `impulseIndex` as the middle
-// (impulsive) candle of the 3-candle pattern: candles[impulseIndex-1].high < candles[impulseIndex+1].low.
-// The empty space between those two wicks is the gap - price never traded through it,
-// which is what makes the move "impulsive" rather than just a normal break of structure.
-function hasFVGAtCandle(candles, impulseIndex){
-  if(impulseIndex < 1 || impulseIndex+1 >= candles.length) return false;
-  const left = candles[impulseIndex-1];
-  const right = candles[impulseIndex+1];
-  return left.h < right.l;
-}
-
-// Finds the most recent bullish "impulsive leg" that:
-//   1) broke a prior 4H structure (a candle's CLOSE trades above a confirmed swing high), AND
-//   2) left a Fair Value Gap somewhere in that breakout candle or the following 3 candles
-//      (per the user's system: an FVG within the last 4 candles of the break confirms the
-//      move was genuinely impulsive, not just a normal close above structure)
-// Only legs that pass both checks get a fib drawn - this matches the trader's exact
-// sweep -> reclaim -> impulsive FVG break -> HH/HL shift sequence.
-//   Point A (fib 0%)   = the high of the candle that is the FVG's impulsive (middle) candle
-//   Point B (fib 100%) = the low of the most recent swing low before that candle (the launch point)
-function detectStructureBreakFib(candles, side){
-  const swingHighs = detectFractalHighs(candles, side);
-  const swingLows = detectFractalLows(candles, side);
-  if(!swingHighs.length || !swingLows.length) return null;
-
-  const n = candles.length;
-  const highsByIndex = {};
-  swingHighs.forEach(h => { highsByIndex[h.index] = h.price; });
-
-  // collect EVERY structure break (not just the most recent), so we can FVG-check each one
-  const breaks = [];
-  let lastConfirmedHighIdx = -1;
-  let lastConfirmedHighPrice = -Infinity;
-
-  for(let i=0;i<n;i++){
-    if(highsByIndex[i-side] !== undefined && highsByIndex[i-side] > lastConfirmedHighPrice){
-      lastConfirmedHighPrice = highsByIndex[i-side];
-      lastConfirmedHighIdx = i-side;
-    }
-    if(lastConfirmedHighIdx === -1) continue;
-    if(candles[i].c > lastConfirmedHighPrice && i > lastConfirmedHighIdx){
-      breaks.push({ breakIndex: i, structureHighPrice: lastConfirmedHighPrice });
-      lastConfirmedHighPrice = -Infinity;
-      lastConfirmedHighIdx = -1;
-    }
-  }
-  if(!breaks.length) return null;
-
-  // for each break, check if an FVG formed with its middle candle anywhere from the
-  // breakout candle itself through the next 3 candles (4 candles total)
-  function breakHasQualifyingFVG(breakIndex){
-    for(let mid = breakIndex; mid <= breakIndex+3 && mid < n; mid++){
-      if(hasFVGAtCandle(candles, mid)) return mid; // returns the FVG's middle candle index
-    }
-    return null;
-  }
-
-  // walk backward from the most recent break to find the latest one that qualifies
-  let qualifying = null;
-  for(let bi = breaks.length-1; bi >= 0; bi--){
-    const fvgMidIndex = breakHasQualifyingFVG(breaks[bi].breakIndex);
-    if(fvgMidIndex != null){
-      qualifying = { breakIndex: breaks[bi].breakIndex, fvgMidIndex };
-      break;
-    }
-  }
-  if(!qualifying) return null; // no recent break left a qualifying FVG - don't draw a fib
-
-  // Point A: the high of the FVG's impulsive (middle) candle - this is "the wick that broke
-  // structure AND created the gap", matching the user's definition precisely.
-  const impulsiveCandle = candles[qualifying.fvgMidIndex];
-  const pointA = impulsiveCandle.h;
-  const pointAIndex = qualifying.fvgMidIndex;
-
-  // Point B: the low of the most recent swing low before the breakout (the launch point of the move)
-  const priorLows = swingLows.filter(l => l.index < qualifying.breakIndex);
-  if(!priorLows.length) return null;
-  const launchLow = priorLows[priorLows.length-1];
-  const pointB = launchLow.price;
-  const pointBIndex = launchLow.index;
-
-  if(pointA <= pointB) return null; // sanity check - A must be above B for a bullish leg
-
-  const range = pointA - pointB;
-  const levels = [0, 0.236, 0.382, 0.5, 0.618, 0.705, 0.79, 1].map(pct => ({
-    pct,
-    price: pointA - range*pct
-  }));
-
-  return { pointA, pointAIndex, pointB, pointBIndex, levels };
 }
 
 async function fetchBinanceCandles(symbol, interval){
@@ -565,12 +471,20 @@ async function fetchBinanceCandles(symbol, interval){
 }
 
 async function fetchBinance4h(symbol){
-  const candles = await fetchBinanceCandles(symbol, '4h');
+  // fetch 4H (primary) plus 12H and 3D candles, since the scoring system needs to check
+  // for swept structural lows across all three timeframes, not just 4H.
+  const [candles, candles12h, candles3d] = await Promise.all([
+    fetchBinanceCandles(symbol, '4h'),
+    fetchBinanceCandles(symbol, '12h'),
+    fetchBinanceCandles(symbol, '3d')
+  ]);
   const closes = candles.map(c=>c.c);
   const lastClose = closes[closes.length-1];
   const prevClose = closes[closes.length-2];
   const e = ema(closes, 200);
   candleCache[symbol+'_4h'] = candles;
+  candleCache[symbol+'_12h'] = candles12h;
+  candleCache[symbol+'_3d'] = candles3d;
 
   // relative volume: current candle's volume vs the average of the prior 20 candles.
   // a spike here often coincides with a sweep or a real breakout, not just noise.
@@ -579,15 +493,21 @@ async function fetchBinance4h(symbol){
   const avgVol = lookback.length ? lookback.reduce((s,c)=>s+c.v,0)/lookback.length : null;
   const relVol = (avgVol && avgVol > 0) ? (lastCandle.v / avgVol) : null;
 
+  const above = lastClose > e;
+  const score = computeSetupScore(above, { '4h': candles, '12h': candles12h, '3d': candles3d });
+  const SCORE_RANK = { excellent: 3, good: 2, bad: 1 };
+
   return {
     symbol: symbol.replace('USDT',''),
     rawSymbol: symbol,
     price: lastClose,
     ema200: e,
-    above: lastClose > e,
+    above,
     distPct: ((lastClose - e)/e)*100,
     chg4h: ((lastClose - prevClose)/prevClose)*100,
     relVol,
+    score,
+    scoreRank: SCORE_RANK[score.tier],
     candles
   };
 }
@@ -667,21 +587,25 @@ function render(){
   const isApproxMarket = currentMarket === 'stocks';
 
   let rows = sorted.map(d=>{
-    const setup = computeSetupSignal(d);
     const rvol = d.relVol;
     const rvolHigh = rvol != null && rvol >= 1.5;
     const rvolBadge = rvol != null
       ? `<span class="rvol-badge ${rvolHigh?'hot':''}" title="current 4H volume vs 20-candle average">${rvol.toFixed(1)}x</span>`
       : '';
-    const setupBadge = setup
-      ? `<span class="setup-badge ${setup.type}" title="${setup.title}">${setup.label}</span>`
+    const score = d.score;
+    const scoreBadge = score
+      ? `<span class="score-badge ${score.tier}" title="${score.sweptTFs.length ? 'swept on: '+score.sweptTFs.join(', ') : 'no recent sweep detected'}">${SCORE_LABELS[score.tier]}</span>`
       : '';
+    const sweptLabel = score && score.sweptTFs.length
+      ? `<span class="swept-tfs">${score.sweptTFs.join('+')}</span>`
+      : '<span class="swept-tfs none">—</span>';
     return `
     <tr class="clickable" onclick="openChart('${d.rawSymbol||d.symbol}')">
-      <td class="sym"><span class="strip ${d.above?'above':'below'}"></span>${d.symbol} ${setupBadge}</td>
+      <td class="sym"><span class="strip ${d.above?'above':'below'}"></span>${d.symbol}</td>
       <td class="num pct ${d.distPct>=0?'pos':'neg'}">${d.distPct>=0?'+':''}${d.distPct.toFixed(2)}%</td>
       <td class="num rvol-cell">${rvolBadge}</td>
-      <td class="status-cell"><span class="badge ${d.above?'above':'below'}">${d.above?'ABOVE':'BELOW'}</span></td>
+      <td class="score-cell">${scoreBadge}</td>
+      <td class="swept-cell">${sweptLabel}</td>
     </tr>`;
   }).join('');
 
@@ -697,7 +621,8 @@ function render(){
           <th class="col-symbol ${sortKey==='symbol'?'sorted':''}" onclick="sortBy('symbol')">SYMBOL</th>
           <th class="col-dist ${sortKey==='distPct'?'sorted':''}" onclick="sortBy('distPct')">DIST % FROM 200EMA</th>
           <th class="col-rvol">RVOL</th>
-          <th class="col-status">STATUS</th>
+          <th class="col-score ${sortKey==='scoreRank'?'sorted':''}" onclick="sortBy('scoreRank')">SCORE</th>
+          <th class="col-swept">SWEPT</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -705,23 +630,49 @@ function render(){
   `;
 }
 
-// Looks at the cached 4H candles for a symbol and flags whether a fresh sweep+reclaim
-// setup just happened near the current price (the exact pattern: old fractal low swept,
-// then reclaimed with a bullish 4H close). "Fresh" = within the last 3 candles, so the
-// table surfaces setups worth opening the chart for without checking every coin manually.
-function computeSetupSignal(d){
-  if(!d.candles || d.candles.length < 20) return null;
-  const fractals = detectFractalLows(d.candles, 3);
-  const n = d.candles.length;
-  const freshReclaims = fractals.filter(f => f.status === 'swept_reclaimed' && f.sweepIndex != null && (n - 1 - f.sweepIndex) <= 3);
-  if(freshReclaims.length){
-    return { type: 'reclaim', label: '⚡ RECLAIM', title: 'fresh sweep + bullish reclaim of an old swing low in the last 3 candles' };
-  }
-  const freshOpenSweeps = fractals.filter(f => f.status === 'swept_open' && f.sweepIndex != null && (n - 1 - f.sweepIndex) <= 1);
-  if(freshOpenSweeps.length){
-    return { type: 'watch', label: '◷ SWEPT', title: 'an old swing low was just swept — watch for a bullish reclaim candle' };
-  }
-  return null;
+// Checks a single timeframe's candles for a RECENT swept structural low: a fractal low
+// that has been swept (price traded below it) within the last `recentWindow` candles.
+// "Swept" alone counts here - it does not need to be reclaimed yet, since the scoring
+// system treats "swept" itself as the relevant liquidity event, with reclaim/structure
+// shift handled separately by the above/below-EMA check.
+const RECENT_SWEEP_WINDOW = 12; // ~last 12 candles on the given timeframe counts as "recent"
+
+function hasRecentSweep(candles, side){
+  if(!candles || candles.length < side*2+2) return false;
+  const fractals = detectFractalLows(candles, side);
+  const n = candles.length;
+  return fractals.some(f =>
+    (f.status === 'swept_open' || f.status === 'swept_reclaimed') &&
+    f.sweepIndex != null &&
+    (n - 1 - f.sweepIndex) <= RECENT_SWEEP_WINDOW
+  );
+}
+
+// Returns which of the 4H/12H/3D timeframes have a recent swept structural low, so the
+// UI can show exactly where the liquidity was taken.
+function findSweptTimeframes(candleSets){
+  const hit = [];
+  if(hasRecentSweep(candleSets['4h'], 3)) hit.push('4H');
+  if(hasRecentSweep(candleSets['12h'], 3)) hit.push('12H');
+  if(hasRecentSweep(candleSets['3d'], 3)) hit.push('3D');
+  return hit;
+}
+
+// The 3-tier scoring system, exactly as specified:
+//   Bad       = price below 4H 200EMA, AND no recent sweep on 4H/12H/3D
+//   Good      = price below 4H 200EMA, AND a recent sweep on 4H/12H/3D
+//   Excellent = price above 4H 200EMA, AND a recent sweep on 4H/12H/3D
+// (HH/HL structure check intentionally omitted for now per user request - may be added later)
+function computeSetupScore(above, candleSets){
+  const sweptTFs = findSweptTimeframes(candleSets);
+  const hasSweep = sweptTFs.length > 0;
+
+  let tier;
+  if(above && hasSweep) tier = 'excellent';
+  else if(!above && hasSweep) tier = 'good';
+  else tier = 'bad';
+
+  return { tier, sweptTFs };
 }
 
 function sortBy(key){
@@ -801,19 +752,9 @@ function renderTimeframe(tf, candles){
   document.getElementById('modalSub').textContent = TF_LABELS[tf];
   document.getElementById('chartArea').innerHTML = '<canvas id="chartCanvas" height="360"></canvas>';
   const n = TF_BAR_COUNTS[tf] || 120;
-  // fib is computed on the FULL series (so we don't miss a structure break that
-  // happened just before the visible window), only drawn on the 4H chart since
-  // that's this system's defining timeframe for impulsive legs.
-  const fib = (tf === '4h') ? detectStructureBreakFib(candles, 3) : null;
   const sliceStart = Math.max(0, candles.length - n);
   const visible = candles.slice(sliceStart);
-  // translate fib indices from full-series space into visible-slice space
-  const fibAdjusted = fib ? {
-    ...fib,
-    pointAIndex: fib.pointAIndex - sliceStart,
-    pointBIndex: fib.pointBIndex - sliceStart
-  } : null;
-  requestAnimationFrame(() => drawChart(visible, currentChart4hEma, tf, fibAdjusted));
+  requestAnimationFrame(() => drawChart(visible, currentChart4hEma, tf));
 }
 
 function closeModal(){
@@ -822,7 +763,7 @@ function closeModal(){
 
 document.addEventListener('keydown', e => { if(e.key === 'Escape') closeModal(); });
 
-function drawChart(candles, ema4hLevel, tf, fib){
+function drawChart(candles, ema4hLevel, tf){
   const canvas = document.getElementById('chartCanvas');
   if(!canvas) return;
   const dpr = window.devicePixelRatio || 1;
@@ -851,9 +792,8 @@ function drawChart(candles, ema4hLevel, tf, fib){
   const lows = candles.map(c=>c.l);
   const emaVals = showNativeEma ? candles.map(c=>c.ema).filter(v=>v!=null) : [];
   const refVals = (ema4hLevel!=null) ? [ema4hLevel] : [];
-  const fibVals = (fib && fib.pointAIndex >= 0) ? fib.levels.map(l=>l.price) : [];
-  let max = Math.max(...highs, ...emaVals, ...refVals, ...fibVals);
-  let min = Math.min(...lows, ...emaVals, ...refVals, ...fibVals);
+  let max = Math.max(...highs, ...emaVals, ...refVals);
+  let min = Math.min(...lows, ...emaVals, ...refVals);
   const pad = (max-min)*0.06 || max*0.01;
   max += pad; min -= pad;
 
@@ -979,48 +919,6 @@ function drawChart(candles, ema4hLevel, tf, fib){
     ctx.fill();
     ctx.restore();
   });
-
-  // fibonacci retracement of the most recent impulsive leg that broke structure.
-  // drawn from the breakout candle's high (0%) down to the launch low (100%).
-  // only drawn when point A falls within the visible window.
-  if(fib && fib.pointAIndex >= 0 && fib.pointAIndex < n){
-    const xA = xOf(fib.pointAIndex);
-    const xRight = padL + w; // levels extend from point A to the right edge of the chart
-    const fibColors = {
-      0: '#f4f4f4', 0.236: '#3a4a55', 0.382: '#3a4a55', 0.5: '#5aa9e6',
-      0.618: '#f0b429', 0.705: '#f0b429', 0.79: '#f0b429', 1: '#f4f4f4'
-    };
-    ctx.save();
-    fib.levels.forEach(lvl=>{
-      if(lvl.price < min || lvl.price > max) return;
-      const y = yOf(lvl.price);
-      const isOTE = lvl.pct >= 0.618 && lvl.pct <= 0.79; // the "optimal trade entry" zone
-      ctx.strokeStyle = fibColors[lvl.pct] || '#5c6e78';
-      ctx.lineWidth = isOTE ? 1.3 : 1;
-      ctx.setLineDash(lvl.pct===0||lvl.pct===1 ? [] : [3,3]);
-      ctx.globalAlpha = isOTE ? 0.9 : 0.55;
-      ctx.beginPath();
-      ctx.moveTo(xA, y);
-      ctx.lineTo(xRight, y);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-      ctx.setLineDash([]);
-      ctx.fillStyle = ctx.strokeStyle;
-      ctx.font = '9px monospace';
-      ctx.textAlign = 'left';
-      ctx.fillText((lvl.pct*100).toFixed(1)+'%', xRight - 34, y - 3);
-    });
-    // shade the OTE zone (0.618-0.79) for quick visual scanning
-    const oteTop = fib.levels.find(l=>l.pct===0.618);
-    const oteBottom = fib.levels.find(l=>l.pct===0.79);
-    if(oteTop && oteBottom){
-      const yTop = yOf(Math.max(oteTop.price, oteBottom.price));
-      const yBottom = yOf(Math.min(oteTop.price, oteBottom.price));
-      ctx.fillStyle = 'rgba(240,180,41,0.07)';
-      ctx.fillRect(xA, yTop, xRight-xA, yBottom-yTop);
-    }
-    ctx.restore();
-  }
 }
 
 // ---- touch alert system ----

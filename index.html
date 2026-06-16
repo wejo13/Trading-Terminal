@@ -227,21 +227,9 @@
   .legend-group p:last-child{margin-bottom:0;}
   .legend-group p b{color:var(--text);font-weight:700;}
 
-  /* main two-column layout: above-EMA table + below-EMA collapsible on the left,
-     trade journal on the right, independent heights, journal narrower than table */
-  .main-grid{
-    display:flex;gap:24px;align-items:flex-start;
-  }
-  .grid-col-table{flex:0 1 620px;min-width:0;}
-  .grid-col-journal{flex:1 1 280px;min-width:260px;}
-  @media (max-width:920px){
-    .main-grid{flex-direction:column;}
-    .grid-col-journal{min-width:0;width:100%;}
-  }
-
   /* --- trade journal --- */
   .journal-section{
-    border:1px solid var(--line);border-radius:6px;
+    margin-top:24px;border:1px solid var(--line);border-radius:6px;
     background:var(--panel);padding:18px 18px 20px;
   }
   .journal-title{
@@ -288,6 +276,28 @@
   }
   .journal-form textarea{font-family:var(--mono);resize:vertical;}
 
+  .jf-screenshot-field{margin-bottom:14px;}
+  .jf-screenshot-label{
+    display:flex;flex-direction:column;gap:6px;font-size:10px;color:var(--dim);
+    letter-spacing:0.3px;
+  }
+  .jf-screenshot-label input[type="file"]{
+    font-family:var(--mono);font-size:11px;color:var(--text);
+  }
+  .jf-screenshot-preview-wrap{
+    display:flex;align-items:center;gap:10px;margin-top:8px;
+  }
+  .jf-screenshot-preview-wrap img{
+    max-width:140px;max-height:90px;border:1px solid var(--line);border-radius:4px;
+    object-fit:cover;cursor:pointer;
+  }
+  .jf-screenshot-preview-wrap button{
+    background:none;border:1px solid var(--line);color:var(--dim);
+    font-family:var(--mono);font-size:10px;padding:5px 10px;border-radius:3px;cursor:pointer;
+  }
+  .jf-screenshot-preview-wrap button:hover{border-color:var(--red);color:var(--red);}
+  .jf-screenshot-note{font-size:10px;color:var(--dim);margin-top:6px;font-style:italic;}
+
   .jf-actions{display:flex;gap:8px;}
   .jf-actions button{
     background:none;border:1px solid var(--line);color:var(--text);
@@ -308,6 +318,12 @@
   #journalTable td.notes-cell{
     white-space:normal;max-width:220px;color:var(--dim);font-size:10.5px;
   }
+  #journalTable td.shot-cell{text-align:center;}
+  #journalTable td.shot-cell img{
+    width:48px;height:32px;object-fit:cover;border:1px solid var(--line);
+    border-radius:3px;cursor:pointer;vertical-align:middle;
+  }
+  #journalTable td.shot-cell span.no-shot{color:var(--dim);}
   .jt-outcome-win{color:var(--green);font-weight:700;}
   .jt-outcome-loss{color:var(--red);font-weight:700;}
   .jt-outcome-open{color:var(--amber);}
@@ -318,6 +334,11 @@
   }
   .jt-delete-btn:hover{border-color:var(--red);color:var(--red);}
   .journal-empty-note{text-align:center;color:var(--dim);font-size:11px;padding:16px 0;}
+  .journal-storage-note{font-size:10px;color:var(--dim);margin-top:8px;}
+  .journal-storage-note.storage-warn{color:var(--amber);}
+
+  .screenshot-modal{max-width:90vw;width:auto;padding:14px;text-align:center;}
+  .screenshot-modal img{max-width:100%;max-height:80vh;border-radius:4px;display:block;margin:0 auto;}
 
   ::-webkit-scrollbar{height:6px;width:6px;}
   ::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px;}
@@ -394,10 +415,8 @@
   <header>
     <div>
       <div class="title">EMA<span>200</span>/4H WATCH</div>
-      <div class="subtitle">top 100 USDT pairs by 7-day avg volume, $1B+ market cap, stablecoins excluded · market structure context · 4H timeframe · setup score below</div>
     </div>
     <div class="meta">
-      <div id="lastUpdated">—</div>
     </div>
   </header>
 
@@ -422,12 +441,9 @@
     <button id="clearLogBtn" onclick="clearAlertLog()">clear log</button>
   </div>
 
-  <div class="main-grid">
-    <div class="grid-col-table">
-      <div id="content"><div class="loading">loading 4H candles…</div></div>
-    </div>
-    <div class="grid-col-journal">
-    <section class="journal-section">
+  <div id="content"><div class="loading">loading 4H candles…</div></div>
+
+  <section class="journal-section">
       <h2 class="journal-title">TRADE JOURNAL</h2>
   
       <div class="journal-summary" id="journalSummary"></div>
@@ -480,12 +496,24 @@
         <label class="jf-notes-label">notes
           <textarea id="jf-notes" rows="2" placeholder="anything that doesn't fit a checkbox..."></textarea>
         </label>
+
+        <div class="jf-screenshot-field">
+          <label class="jf-screenshot-label">screenshot (optional, for reference later)
+            <input type="file" id="jf-screenshot-input" accept="image/*">
+          </label>
+          <div class="jf-screenshot-preview-wrap" id="jf-screenshot-preview-wrap" style="display:none;">
+            <img id="jf-screenshot-preview" alt="screenshot preview" onclick="openScreenshotModal(pendingScreenshotDataUrl)" style="cursor:pointer;">
+            <button type="button" id="jf-screenshot-remove" onclick="clearJournalScreenshotInput()">remove</button>
+          </div>
+          <div class="jf-screenshot-note" id="jf-screenshot-note"></div>
+        </div>
   
         <div class="jf-actions">
           <button type="submit">log trade</button>
           <button type="button" onclick="exportJournalCSV()">export CSV</button>
           <button type="button" onclick="exportJournalJSON()">export JSON</button>
         </div>
+        <div class="jf-check-note">screenshots are included in JSON export, not CSV (CSV can't hold image data)</div>
       </form>
   
       <div class="journal-log">
@@ -494,15 +522,13 @@
             <tr>
               <th>date</th><th>ticker</th><th>dir</th><th>checks</th>
               <th>notional</th><th>SL $</th><th>SL %</th>
-              <th>entry</th><th>exit</th><th>outcome</th><th>R</th><th>notes</th><th></th>
+              <th>entry</th><th>exit</th><th>outcome</th><th>R</th><th>chart</th><th>notes</th><th></th>
             </tr>
           </thead>
           <tbody id="journalTableBody"></tbody>
         </table>
       </div>
     </section>
-    </div>
-  </div>
 
   <details class="legend-section">
     <summary>what does this all mean? (click to expand)</summary>
@@ -591,6 +617,13 @@
       <span><span class="dot swept"></span>swept, not reclaimed</span>
       <span><span class="dot reclaimed"></span>swept + reclaimed (bullish close above)</span>
     </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="screenshotModalBg" onclick="if(event.target===this) closeScreenshotModal()">
+  <div class="modal screenshot-modal">
+    <button class="modal-close" onclick="closeScreenshotModal()">✕</button>
+    <img id="screenshotModalImg" alt="trade screenshot">
   </div>
 </div>
 
@@ -1308,7 +1341,6 @@ async function loadAll(){
   } catch(e){
     console.error(e);
   }
-  document.getElementById('lastUpdated').textContent = 'updated ' + new Date().toLocaleString();
   btn.disabled = false;
   render();
   // refresh the journal's ticker autocomplete list now that cryptoData is populated -
@@ -1612,7 +1644,6 @@ async function checkTouchAlerts(){
     }
   }
   if(updated.length) cryptoData = updated;
-  document.getElementById('lastUpdated').textContent = 'updated ' + new Date().toLocaleString();
   if(currentMarket === 'crypto') render();
 }
 
@@ -1764,6 +1795,125 @@ function computeRMultiple(direction, entry, exit, slPct){
   return pnlPerUnit / riskPerUnit;
 }
 
+// --- trade screenshot handling ---
+// Screenshots are stored as base64 JPEG data URLs directly inside each journal entry
+// in localStorage (no backend, same storage model as the rest of the journal). To
+// keep storage usage manageable, every image is downscaled to a max width and
+// re-encoded as JPEG at moderate quality client-side before it's ever stored -
+// a typical screenshot becomes a few dozen KB rather than several MB.
+const JOURNAL_SCREENSHOT_MAX_WIDTH = 800;
+const JOURNAL_SCREENSHOT_JPEG_QUALITY = 0.7;
+
+// Holds the processed (resized/compressed) data URL for whatever screenshot is
+// currently attached to the form, before the entry is actually submitted. Cleared
+// on submit and on explicit removal.
+let pendingScreenshotDataUrl = null;
+
+// Reads a File, draws it to an off-screen canvas at a capped width (preserving
+// aspect ratio, never upscaling smaller images), and resolves with a compressed
+// JPEG data URL. Rejects if the file can't be read or decoded as an image.
+function resizeAndCompressImage(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('could not read file'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('could not decode image'));
+      img.onload = () => {
+        const scale = Math.min(1, JOURNAL_SCREENSHOT_MAX_WIDTH / img.width);
+        const targetW = Math.round(img.width * scale);
+        const targetH = Math.round(img.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = targetW;
+        canvas.height = targetH;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, targetW, targetH);
+        resolve(canvas.toDataURL('image/jpeg', JOURNAL_SCREENSHOT_JPEG_QUALITY));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// Fired when the user picks a file in the screenshot input. Processes it
+// immediately (rather than waiting for form submit) so the preview shows right
+// away and any decode failure surfaces before the user fills out the rest of the
+// form. Resets the file input itself afterward since the processed data now lives
+// in pendingScreenshotDataUrl, not the input - this also makes the "remove" button
+// behave consistently whether or not the browser has re-rendered the input's value.
+function handleJournalScreenshotSelected(evt){
+  const file = evt.target.files && evt.target.files[0];
+  const note = document.getElementById('jf-screenshot-note');
+  if(!file) return;
+
+  if(note) note.textContent = 'processing image…';
+
+  resizeAndCompressImage(file).then(dataUrl => {
+    pendingScreenshotDataUrl = dataUrl;
+    showJournalScreenshotPreview(dataUrl);
+    if(note) note.textContent = '';
+  }).catch(err => {
+    console.error('screenshot processing failed', err);
+    pendingScreenshotDataUrl = null;
+    if(note) note.textContent = 'could not process that image - try a different file';
+  });
+}
+
+function showJournalScreenshotPreview(dataUrl){
+  const wrap = document.getElementById('jf-screenshot-preview-wrap');
+  const img = document.getElementById('jf-screenshot-preview');
+  if(!wrap || !img) return;
+  img.src = dataUrl;
+  wrap.style.display = 'flex';
+}
+
+// Clears any attached screenshot (pending state + preview + the file input itself),
+// used both by the explicit "remove" button and after a successful submit/reset.
+function clearJournalScreenshotInput(){
+  pendingScreenshotDataUrl = null;
+  const fileInput = document.getElementById('jf-screenshot-input');
+  const wrap = document.getElementById('jf-screenshot-preview-wrap');
+  const img = document.getElementById('jf-screenshot-preview');
+  const note = document.getElementById('jf-screenshot-note');
+  if(fileInput) fileInput.value = '';
+  if(wrap) wrap.style.display = 'none';
+  if(img) img.src = '';
+  if(note) note.textContent = '';
+}
+
+function openScreenshotModal(dataUrl){
+  if(!dataUrl) return;
+  document.getElementById('screenshotModalImg').src = dataUrl;
+  document.getElementById('screenshotModalBg').classList.add('open');
+}
+
+// Used by the log table's thumbnails - looks up the entry by id rather than having
+// every row embed its full (tens-of-KB) base64 string directly in an onclick
+// attribute.
+function openScreenshotModalForEntry(id){
+  const match = journalEntries.find(e => e.id === id);
+  if(match && match.screenshot) openScreenshotModal(match.screenshot);
+}
+
+function closeScreenshotModal(){
+  document.getElementById('screenshotModalBg').classList.remove('open');
+}
+
+// Rough estimate of how much of localStorage's typical ~5-10MB-per-origin budget
+// the journal (screenshots included, since those dominate) is currently using.
+// This is an estimate, not exact - browsers vary in their actual quota and in how
+// they count string storage overhead - but it's useful as an early warning before
+// saveJournalEntries starts silently failing because the quota is exhausted.
+function estimateJournalStorageUsage(){
+  let raw;
+  try{ raw = localStorage.getItem(JOURNAL_STORAGE_KEY) || ''; }
+  catch(e){ return null; }
+  const bytes = raw.length; // close enough for UTF-8/base64-heavy content
+  const kb = bytes / 1024;
+  return kb;
+}
+
 function submitJournalEntry(evt){
   evt.preventDefault();
 
@@ -1788,7 +1938,8 @@ function submitJournalEntry(evt){
     datetime: document.getElementById('jf-datetime').value,
     ticker, direction, checks,
     notional, slUsd, slPct, entry, exit, outcome,
-    rMultiple, notes
+    rMultiple, notes,
+    screenshot: pendingScreenshotDataUrl || null
   };
 
   journalEntries.push(entry_obj);
@@ -1798,6 +1949,7 @@ function submitJournalEntry(evt){
   document.getElementById('journalForm').reset();
   setJournalDatetimeToNow();
   document.getElementById('jf-autofill-note').textContent = '';
+  clearJournalScreenshotInput();
 }
 
 function deleteJournalEntry(id){
@@ -1816,12 +1968,15 @@ function renderJournalSummary(){
   const winRate = closed.length ? ((wins/closed.length)*100).toFixed(1) : null;
   const rValues = journalEntries.filter(e => e.rMultiple != null).map(e => e.rMultiple);
   const avgR = rValues.length ? (rValues.reduce((s,v)=>s+v,0)/rValues.length).toFixed(2) : null;
+  const storageKb = estimateJournalStorageUsage();
+  const shotCount = journalEntries.filter(e => e.screenshot).length;
 
   el.innerHTML = `
     <div>total trades: <b>${journalEntries.length}</b></div>
     <div>closed: <b>${closed.length}</b></div>
     ${winRate != null ? `<div class="${winRate<50?'neg-stat':''}">win rate: <b>${winRate}%</b></div>` : ''}
     ${avgR != null ? `<div class="${avgR<0?'neg-stat':''}">avg R: <b>${avgR>=0?'+':''}${avgR}</b></div>` : ''}
+    ${storageKb != null ? `<div class="${storageKb>4000?'neg-stat':''}">journal storage: <b>${storageKb>=1024?(storageKb/1024).toFixed(1)+'MB':storageKb.toFixed(0)+'KB'}</b>${shotCount?` (${shotCount} screenshot${shotCount===1?'':'s'})`:''}</div>` : ''}
   `;
 }
 
@@ -1832,7 +1987,7 @@ function renderJournalLog(){
   renderJournalSummary();
 
   if(!journalEntries.length){
-    tbody.innerHTML = '<tr><td colspan="13" class="journal-empty-note">no trades logged yet</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="14" class="journal-empty-note">no trades logged yet</td></tr>';
     return;
   }
 
@@ -1844,6 +1999,9 @@ function renderJournalLog(){
     const dt = e.datetime ? e.datetime.replace('T',' ') : '—';
     const fmt = v => v == null ? '—' : v;
     const rText = e.rMultiple != null ? `${e.rMultiple>=0?'+':''}${e.rMultiple.toFixed(2)}` : '—';
+    const shotCell = e.screenshot
+      ? `<img src="${e.screenshot}" onclick="openScreenshotModalForEntry('${e.id}')" alt="trade screenshot thumbnail">`
+      : `<span class="no-shot">—</span>`;
     return `
     <tr>
       <td>${dt}</td>
@@ -1857,6 +2015,7 @@ function renderJournalLog(){
       <td>${fmt(e.exit)}</td>
       <td class="jt-outcome-${e.outcome}">${e.outcome}</td>
       <td>${rText}</td>
+      <td class="shot-cell">${shotCell}</td>
       <td class="notes-cell">${e.notes ? e.notes.replace(/</g,'&lt;') : ''}</td>
       <td><button class="jt-delete-btn" onclick="deleteJournalEntry('${e.id}')">del</button></td>
     </tr>`;
@@ -1876,12 +2035,13 @@ function exportJournalJSON(){
 function exportJournalCSV(){
   if(!journalEntries.length){ alert('no journal entries to export yet'); return; }
   const headers = ['datetime','ticker','direction','check1','check2','check3','check4','check5','check6',
-    'notional','slUsd','slPct','entry','exit','outcome','rMultiple','notes'];
+    'notional','slUsd','slPct','entry','exit','outcome','rMultiple','hasScreenshot','notes'];
   const rows = journalEntries.map(e => [
     e.datetime, e.ticker, e.direction,
     ...e.checks.map(c => c ? 'TRUE' : 'FALSE'),
     e.notional ?? '', e.slUsd ?? '', e.slPct ?? '', e.entry ?? '', e.exit ?? '',
     e.outcome, e.rMultiple != null ? e.rMultiple.toFixed(3) : '',
+    e.screenshot ? 'TRUE' : 'FALSE',
     (e.notes||'').replace(/"/g,'""')
   ]);
   const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n');
@@ -1906,6 +2066,9 @@ function initJournalForm(){
     const fieldKey = id === 'jf-notional' ? 'notional' : (id === 'jf-sl-usd' ? 'slUsd' : 'slPct');
     el.addEventListener('input', () => handleJournalSizingInput(fieldKey));
   });
+
+  const screenshotInput = document.getElementById('jf-screenshot-input');
+  if(screenshotInput) screenshotInput.addEventListener('change', handleJournalScreenshotSelected);
 
   renderJournalLog();
 }

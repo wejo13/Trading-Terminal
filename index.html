@@ -104,11 +104,22 @@
   .score-badge.bad{background:var(--red-dim);color:var(--red);}
   .score-badge.good{background:rgba(240,180,41,0.12);color:var(--amber);border:1px solid rgba(240,180,41,0.3);}
   .score-badge.excellent{background:var(--green-dim);color:var(--green);border:1px solid rgba(45,212,160,0.4);}
+  .score-badge.excellent_plus{
+    background:var(--green-dim);color:var(--green);border:1px solid var(--green);
+    box-shadow:0 0 8px rgba(45,212,160,0.35);
+  }
 
   .swept-tfs{
     font-size:10px;font-weight:700;color:var(--violet);letter-spacing:0.3px;
   }
   .swept-tfs.none{color:var(--dim);font-weight:400;}
+  /* freshness fade: a sweep from a few candles ago is more actionable right now than
+     one approaching the edge of the 12-candle window, so aging sweeps dim down */
+  .swept-tfs.fresh{opacity:1;}
+  .swept-tfs.aging{opacity:0.55;}
+  .swept-ago{
+    font-size:9px;color:var(--dim);margin-left:5px;font-weight:400;
+  }
 
   /* tiny dot next to DIST% showing how far price has extended from the 4H 200EMA -
      deliberately subtle since this is supporting context, not a primary signal */
@@ -447,7 +458,7 @@ const STOCK_SYMBOLS = [
   "COIN","MSTR","SPY","QQQ","SMCI","PLTR","CRM","ORCL","JPM","XOM"
 ];
 
-const SCORE_LABELS = { excellent: 'EXCELLENT', good: 'GOOD', bad: 'BAD' };
+const SCORE_LABELS = { excellent_plus: 'EXCELLENT+', excellent: 'EXCELLENT', good: 'GOOD', bad: 'BAD' };
 const DIST_TIER_LABELS = {
   tight: 'tight to 4H 200EMA (within 2%)',
   extended: 'extended from 4H 200EMA (2-8%)',
@@ -643,7 +654,7 @@ async function fetchBinance4h(symbol, fundingMap){
 
   const above = lastClose > e;
   const score = computeSetupScore(above, { '4h': candles, '12h': candles12h, '3d': candles3d });
-  const SCORE_RANK = { excellent: 3, good: 2, bad: 1 };
+  const SCORE_RANK = { excellent_plus: 4, excellent: 3, good: 2, bad: 1 };
   const distPct = ((lastClose - e)/e)*100;
 
   // funding rate isn't available for every spot symbol (not all have a perpetual
@@ -766,12 +777,22 @@ function render(){
       ? `<span class="rvol-badge ${rvolHigh?'hot':''}" title="current 4H volume vs 20-candle average">${rvol.toFixed(1)}x</span>`
       : '';
     const score = d.score;
+    const sweptSummaryForTooltip = score && score.sweptTFs.length
+      ? 'swept on: ' + score.sweptTFs.map(s => `${s.label} (${s.candlesAgo} candle${s.candlesAgo===1?'':'s'} ago)`).join(', ')
+      : 'no recent sweep detected';
     const scoreBadge = score
-      ? `<span class="score-badge ${score.tier}" title="${score.sweptTFs.length ? 'swept on: '+score.sweptTFs.join(', ') : 'no recent sweep detected'}">${SCORE_LABELS[score.tier]}</span>`
+      ? `<span class="score-badge ${score.tier}" title="${sweptSummaryForTooltip}">${SCORE_LABELS[score.tier]}</span>`
       : '';
-    const sweptLabel = score && score.sweptTFs.length
-      ? `<span class="swept-tfs">${score.sweptTFs.join('+')}</span>`
-      : '<span class="swept-tfs none">—</span>';
+
+    // swept label shows which timeframe(s) + how fresh the most recent sweep is, fading
+    // toward the dim/quiet end as it ages past the middle of the 12-candle freshness window
+    let sweptLabel = '<span class="swept-tfs none">—</span>';
+    if(score && score.sweptTFs.length){
+      const tfText = score.sweptTFs.map(s => s.label).join('+');
+      const freshestAgo = Math.min(...score.sweptTFs.map(s => s.candlesAgo));
+      const freshness = freshestAgo <= RECENT_SWEEP_WINDOW/2 ? 'fresh' : 'aging';
+      sweptLabel = `<span class="swept-tfs ${freshness}">${tfText}</span><span class="swept-ago">${freshestAgo}c ago</span>`;
+    }
 
     // distance tier shown as a tiny dot next to the % rather than its own column -
     // tight=dim, extended=amber, very_extended=red, signalling "chasing" without shouting
@@ -840,42 +861,64 @@ function render(){
 // "Swept" alone counts here - it does not need to be reclaimed yet, since the scoring
 // system treats "swept" itself as the relevant liquidity event, with reclaim/structure
 // shift handled separately by the above/below-EMA check.
+// Returns null if no recent sweep, or { candlesAgo } for the MOST RECENT qualifying sweep
+// on this timeframe (lower candlesAgo = fresher = more actionable right now).
 const RECENT_SWEEP_WINDOW = 12; // ~last 12 candles on the given timeframe counts as "recent"
 
-function hasRecentSweep(candles, side){
-  if(!candles || candles.length < side*2+2) return false;
+function getRecentSweepInfo(candles, side){
+  if(!candles || candles.length < side*2+2) return null;
   const fractals = detectFractalLows(candles, side);
   const n = candles.length;
-  return fractals.some(f =>
-    (f.status === 'swept_open' || f.status === 'swept_reclaimed') &&
-    f.sweepIndex != null &&
-    (n - 1 - f.sweepIndex) <= RECENT_SWEEP_WINDOW
-  );
+  let best = null; // tracks the LOWEST candlesAgo (freshest) qualifying sweep
+  fractals.forEach(f => {
+    if((f.status === 'swept_open' || f.status === 'swept_reclaimed') && f.sweepIndex != null){
+      const candlesAgo = n - 1 - f.sweepIndex;
+      if(candlesAgo <= RECENT_SWEEP_WINDOW && (best === null || candlesAgo < best)){
+        best = candlesAgo;
+      }
+    }
+  });
+  return best === null ? null : { candlesAgo: best };
 }
 
-// Returns which of the 4H/12H/3D timeframes have a recent swept structural low, so the
-// UI can show exactly where the liquidity was taken.
+// kept for any external callers expecting a boolean - now backed by getRecentSweepInfo
+function hasRecentSweep(candles, side){
+  return getRecentSweepInfo(candles, side) !== null;
+}
+
+// Returns which of the 4H/12H/3D timeframes have a recent swept structural low, along
+// with how fresh each sweep is, so the UI can show exactly where (and how recently)
+// the liquidity was taken.
 function findSweptTimeframes(candleSets){
   const hit = [];
-  if(hasRecentSweep(candleSets['4h'], 3)) hit.push('4H');
-  if(hasRecentSweep(candleSets['12h'], 3)) hit.push('12H');
-  if(hasRecentSweep(candleSets['3d'], 3)) hit.push('3D');
+  const tfConfigs = [['4H','4h'], ['12H','12h'], ['3D','3d']];
+  tfConfigs.forEach(([label, key]) => {
+    const info = getRecentSweepInfo(candleSets[key], 3);
+    if(info) hit.push({ label, candlesAgo: info.candlesAgo });
+  });
   return hit;
 }
 
-// The 3-tier scoring system, exactly as specified:
-//   Bad       = price below 4H 200EMA, AND no recent sweep on 4H/12H/3D
-//   Good      = price below 4H 200EMA, AND a recent sweep on 4H/12H/3D
-//   Excellent = price above 4H 200EMA, AND a recent sweep on 4H/12H/3D
+// The scoring system:
+//   Bad        = price below 4H 200EMA, AND no recent sweep on 4H/12H/3D
+//   Good       = price below 4H 200EMA, AND a recent sweep on 4H/12H/3D
+//   Excellent  = price above 4H 200EMA, AND a recent sweep on EXACTLY ONE of 4H/12H/3D
+//   Excellent+ = price above 4H 200EMA, AND a recent sweep on TWO OR MORE of 4H/12H/3D
+//                at once - multiple timeframes lining up on the same liquidity event is
+//                a meaningfully stronger signal than a sweep showing up on just one
 // (HH/HL structure check intentionally omitted for now per user request - may be added later)
 function computeSetupScore(above, candleSets){
   const sweptTFs = findSweptTimeframes(candleSets);
   const hasSweep = sweptTFs.length > 0;
 
   let tier;
-  if(above && hasSweep) tier = 'excellent';
-  else if(!above && hasSweep) tier = 'good';
-  else tier = 'bad';
+  if(above && hasSweep){
+    tier = sweptTFs.length >= 2 ? 'excellent_plus' : 'excellent';
+  } else if(!above && hasSweep){
+    tier = 'good';
+  } else {
+    tier = 'bad';
+  }
 
   return { tier, sweptTFs };
 }

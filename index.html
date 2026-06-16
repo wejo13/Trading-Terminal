@@ -30,7 +30,7 @@
   .wrap{max-width:980px;margin:0 auto;padding:28px 18px 60px;}
 
   header{
-    display:flex;justify-content:space-between;align-items:flex-end;
+    display:flex;justify-content:center;align-items:flex-end;
     border-bottom:1px solid var(--line);
     padding-bottom:14px;margin-bottom:18px;flex-wrap:wrap;gap:10px;
   }
@@ -67,7 +67,7 @@
   }
   .stats-strip span{color:var(--green);font-weight:700;}
 
-  table{width:100%;max-width:620px;border-collapse:collapse;font-size:13px;}
+  table{width:100%;max-width:720px;border-collapse:collapse;font-size:13px;}
   thead th{
     text-align:left;font-size:10px;color:var(--dim);letter-spacing:0.6px;
     padding:6px 14px 6px 10px;border-bottom:1px solid var(--line);cursor:pointer;
@@ -79,6 +79,7 @@
   th.col-dist, td.num{width:1%;}
   th.col-rvol, td.rvol-cell{width:1%;}
   th.col-score, td.score-cell{width:1%;}
+  th.col-funding, td.funding-cell{width:1%;}
   th.col-swept, td.swept-cell{width:1%;}
   tbody tr{border-bottom:1px solid var(--line);position:relative;}
   tbody tr:hover{background:#0f1419;}
@@ -103,6 +104,7 @@
   th.col-dist{text-align:right;}
   th.col-rvol{text-align:right;}
   td.score-cell{text-align:center;}
+  td.funding-cell{text-align:center;}
   td.swept-cell{text-align:center;}
   .pct{font-weight:700;}
   .pct.pos{color:var(--green);}
@@ -148,18 +150,18 @@
   .dist-tier-dot.extended{background:var(--amber);opacity:0.6;}
   .dist-tier-dot.very_extended{background:var(--red);opacity:0.7;}
 
-  /* funding rate shown as small inline text (readable without hovering), with the
-     OI delta still tucked into the dot's tooltip alongside it */
+  /* funding rate now has its own column (FUNDING) rather than sitting inline next
+     to the score badge - OI delta stays tucked into the dot's tooltip alongside it */
   .funding-text{
-    font-size:9px;font-weight:600;margin-left:6px;letter-spacing:0.2px;
+    font-size:10px;font-weight:600;letter-spacing:0.2px;
   }
   .funding-text.neg{color:var(--green);opacity:0.85;}
   .funding-text.pos{color:var(--red);opacity:0.85;}
   .funding-text.flat{color:var(--dim);}
 
-  /* small funding-rate/OI confluence indicator next to the score badge - intentionally
-     quiet (a small dot, not a column) per the request to keep volume/funding/OI
-     visible but not too visible */
+  /* small funding-rate/OI confluence indicator next to the funding text -
+     intentionally quiet (a small dot, not its own column) since OI wasn't asked
+     to be made visible inline, just funding rate itself */
   .conf-dot{
     display:inline-block;width:6px;height:6px;border-radius:50%;
     margin-left:4px;vertical-align:middle;cursor:help;
@@ -414,9 +416,7 @@
 
   <header>
     <div>
-      <div class="title">EMA<span>200</span>/4H WATCH</div>
-    </div>
-    <div class="meta">
+      <div class="title">4H <span>200</span> EMA WATCHLIST</div>
     </div>
   </header>
 
@@ -566,8 +566,8 @@
       </div>
 
       <div class="legend-group">
-        <h4>Funding rate and open interest — the small dot in the SCORE cell</h4>
-        <p>Where available (not every coin has a Binance futures contract), the small text next to the score badge shows that coin's current perpetual futures funding rate. Hovering the dot next to it also shows the 24-hour open interest change. Negative funding means short positions are paying long positions — a sign of crowded short positioning, which can be a contrarian-bullish tell that pairs naturally with this system's liquidity-sweep logic. The dot is colored green-ish when that contrarian read leans bullish, red-ish when it leans cautionary, and grey when it's roughly neutral or there's no data for that coin.</p>
+        <h4>FUNDING column and open interest dot</h4>
+        <p>Where available (not every coin has a Binance futures contract), the FUNDING column shows that coin's current perpetual futures funding rate. Hovering the small dot next to it also shows the 24-hour open interest change. Negative funding means short positions are paying long positions — a sign of crowded short positioning, which can be a contrarian-bullish tell that pairs naturally with this system's liquidity-sweep logic. The dot is colored green-ish when that contrarian read leans bullish, red-ish when it leans cautionary, and grey when it's roughly neutral or there's no data for that coin. A dash means no futures contract was found for that coin on Binance.</p>
       </div>
 
       <div class="legend-group">
@@ -665,7 +665,7 @@ const MARKET_CAP_FLOOR = 1_000_000_000;
 // EXCELLENT tier with noise that has nothing to do with the trading system.
 const STABLECOIN_BLOCKLIST = new Set([
   "USD1","RLUSD","BFUSD","USDS","USDC","USDE","DAI","FDUSD","TUSD",
-  "PYUSD","USDP","GUSD","USTC","FRAX","LUSD","USDD"
+  "PYUSD","USDP","GUSD","USTC","FRAX","LUSD","USDD","U"
 ]);
 
 async function fetch7DayAvgVolume(symbol){
@@ -1096,10 +1096,12 @@ function buildRows(list){
     // tight=dim, extended=amber, very_extended=red, signalling "chasing" without shouting
     const distDot = `<span class="dist-tier-dot ${d.distTier}" title="${DIST_TIER_LABELS[d.distTier]}"></span>`;
 
-    // funding rate is shown inline (small text) since the user wants it readable
-    // without hovering. OI delta stays tooltip-only on the dot, since that one wasn't
-    // asked to be made visible inline.
-    let confluenceHtml = '';
+    // funding rate gets its own column (FUNDING) rather than sitting inline next to
+    // the score badge - keeps the score column a clean, consistently-centered badge,
+    // and gives funding its own readable, sortable-feeling place in the table. OI
+    // delta stays tooltip-only on the small dot next to the funding text, since that
+    // one wasn't asked to be made visible inline.
+    let fundingCellHtml = '<span class="funding-text flat">—</span>';
     const hasFunding = d.fundingRate != null;
     const hasOI = d.oiDeltaPct != null;
     if(hasFunding || hasOI){
@@ -1119,8 +1121,8 @@ function buildRows(list){
 
       const fundingText = hasFunding
         ? `<span class="funding-text ${tone}">${d.fundingRate>=0?'+':''}${(d.fundingRate*100).toFixed(3)}%</span>`
-        : '';
-      confluenceHtml = `${fundingText}<span class="conf-dot ${tone}" title="${tooltipParts.join(' · ')}"></span>`;
+        : '<span class="funding-text flat">—</span>';
+      fundingCellHtml = `${fundingText}<span class="conf-dot ${tone}" title="${tooltipParts.join(' · ')}"></span>`;
     }
 
     // visual triage: Excellent/Excellent+ rows get a stronger row-level highlight (not
@@ -1135,7 +1137,8 @@ function buildRows(list){
       <td class="sym"><span class="strip ${d.above?'above':'below'}"></span>${d.symbol}</td>
       <td class="num pct ${d.distPct>=0?'pos':'neg'}">${d.distPct>=0?'+':''}${d.distPct.toFixed(2)}%${distDot}</td>
       <td class="num rvol-cell">${rvolBadge}</td>
-      <td class="score-cell">${scoreBadge}${confluenceHtml}</td>
+      <td class="score-cell">${scoreBadge}</td>
+      <td class="funding-cell">${fundingCellHtml}</td>
       <td class="swept-cell">${sweptLabel}</td>
     </tr>`;
   }).join('');
@@ -1148,6 +1151,7 @@ const TABLE_HEAD = `
       <th class="col-dist ${sortKey==='distPct'?'sorted':''}" onclick="sortBy('distPct')">DIST % FROM 200EMA</th>
       <th class="col-rvol">RVOL</th>
       <th class="col-score ${sortKey==='scoreRank'?'sorted':''}" onclick="sortBy('scoreRank')">SCORE</th>
+      <th class="col-funding">FUNDING</th>
       <th class="col-swept">SWEPT</th>
     </tr>
   </thead>`;
@@ -1192,14 +1196,14 @@ function render(){
     ${note}
     <table>
       ${TABLE_HEAD}
-      <tbody>${aboveRows || '<tr><td colspan="5" class="empty-note">no coins currently above their 4H 200EMA</td></tr>'}</tbody>
+      <tbody>${aboveRows || '<tr><td colspan="6" class="empty-note">no coins currently above their 4H 200EMA</td></tr>'}</tbody>
     </table>
 
     <details class="below-ema-section">
       <summary>below 200EMA (${belowList.length}) — click to expand</summary>
       <table>
         ${TABLE_HEAD}
-        <tbody>${belowRows || '<tr><td colspan="5" class="empty-note">no coins currently below their 4H 200EMA</td></tr>'}</tbody>
+        <tbody>${belowRows || '<tr><td colspan="6" class="empty-note">no coins currently below their 4H 200EMA</td></tr>'}</tbody>
       </table>
     </details>
   `;

@@ -645,7 +645,7 @@ const FALLBACK_CRYPTO_SYMBOLS = [
   "HBARUSDT","UNIUSDT","AAVEUSDT","MKRUSDT","PEPEUSDT","WIFUSDT"
 ];
 
-const SYMBOL_LIST_CACHE_KEY = 'ema_watch_top100_symbols_v5_nostable';
+const SYMBOL_LIST_CACHE_KEY = 'ema_watch_top100_symbols_v6_nostable';
 const SYMBOL_LIST_CACHE_TTL = 24 * 60 * 60 * 1000; // re-rank once a day; otherwise reuse cached list
 
 let CRYPTO_SYMBOLS = FALLBACK_CRYPTO_SYMBOLS;
@@ -729,6 +729,10 @@ async function loadTop100SymbolsByVolume(){
 
   const usdtPairs = all.filter(t =>
     t.symbol.endsWith('USDT') &&
+    /^[A-Z0-9]+USDT$/.test(t.symbol) && // ASCII-only ticker - excludes non-Latin-script
+    // meme coins (e.g. a Chinese-character "Binance Life" token) that can clear the
+    // market cap floor purely on hype/whale-concentrated volume despite having none
+    // of the genuine liquidity/distribution the filter is meant to require
     !t.symbol.includes('UP') && !t.symbol.includes('DOWN') &&
     !t.symbol.includes('BULL') && !t.symbol.includes('BEAR') &&
     !STABLECOIN_BLOCKLIST.has(t.symbol.replace(/USDT$/, ''))

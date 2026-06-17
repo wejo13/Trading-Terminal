@@ -395,11 +395,12 @@
   .alert-status{font-size:10px;font-weight:700;padding:3px 9px;border-radius:3px;letter-spacing:0.4px;}
   .alert-status.on{background:var(--green-dim);color:var(--green);}
   .alert-status.off{background:var(--red-dim);color:var(--red);}
-  #alertToggleBtn{
+  #alertToggleBtn, .alert-btn{
     background:none;border:1px solid var(--line);color:var(--text);
     font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:3px;cursor:pointer;
   }
-  #alertToggleBtn:hover{border-color:var(--violet);color:var(--violet);}
+  #alertToggleBtn:hover, .alert-btn:hover{border-color:var(--violet);color:var(--violet);}
+  .alert-status.warn{background:rgba(240,180,41,0.12);color:var(--amber);}
   .alert-log{font-size:10px;color:var(--dim);margin-top:8px;max-height:160px;overflow-y:auto;border-top:1px solid var(--line);padding-top:6px;}
   .alert-log div{padding:2px 0;}
   .alert-log .hit{color:var(--violet);}
@@ -435,9 +436,12 @@
     <div class="alert-info">
       <span class="alert-status off" id="alertStatusBadge">ALERTS OFF</span>
       &nbsp; touch alert: <b>was above 4H 200EMA → price comes back down and touches it</b>, checked hourly while this tab is open
+      <div id="notifPermissionNote" style="margin-top:4px;"></div>
       <div class="alert-log" id="alertLog"></div>
     </div>
     <button id="alertToggleBtn" onclick="toggleAlerts()">enable alerts</button>
+    <button class="alert-btn" onclick="sendTestNotification()">send test notification</button>
+    <button class="alert-btn" onclick="checkTouchAlerts(true)">check now</button>
     <button id="clearLogBtn" onclick="clearAlertLog()">clear log</button>
   </div>
 
@@ -1711,9 +1715,10 @@ function classifyTouch(candle, emaLevel){
   return 'below';
 }
 
-async function checkTouchAlerts(){
-  console.log('running hourly EMA touch check…');
+async function checkTouchAlerts(isManual){
+  console.log('running' + (isManual ? ' manual' : ' hourly') + ' EMA touch check…');
   const updated = [];
+  let touchesFound = 0;
   for(const symbol of CRYPTO_SYMBOLS){
     try{
       const fresh = await fetchBinance4h(symbol);
@@ -1724,6 +1729,7 @@ async function checkTouchAlerts(){
 
       if(state === 'touching' && prev === 'above'){
         const label = symbol.replace('USDT','');
+        touchesFound++;
         logAlert(`${label} touched its 4H 200EMA coming from above`, true);
         notify(`${label} touched the 4H 200EMA`, `${label} was trading above its 4H 200EMA and price just came back down to touch it.`);
       }
@@ -1735,13 +1741,60 @@ async function checkTouchAlerts(){
   }
   if(updated.length) cryptoData = updated;
   if(currentMarket === 'crypto') render();
+  // manual checks (the "check now" button) log a clear confirmation either way, so
+  // clicking it never looks like nothing happened - the silent hourly timer doesn't
+  // log "checked, nothing found" every time, since that would flood the log with
+  // 24 uneventful entries a day
+  if(isManual){
+    logAlert(touchesFound ? `manual check complete — ${touchesFound} touch alert${touchesFound===1?'':'s'} found` : 'manual check complete — no touches found right now', false);
+  }
 }
 
+// Returns true if a notification was actually shown, false otherwise - callers use
+// this to log the real outcome rather than assume notify() always works, since
+// browser notification permission can be denied/blocked independently of whether
+// the hourly alert timer itself is running.
 function notify(title, body){
-  if(!('Notification' in window)) return;
+  if(!('Notification' in window)) return false;
   if(Notification.permission === 'granted'){
     new Notification(title, { body, icon: undefined });
+    return true;
   }
+  return false;
+}
+
+// Keeps a small status line in the alert panel honest about whether browser
+// notifications can actually reach the user, independent of whether the hourly
+// check timer is running - "ALERTS ON" alone doesn't mean notifications work if
+// permission was denied or never granted.
+function renderNotifPermissionNote(){
+  const el = document.getElementById('notifPermissionNote');
+  if(!el) return;
+  if(!('Notification' in window)){
+    el.innerHTML = '<span style="color:var(--red);">this browser does not support notifications at all</span>';
+    return;
+  }
+  const perm = Notification.permission;
+  if(perm === 'granted'){
+    el.innerHTML = '<span style="color:var(--green);">browser notification permission: granted</span>';
+  } else if(perm === 'denied'){
+    el.innerHTML = '<span style="color:var(--red);">browser notification permission: denied — alerts will log here but no popup will appear. Re-enable notifications for this page in your browser site settings.</span>';
+  } else {
+    el.innerHTML = '<span style="color:var(--amber);">browser notification permission: not yet granted — click "enable alerts" or "send test notification" to be prompted.</span>';
+  }
+}
+
+// Fires a real notification attempt right now (rather than waiting for a real
+// price touch or the hourly timer) so the user can immediately confirm whether
+// browser notifications are actually reaching them. Logs the real outcome either
+// way, since a silent no-op would be just as confusing as the original problem.
+async function sendTestNotification(){
+  if('Notification' in window && Notification.permission === 'default'){
+    await Notification.requestPermission();
+  }
+  const ok = notify('EMA Watch — test notification', 'If you can see this, browser notifications are working correctly.');
+  logAlert(ok ? 'test notification sent successfully' : 'test notification failed — browser permission is ' + (('Notification' in window) ? Notification.permission : 'unsupported'), ok);
+  renderNotifPermissionNote();
 }
 
 async function toggleAlerts(){
@@ -1753,6 +1806,7 @@ async function toggleAlerts(){
     document.getElementById('alertStatusBadge').className = 'alert-status off';
     document.getElementById('alertToggleBtn').textContent = 'enable alerts';
     logAlert('alerts disabled', false);
+    renderNotifPermissionNote();
     return;
   }
 
@@ -1768,10 +1822,16 @@ async function toggleAlerts(){
   });
 
   alertsEnabled = true;
-  document.getElementById('alertStatusBadge').textContent = 'ALERTS ON';
-  document.getElementById('alertStatusBadge').className = 'alert-status on';
+  // the badge reflects whether notifications can actually reach the user, not just
+  // whether the hourly timer is running - a denied/unsupported permission state
+  // still shows ALERTS ON (the log will still record hits) but in a warning color
+  // so it's visually clear that popups won't appear
+  const notifReady = ('Notification' in window) && Notification.permission === 'granted';
+  document.getElementById('alertStatusBadge').textContent = notifReady ? 'ALERTS ON' : 'ALERTS ON (no popups)';
+  document.getElementById('alertStatusBadge').className = 'alert-status ' + (notifReady ? 'on' : 'warn');
   document.getElementById('alertToggleBtn').textContent = 'disable alerts';
   logAlert('alerts enabled — checking every hour while this tab stays open', false);
+  renderNotifPermissionNote();
 
   alertTimerId = setInterval(checkTouchAlerts, 60*60*1000); // every hour
 }
@@ -2166,6 +2226,7 @@ function initJournalForm(){
 
 loadAll();
 renderAlertLog();
+renderNotifPermissionNote();
 initJournalForm();
 </script>
 </body>

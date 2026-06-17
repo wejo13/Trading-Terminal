@@ -342,12 +342,24 @@
     font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:3px;cursor:pointer;
   }
   .jt-delete-btn:hover{border-color:var(--red);color:var(--red);}
+  .jt-share-btn{
+    background:none;border:1px solid var(--line);color:var(--dim);
+    font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:3px;cursor:pointer;
+    margin-right:4px;
+  }
+  .jt-share-btn:hover{border-color:var(--violet);color:var(--violet);}
   .journal-empty-note{text-align:center;color:var(--dim);font-size:11px;padding:16px 0;}
   .journal-storage-note{font-size:10px;color:var(--dim);margin-top:8px;}
   .journal-storage-note.storage-warn{color:var(--amber);}
 
   .screenshot-modal{max-width:90vw;width:auto;padding:14px;text-align:center;}
   .screenshot-modal img{max-width:100%;max-height:80vh;border-radius:4px;display:block;margin:0 auto;}
+  .share-x-modal{max-width:520px;}
+  #shareXText{
+    width:100%;background:var(--bg);border:1px solid var(--line);border-radius:4px;
+    color:var(--text);font-family:var(--mono);font-size:12px;padding:10px;resize:vertical;
+    box-sizing:border-box;
+  }
 
   ::-webkit-scrollbar{height:6px;width:6px;}
   ::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px;}
@@ -641,6 +653,23 @@
   <div class="modal screenshot-modal">
     <button class="modal-close" onclick="closeScreenshotModal()">✕</button>
     <img id="screenshotModalImg" alt="trade screenshot">
+  </div>
+</div>
+
+<div class="modal-bg" id="shareXModalBg" onclick="if(event.target===this) closeShareToXModal()">
+  <div class="modal share-x-modal">
+    <button class="modal-close" onclick="closeShareToXModal()">✕</button>
+    <div class="sym" style="font-size:16px;margin-bottom:10px;">share trade to X</div>
+    <textarea id="shareXText" rows="6"></textarea>
+    <div id="shareXScreenshotNote" class="jf-check-note"></div>
+    <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">
+      <button class="refresh-btn" id="shareXCopyBtn" onclick="copyShareXText()">copy text</button>
+      <a id="shareXDownloadLink" class="refresh-btn" style="display:none;text-decoration:none;" download="trade_screenshot.jpg">download screenshot</a>
+      <a id="shareXIntentLink" class="refresh-btn" style="text-decoration:none;" target="_blank" rel="noopener">open on X ↗</a>
+    </div>
+    <div class="jf-check-note" style="margin-top:10px;">
+      X's compose box can't be pre-filled with an image through a simple link — if this trade has a screenshot, download it first, then attach it manually after the composer opens.
+    </div>
   </div>
 </div>
 
@@ -2135,6 +2164,81 @@ function closeScreenshotModal(){
   document.getElementById('screenshotModalBg').classList.remove('open');
 }
 
+// Builds a plain-text trade recap draft from a journal entry - used as a starting
+// point for the share-to-X feature, never auto-posted. Kept factual and free of
+// hype/promises, since this is meant to genuinely reflect what happened on a trade
+// for self-reflection/teaching purposes, not to oversell a result.
+function buildShareXDraft(e){
+  const lines = [];
+  const dirLabel = e.direction === 'long' ? 'Long' : 'Short';
+  lines.push(`${dirLabel} $${e.ticker}`);
+
+  if(e.entry != null) lines.push(`Entry: ${e.entry}`);
+  if(e.exit != null) lines.push(`Exit: ${e.exit}`);
+  if(e.rMultiple != null) lines.push(`Result: ${e.rMultiple>=0?'+':''}${e.rMultiple.toFixed(2)}R`);
+
+  const checksPassedCount = e.checks.filter(Boolean).length;
+  lines.push(`Setup confluence: ${checksPassedCount}/6 checks`);
+
+  if(e.notes) lines.push('', e.notes);
+
+  return lines.join('\n');
+}
+
+let shareXCurrentEntryId = null;
+
+function openShareToXModal(id){
+  const match = journalEntries.find(e => e.id === id);
+  if(!match) return;
+  shareXCurrentEntryId = id;
+
+  document.getElementById('shareXText').value = buildShareXDraft(match);
+
+  const downloadLink = document.getElementById('shareXDownloadLink');
+  const note = document.getElementById('shareXScreenshotNote');
+  if(match.screenshot){
+    downloadLink.href = match.screenshot;
+    downloadLink.download = `${match.ticker}_${(match.datetime||'trade').replace(/[:T]/g,'-')}.jpg`;
+    downloadLink.style.display = 'inline-block';
+    note.textContent = 'this trade has a screenshot attached - use the download button below, then attach it manually in the X composer.';
+  } else {
+    downloadLink.style.display = 'none';
+    note.textContent = 'no screenshot attached to this trade entry.';
+  }
+
+  refreshShareXIntentLink();
+  document.getElementById('shareXModalBg').classList.add('open');
+}
+
+function closeShareToXModal(){
+  document.getElementById('shareXModalBg').classList.remove('open');
+  shareXCurrentEntryId = null;
+}
+
+// Keeps the "open on X" link's href in sync with whatever's currently in the
+// editable textarea, so edits the user makes before posting are reflected -
+// called on every keystroke rather than only once at modal-open time.
+function refreshShareXIntentLink(){
+  const text = document.getElementById('shareXText').value;
+  const intentUrl = 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(text);
+  document.getElementById('shareXIntentLink').href = intentUrl;
+}
+
+async function copyShareXText(){
+  const text = document.getElementById('shareXText').value;
+  try{
+    await navigator.clipboard.writeText(text);
+    const btn = document.getElementById('shareXCopyBtn');
+    if(btn){
+      const original = btn.textContent;
+      btn.textContent = 'copied!';
+      setTimeout(() => { btn.textContent = original; }, 1500);
+    }
+  } catch(e){
+    alert('could not copy automatically - select the text and copy manually');
+  }
+}
+
 // Rough estimate of how much of localStorage's typical ~5-10MB-per-origin budget
 // the journal (screenshots included, since those dominate) is currently using.
 // This is an estimate, not exact - browsers vary in their actual quota and in how
@@ -2252,7 +2356,10 @@ function renderJournalLog(){
       <td>${rText}</td>
       <td class="shot-cell">${shotCell}</td>
       <td class="notes-cell">${e.notes ? e.notes.replace(/</g,'&lt;') : ''}</td>
-      <td><button class="jt-delete-btn" onclick="deleteJournalEntry('${e.id}')">del</button></td>
+      <td>
+        <button class="jt-share-btn" onclick="openShareToXModal('${e.id}')" title="prepare a tweet about this trade">share</button>
+        <button class="jt-delete-btn" onclick="deleteJournalEntry('${e.id}')">del</button>
+      </td>
     </tr>`;
   }).join('');
 }
@@ -2304,6 +2411,9 @@ function initJournalForm(){
 
   const screenshotInput = document.getElementById('jf-screenshot-input');
   if(screenshotInput) screenshotInput.addEventListener('change', handleJournalScreenshotSelected);
+
+  const shareXTextEl = document.getElementById('shareXText');
+  if(shareXTextEl) shareXTextEl.addEventListener('input', refreshShareXIntentLink);
 
   renderJournalLog();
 }

@@ -856,6 +856,16 @@ function detectFractalLows(candles, side){
 
     // check what happened AFTER this fractal formed: did price sweep below it,
     // then close back above it on a later candle (sweep + reclaim)?
+    //
+    // BUG FIX (found via WLFI false-positive EXCELLENT+ score, June 2026): sweepIndex
+    // must lock to the FIRST candle that breaches the level, not get overwritten by
+    // every subsequent candle that's still below it. The original code re-set
+    // sweepIndex = k inside the swept_open branch unconditionally, so a coin that
+    // breached a level once and simply kept trending down without reclaiming would
+    // have sweepIndex creep forward to whatever the most recent candle happened to
+    // be - making an old, stale breach look like it "just happened" purely because
+    // price never came back above the level. A real sweep is the moment of breach,
+    // not "still below it N candles later."
     let status = 'resting'; // never touched since forming
     let sweepIndex = null;
     for(let k=i+side+1; k<n; k++){
@@ -866,8 +876,10 @@ function detectFractalLows(candles, side){
           status = 'swept_reclaimed';
           sweepIndex = k;
           break;
-        } else {
-          status = 'swept_open'; // swept but not yet reclaimed with a bullish close
+        } else if(status !== 'swept_open'){
+          // only lock sweepIndex on the FIRST breach - if we're already swept_open,
+          // this is just a later candle still below the level, not a new sweep event
+          status = 'swept_open';
           sweepIndex = k;
           // keep scanning forward in case a later candle reclaims it
         }

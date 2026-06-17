@@ -40,13 +40,13 @@
   .title span{color:var(--green);}
   .subtitle{font-size:11px;color:var(--dim);margin-top:4px;letter-spacing:0.5px;}
   .meta{font-size:11px;color:var(--dim);text-align:right;}
-  #refreshBtn{
+  #refreshBtn, .refresh-btn{
     background:none;border:1px solid var(--line);color:var(--text);
     font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:3px;
     cursor:pointer;
   }
-  #refreshBtn:hover{border-color:var(--green);color:var(--green);}
-  #refreshBtn:disabled{opacity:0.4;cursor:default;}
+  #refreshBtn:hover, .refresh-btn:hover{border-color:var(--green);color:var(--green);}
+  #refreshBtn:disabled, .refresh-btn:disabled{opacity:0.4;cursor:default;}
 
   .toolbar{display:flex;align-items:center;gap:14px;margin-bottom:16px;flex-wrap:wrap;}
 
@@ -585,6 +585,11 @@
         <p>This list isn't a fixed 100 coins — it's rebuilt from Binance's USDT pairs, ranked by 7-day average trading volume (not just the last 24 hours, which can be skewed by a single spike day), then filtered to only coins with at least $1B in market cap via CoinGecko, with known stablecoins excluded entirely. The goal is to keep the list to genuinely liquid, real assets rather than thin or wash-traded pairs.</p>
       </div>
 
+      <div class="legend-group">
+        <h4>Stocks tab — manual refresh only</h4>
+        <p>Stocks use a different data source (Twelve Data) than crypto, since the free crypto-style feeds don't allow browser-based requests for stock data. That free tier is rate-limited (8 requests/minute, 800/day), so unlike crypto, stock data is <b>never</b> fetched automatically on page load or by the main refresh button — it only loads when the "refresh stock data" button on this tab is clicked. A full refresh can take a minute or more if the watchlist has more than 8 symbols, since it fetches in rate-limit-safe batches with a pause between each; the status text shows real progress during that wait. Stock data also only has daily-close granularity (not 4H like crypto), so distance from the 200EMA is a daily-equivalent approximation.</p>
+      </div>
+
     </div>
   </details>
 
@@ -770,8 +775,13 @@ async function loadTop100SymbolsByVolume(){
   return top100.length ? top100 : ranked.slice(0,100).map(r => r.symbol);
 }
 
-// Stocks: Stooq has no native 4H bars, so we build 4H bars from 1H data when available,
-// otherwise fall back gracefully. We mark these clearly as approximate.
+// Stocks: Twelve Data's free tier only includes daily-interval data for the 200EMA
+// trend read used here (not a native 4H feed), so we use daily closes vs a
+// daily-equivalent 200EMA as an approximation - same limitation as the prior
+// Stooq-based approach, just from a CORS-friendly source. Marked clearly as
+// approximate in the UI. Keep this list short (10-20 symbols) since the free tier
+// is rate-limited to 8 calls/minute, 800/day, and stock data is fetched manually
+// rather than auto-refreshed.
 const STOCK_SYMBOLS = [
   "AAPL","MSFT","NVDA","AMZN","GOOGL","META","TSLA","AMD","NFLX","AVGO",
   "COIN","MSTR","SPY","QQQ","SMCI","PLTR","CRM","ORCL","JPM","XOM"
@@ -1021,15 +1031,30 @@ async function loadCrypto(){
   return results;
 }
 
-async function fetchStooqDaily(symbol){
-  // Stooq free endpoint, daily bars, used as best-effort approximation
-  // for a 4H-style trend read on equities (no free intraday 4H feed without a key).
-  const url = `https://stooq.com/q/d/l/?s=${symbol.toLowerCase()}.us&i=d`;
+// Twelve Data free-tier API key. This is a client-side-only static page with no
+// backend, so this key is necessarily visible to anyone who views the page source -
+// that's an accepted tradeoff for the free tier (worst case if someone else grabs
+// it: they eat into the 8 calls/minute, 800/day quota, not anything financially
+// sensitive). If this key gets compromised/abused, regenerate it on the Twelve Data
+// dashboard and swap it in here.
+const TWELVE_DATA_API_KEY = 'd5a2509919904950b5e589d88b817252';
+
+// Twelve Data free tier: 8 API calls/minute, 800/day, 1 credit per symbol for
+// /time_series regardless of outputsize. We fetch outputsize=210 daily closes (just
+// over 200) so the existing ema() helper has enough history for a real EMA200 -
+// same approach as the old Stooq-based code, just from a CORS-friendly source.
+async function fetchTwelveDataDaily(symbol){
+  const url = `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=1day&outputsize=210&order=ASC&apikey=${TWELVE_DATA_API_KEY}`;
   const res = await fetch(url);
-  if(!res.ok) throw new Error('stooq fetch failed '+symbol);
-  const text = await res.text();
-  const lines = text.trim().split('\n').slice(1);
-  const closes = lines.map(l => parseFloat(l.split(',')[4])).filter(n=>!isNaN(n));
+  if(!res.ok) throw new Error('twelvedata fetch failed '+symbol);
+  const data = await res.json();
+  // Twelve Data returns errors as HTTP 200 with a JSON body like
+  // {"code":429,"message":"...","status":"error"} rather than always using HTTP
+  // error status codes - so a successful fetch() doesn't necessarily mean valid data.
+  if(data.status === 'error' || !Array.isArray(data.values)){
+    throw new Error(`twelvedata error for ${symbol}: ${data.message || 'no values returned'}`);
+  }
+  const closes = data.values.map(v => parseFloat(v.close)).filter(n => !isNaN(n));
   if(closes.length < 50) throw new Error('not enough data '+symbol);
   const lastClose = closes[closes.length-1];
   const prevClose = closes[closes.length-2];
@@ -1046,13 +1071,29 @@ async function fetchStooqDaily(symbol){
   };
 }
 
-async function loadStocks(){
+// Fetches all STOCK_SYMBOLS while respecting Twelve Data's free-tier 8 calls/minute
+// limit: batches of 8, with a ~61s pause between batches (61s rather than exactly
+// 60s to safely clear the per-minute window boundary rather than racing it). Calls
+// onProgress(batchIndex, totalBatches, waitSeconds) before each wait so the UI can
+// show real status instead of looking frozen during a multi-minute refresh.
+async function loadStocksThrottled(onProgress){
+  const BATCH_SIZE = 8;
+  const BATCH_DELAY_MS = 61000;
   const results = [];
   const chunks = [];
-  for(let i=0;i<STOCK_SYMBOLS.length;i+=5) chunks.push(STOCK_SYMBOLS.slice(i,i+5));
-  for(const chunk of chunks){
-    const settled = await Promise.allSettled(chunk.map(fetchStooqDaily));
-    settled.forEach(r => { if(r.status==='fulfilled') results.push(r.value); });
+  for(let i=0;i<STOCK_SYMBOLS.length;i+=BATCH_SIZE) chunks.push(STOCK_SYMBOLS.slice(i,i+BATCH_SIZE));
+
+  for(let i=0;i<chunks.length;i++){
+    const settled = await Promise.allSettled(chunks[i].map(fetchTwelveDataDaily));
+    settled.forEach(r => {
+      if(r.status==='fulfilled') results.push(r.value);
+      else console.error('stock fetch failed:', r.reason);
+    });
+    const isLastChunk = i === chunks.length-1;
+    if(!isLastChunk){
+      if(onProgress) onProgress(i+1, chunks.length, BATCH_DELAY_MS/1000);
+      await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+    }
   }
   return results;
 }
@@ -1159,6 +1200,20 @@ const TABLE_HEAD = `
 function render(){
   const data = currentMarket === 'crypto' ? cryptoData : stockData;
   const content = document.getElementById('content');
+
+  // Stocks get a dedicated empty/loading state instead of the generic crypto one,
+  // since stocks require an explicit manual fetch (Twelve Data free-tier rate
+  // limits) rather than being auto-loaded - the main refresh button no longer
+  // touches stocks at all.
+  if(currentMarket === 'stocks' && !data.length){
+    content.innerHTML = stocksLoading
+      ? `<div class="loading">fetching stock data…<div id="stocksRefreshStatus" style="margin-top:8px;font-size:11px;color:var(--dim);"></div></div>`
+      : `<div class="err" style="display:flex;flex-direction:column;gap:10px;align-items:center;">
+           <div>no stock data loaded yet — stocks use a separate, rate-limited free data source and must be fetched manually.</div>
+           <button id="stocksFetchBtn" class="refresh-btn" onclick="loadStocksManual()">↻ fetch stock data</button>
+         </div>`;
+    return;
+  }
   if(!data.length){
     content.innerHTML = '<div class="err">no data loaded — check connection or refresh</div>';
     return;
@@ -1186,7 +1241,11 @@ function render(){
 
   const isApproxMarket = currentMarket === 'stocks';
   const note = isApproxMarket
-    ? `<div style="font-size:10px;color:var(--dim);margin-bottom:10px;">stocks: no free intraday 4H feed available client-side — showing <b>daily</b> closes vs daily-equivalent 200EMA as a trend proxy. chart view not available for stocks yet.</div>`
+    ? `<div style="font-size:10px;color:var(--dim);margin-bottom:10px;">stocks: no free intraday 4H feed available client-side — showing <b>daily</b> closes vs daily-equivalent 200EMA as a trend proxy. chart view not available for stocks yet.</div>
+       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+         <button id="stocksFetchBtn" class="refresh-btn" onclick="loadStocksManual()" ${stocksLoading?'disabled':''}>${stocksLoading?'fetching…':'↻ refresh stock data'}</button>
+         <div id="stocksRefreshStatus" style="font-size:11px;color:var(--dim);">${stocksLoading?'fetching first batch…':''}</div>
+       </div>`
     : '';
 
   const aboveRows = buildRows(aboveList);
@@ -1328,28 +1387,55 @@ function sortBy(key){
   render();
 }
 
+async function loadAll(){
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true;
+  if(currentMarket === 'crypto') document.getElementById('content').innerHTML = '<div class="loading">pulling 4H candles…</div>';
+  try{
+    cryptoData = await loadCrypto();
+  } catch(e){
+    console.error(e);
+    cryptoData = [];
+  }
+  btn.disabled = false;
+  if(currentMarket === 'crypto') render();
+  // refresh the journal's ticker autocomplete list now that cryptoData is populated -
+  // this also keeps it in sync on every manual refresh, not just the initial page load
+  if(typeof populateJournalTickerList === 'function') populateJournalTickerList();
+}
+
+// Stocks are intentionally NOT fetched on page load or by the main refresh button -
+// Twelve Data's free tier (8 calls/minute, 800/day) makes an always-fetch approach
+// risky to burn through, so the user explicitly triggers this from the Stocks tab
+// instead, with visible progress since a full refresh can take 1-2+ minutes for
+// more than 8 symbols.
+let stocksLoading = false;
+
+async function loadStocksManual(){
+  if(stocksLoading) return;
+  stocksLoading = true;
+  render(); // immediately show the loading state in place of the prior empty/stale view
+
+  try{
+    stockData = await loadStocksThrottled((batchesDone, totalBatches, waitSeconds) => {
+      const statusEl = document.getElementById('stocksRefreshStatus');
+      if(statusEl){
+        statusEl.textContent = `fetched batch ${batchesDone}/${totalBatches} — waiting ${waitSeconds}s before next batch (free-tier rate limit)…`;
+      }
+    });
+  } catch(e){
+    console.error('stocks refresh failed', e);
+    stockData = [];
+  }
+
+  stocksLoading = false;
+  render();
+}
+
 function setMarket(mkt){
   currentMarket = mkt;
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.mkt===mkt));
   render();
-}
-
-async function loadAll(){
-  const btn = document.getElementById('refreshBtn');
-  btn.disabled = true;
-  document.getElementById('content').innerHTML = '<div class="loading">pulling 4H candles…</div>';
-  try{
-    const [c, s] = await Promise.allSettled([loadCrypto(), loadStocks()]);
-    cryptoData = c.status === 'fulfilled' ? c.value : [];
-    stockData = s.status === 'fulfilled' ? s.value : [];
-  } catch(e){
-    console.error(e);
-  }
-  btn.disabled = false;
-  render();
-  // refresh the journal's ticker autocomplete list now that cryptoData is populated -
-  // this also keeps it in sync on every manual refresh, not just the initial page load
-  if(typeof populateJournalTickerList === 'function') populateJournalTickerList();
 }
 
 const TF_LABELS = {'4h':'4H · last 120 candles','12h':'12H · last 120 candles','1d':'1D · last 120 candles','3d':'3D · last 100 candles','1w':'1W · last 100 candles'};

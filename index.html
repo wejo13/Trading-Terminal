@@ -507,7 +507,6 @@
   
         <div class="jf-row">
           <label>notional size ($)<input type="number" id="jf-notional" step="any" placeholder="e.g. 1000"></label>
-          <label>SL amount ($)<input type="number" id="jf-sl-usd" step="any" placeholder="e.g. 20"></label>
           <label>SL price<input type="number" id="jf-sl-price" step="any" placeholder="e.g. 0.0598"></label>
         </div>
   
@@ -553,7 +552,7 @@
           <thead>
             <tr>
               <th>date</th><th>ticker</th><th>dir</th><th>checks</th>
-              <th>notional</th><th>SL $</th><th>SL price</th>
+              <th>notional</th><th>SL price</th>
               <th>entry</th><th>exit</th><th>outcome</th><th>R</th><th>result %</th><th>chart</th><th>notes</th><th></th>
             </tr>
           </thead>
@@ -2280,7 +2279,6 @@ function submitJournalEntry(evt){
 
   const direction = document.getElementById('jf-direction').value;
   const notional = parseFloat(document.getElementById('jf-notional').value) || null;
-  const slUsd = parseFloat(document.getElementById('jf-sl-usd').value) || null;
   const slPrice = parseFloat(document.getElementById('jf-sl-price').value) || null;
   const entry = parseFloat(document.getElementById('jf-entry').value) || null;
   const exit = parseFloat(document.getElementById('jf-exit').value) || null;
@@ -2299,7 +2297,7 @@ function submitJournalEntry(evt){
     id: journalEditingId || (Date.now() + '_' + Math.random().toString(36).slice(2,7)),
     datetime: document.getElementById('jf-datetime').value,
     ticker, direction, checks,
-    notional, slUsd, slPrice, entry, exit, outcome,
+    notional, slPrice, entry, exit, outcome,
     rMultiple, pctResult, notes,
     screenshot: pendingScreenshotDataUrl || null
   };
@@ -2343,7 +2341,6 @@ function editJournalEntry(id){
   document.getElementById('jf-ticker').value = match.ticker || '';
   document.getElementById('jf-direction').value = match.direction || 'long';
   document.getElementById('jf-notional').value = match.notional ?? '';
-  document.getElementById('jf-sl-usd').value = match.slUsd ?? '';
   document.getElementById('jf-sl-price').value = match.slPrice ?? '';
   document.getElementById('jf-entry').value = match.entry ?? '';
   document.getElementById('jf-exit').value = match.exit ?? '';
@@ -2407,7 +2404,7 @@ function renderJournalLog(){
   renderJournalSummary();
 
   if(!journalEntries.length){
-    tbody.innerHTML = '<tr><td colspan="15" class="journal-empty-note">no trades logged yet</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="14" class="journal-empty-note">no trades logged yet</td></tr>';
     return;
   }
 
@@ -2432,7 +2429,6 @@ function renderJournalLog(){
       <td>${e.direction}</td>
       <td title="${e.checks.map((c,i)=>`check ${i+1}: ${c?'✓':'✗'}`).join(', ')}">${checksPassedCount}/6</td>
       <td>${fmt(e.notional)}</td>
-      <td>${fmt(e.slUsd)}</td>
       <td>${fmt(e.slPrice)}</td>
       <td>${fmt(e.entry)}</td>
       <td>${fmt(e.exit)}</td>
@@ -2463,11 +2459,11 @@ function exportJournalJSON(){
 function exportJournalCSV(){
   if(!journalEntries.length){ alert('no journal entries to export yet'); return; }
   const headers = ['datetime','ticker','direction','check1','check2','check3','check4','check5','check6',
-    'notional','slUsd','slPrice','entry','exit','outcome','rMultiple','pctResult','hasScreenshot','notes'];
+    'notional','slPrice','entry','exit','outcome','rMultiple','pctResult','hasScreenshot','notes'];
   const rows = journalEntries.map(e => [
     e.datetime, e.ticker, e.direction,
     ...e.checks.map(c => c ? 'TRUE' : 'FALSE'),
-    e.notional ?? '', e.slUsd ?? '', e.slPrice ?? '', e.entry ?? '', e.exit ?? '',
+    e.notional ?? '', e.slPrice ?? '', e.entry ?? '', e.exit ?? '',
     e.outcome, e.rMultiple != null ? e.rMultiple.toFixed(3) : '',
     e.pctResult != null ? e.pctResult.toFixed(3) : '',
     e.screenshot ? 'TRUE' : 'FALSE',

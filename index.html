@@ -1029,8 +1029,26 @@ async function fetchBinance4h(symbol, fundingMap){
   };
 }
 
+// Removes candleCache entries for symbols no longer in the current watchlist.
+// Without this, candleCache grows forever over a long-running session - each entry
+// holds up to 1000 candles per timeframe (4h/12h/3d), and the watchlist composition
+// shifts over time as the top-100-by-volume ranking changes, so old entries for
+// coins that rotated out would otherwise just accumulate indefinitely. Called
+// whenever CRYPTO_SYMBOLS is refreshed, not on every render, since pruning itself
+// is cheap but only needs to happen when the watchlist composition could have changed.
+function pruneCandleCache(currentSymbols){
+  const keep = new Set(currentSymbols);
+  Object.keys(candleCache).forEach(key => {
+    // keys are formatted SYMBOL_interval, e.g. "BTCUSDT_4h" - strip the trailing
+    // _4h/_12h/_3d to recover the bare symbol for the lookup
+    const symbol = key.replace(/_(4h|12h|3d)$/, '');
+    if(!keep.has(symbol)) delete candleCache[key];
+  });
+}
+
 async function loadCrypto(){
   CRYPTO_SYMBOLS = await loadTop100SymbolsByVolume().catch(()=>FALLBACK_CRYPTO_SYMBOLS);
+  pruneCandleCache(CRYPTO_SYMBOLS);
 
   // fetch funding rates ONCE for everything (one bulk call), rather than per-symbol -
   // if this fails (e.g. futures API unreachable), we proceed with fundingMap = null and
@@ -1245,10 +1263,14 @@ function render(){
     if(sortKey === 'symbol') return a.symbol.localeCompare(b.symbol)*sortDir*-1;
     if(sortKey === 'distPct'){
       // within each group (above/below are now rendered as separate tables, so this
-      // grouping no longer needs to interleave them), sort by closest-to-EMA-distance
-      // at the top using absolute distance
+      // grouping no longer needs to interleave them), sort by EMA distance. The
+      // above/below split itself always stays above-first (that's tied to how the
+      // two-table layout works, not something the DIST% sort toggle should affect) -
+      // sortDir only controls whether each group orders closest-to-farthest or
+      // farthest-to-closest. Default (sortDir=-1, first click) is closest-first,
+      // matching the page's long-standing default presentation.
       if(a.above !== b.above) return a.above ? -1 : 1;
-      return Math.abs(a.distPct) - Math.abs(b.distPct);
+      return (Math.abs(a.distPct) - Math.abs(b.distPct)) * sortDir * -1;
     }
     return (a[sortKey]-b[sortKey])*sortDir;
   });
@@ -1271,6 +1293,14 @@ function render(){
   const aboveRows = buildRows(aboveList);
   const belowRows = buildRows(belowList);
 
+  // Preserve the below-EMA <details> section's open/closed state across re-renders.
+  // Without this, expanding it and then having ANY re-render fire afterward (most
+  // notably the hourly alert check, which calls render() every time it runs even
+  // if nothing alert-worthy happened) would silently snap it back closed, since a
+  // freshly-templated <details> element always starts collapsed unless explicitly
+  // told otherwise.
+  const belowEmaWasOpen = document.querySelector('.below-ema-section')?.open || false;
+
   content.innerHTML = `
     ${note}
     <table>
@@ -1278,7 +1308,7 @@ function render(){
       <tbody>${aboveRows || '<tr><td colspan="6" class="empty-note">no coins currently above their 4H 200EMA</td></tr>'}</tbody>
     </table>
 
-    <details class="below-ema-section">
+    <details class="below-ema-section" ${belowEmaWasOpen ? 'open' : ''}>
       <summary>below 200EMA (${belowList.length}) — click to expand</summary>
       <table>
         ${TABLE_HEAD}
@@ -1733,6 +1763,20 @@ function classifyTouch(candle, emaLevel){
 
 async function checkTouchAlerts(isManual){
   console.log('running' + (isManual ? ' manual' : ' hourly') + ' EMA touch check…');
+
+  // Refresh the watchlist itself before checking, not just prices for whatever list
+  // was last loaded. Without this, a long-running session (exactly the scenario
+  // alerts are meant for) would silently keep checking a stale symbol list for
+  // hours - missing coins that newly entered the real top 100 and wasting checks on
+  // ones that dropped out. loadTop100SymbolsByVolume has its own 24h cache, so this
+  // is cheap on a cache hit and only does real work once that cache naturally expires.
+  try{
+    CRYPTO_SYMBOLS = await loadTop100SymbolsByVolume();
+    pruneCandleCache(CRYPTO_SYMBOLS);
+  } catch(e){
+    console.error('alert check: failed to refresh watchlist, using existing list', e);
+  }
+
   const updated = [];
   let touchesFound = 0;
   for(const symbol of CRYPTO_SYMBOLS){

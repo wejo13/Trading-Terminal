@@ -173,6 +173,13 @@ async function fetch4hCandlesAndEma(symbol){
   return { lastCandle, ema200: e };
 }
 
+// Same helper as index.html's tradingViewUrl() - builds a direct TradingView chart
+// link so the Telegram alert message itself is actionable (tap to look at the chart)
+// rather than just a text notification with no easy way to act on it.
+function tradingViewUrl(rawSymbol){
+  return `https://www.tradingview.com/chart/?symbol=BINANCE:${rawSymbol}`;
+}
+
 // ===================== Telegram delivery =====================
 
 async function sendTelegramMessage(text){
@@ -233,7 +240,7 @@ async function main(){
 
       if(state === 'touching' && prev === 'above'){
         const label = symbol.replace('USDT','');
-        touches.push(label);
+        touches.push({ label, symbol });
       }
       newState[symbol] = state;
     } catch(e){
@@ -258,9 +265,10 @@ async function main(){
   }
 
   if(touches.length){
-    console.log(`${touches.length} touch alert(s) found: ${touches.join(', ')}`);
-    for(const label of touches){
-      const msg = `🟣 <b>${label}</b> touched its 4H 200EMA\n${label} was trading above its 4H 200EMA and price just came back down to touch it.`;
+    console.log(`${touches.length} touch alert(s) found: ${touches.map(t => t.label).join(', ')}`);
+    for(const { label, symbol } of touches){
+      const link = tradingViewUrl(symbol);
+      const msg = `🟣 <b>${label}</b> touched its 4H 200EMA\n${label} was trading above its 4H 200EMA and price just came back down to touch it.\n<a href="${link}">Open ${label} in TradingView</a>`;
       try{
         await sendTelegramMessage(msg);
         console.log(`sent Telegram alert for ${label}`);

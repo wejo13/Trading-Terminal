@@ -279,6 +279,94 @@
   .jf-check input{cursor:pointer;}
   .jf-check-note{font-size:10px;color:var(--dim);margin-top:6px;font-style:italic;}
 
+  /* checklist + executor live side by side; on narrow screens they stack since
+     each needs real width to stay readable (especially the executor's field-row
+     pairs), rather than squeezing both into a too-narrow column */
+  .jf-checklist-executor-row{
+    display:flex;gap:14px;margin-bottom:12px;align-items:stretch;
+  }
+  .jf-checklist-executor-row > *{flex:1;min-width:0;}
+  @media (max-width: 760px){
+    .jf-checklist-executor-row{flex-direction:column;}
+  }
+
+  /* --- trade executor panel (Lighter) --- */
+  .jf-executor{
+    border:1px solid var(--line);border-radius:4px;padding:10px 12px;
+    background:rgba(139,127,232,0.03);
+    display:flex;flex-direction:column;
+  }
+  .jf-executor-title{
+    font-size:10px;color:var(--violet);letter-spacing:0.5px;margin-bottom:8px;
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .jf-executor-title .exec-status{
+    font-size:9px;font-weight:700;padding:2px 7px;border-radius:3px;letter-spacing:0.3px;
+  }
+  .exec-status.armed{background:var(--green-dim);color:var(--green);border:1px solid rgba(45,212,160,0.4);}
+  .exec-status.off{background:rgba(255,255,255,0.04);color:var(--dim);border:1px solid var(--line);}
+
+  .exec-order-type-toggle{
+    display:flex;gap:0;margin-bottom:10px;border:1px solid var(--line);border-radius:3px;overflow:hidden;
+  }
+  .exec-order-type-toggle button{
+    flex:1;background:none;border:none;color:var(--dim);font-family:var(--mono);
+    font-size:10.5px;padding:6px 0;cursor:pointer;letter-spacing:0.4px;
+  }
+  .exec-order-type-toggle button.active{background:var(--violet);color:var(--bg);font-weight:700;}
+  .exec-order-type-toggle button:not(:last-child){border-right:1px solid var(--line);}
+
+  .exec-direction-line{
+    display:flex;align-items:center;gap:7px;font-size:10px;color:var(--dim);margin-bottom:10px;
+  }
+  .dir-tag{
+    font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:3px;letter-spacing:0.4px;
+  }
+  .dir-tag.dir-long{background:var(--green-dim);color:var(--green);border:1px solid rgba(45,212,160,0.4);}
+  .dir-tag.dir-short{background:var(--red-dim);color:var(--red);border:1px solid rgba(255,93,93,0.4);}
+
+  .exec-field-row{display:flex;gap:8px;margin-bottom:8px;}
+  .exec-field-row label{
+    display:flex;flex-direction:column;gap:4px;font-size:9.5px;color:var(--dim);
+    letter-spacing:0.2px;flex:1;min-width:0;
+  }
+  .exec-field-row input{
+    background:var(--bg);border:1px solid var(--line);color:var(--text);
+    font-family:var(--mono);font-size:11.5px;padding:6px 8px;border-radius:3px;width:100%;
+  }
+  .exec-field-row input:disabled{opacity:0.4;cursor:not-allowed;}
+  .exec-field-row input:focus{outline:none;border-color:var(--violet);}
+
+  .exec-sl-line{
+    display:flex;align-items:center;gap:6px;font-size:10px;color:var(--dim);
+    padding:6px 0 2px;border-top:1px solid var(--line);margin-top:4px;
+  }
+  .exec-sl-line b{color:var(--text);font-weight:600;}
+  .exec-sl-line .sl-badge{
+    font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;
+    background:var(--red-dim);color:var(--red);border:1px solid rgba(255,93,93,0.3);
+  }
+
+  .exec-slippage-row{
+    display:flex;align-items:center;gap:8px;margin-top:8px;font-size:10px;color:var(--dim);
+  }
+  .exec-slippage-row label{display:flex;align-items:center;gap:6px;flex:1;}
+  .exec-slippage-row input{
+    width:54px;background:var(--bg);border:1px solid var(--line);color:var(--text);
+    font-family:var(--mono);font-size:11px;padding:5px 7px;border-radius:3px;text-align:right;
+  }
+  .exec-slippage-row input:focus{outline:none;border-color:var(--violet);}
+  .exec-slippage-note{font-size:9px;color:var(--dim);font-style:italic;margin-top:4px;}
+
+  .exec-validation-msg{
+    font-size:10px;color:var(--amber);margin-top:8px;padding:6px 8px;
+    background:rgba(240,180,41,0.08);border:1px solid rgba(240,180,41,0.25);border-radius:3px;
+  }
+
+  .exec-submit-note{
+    font-size:9.5px;color:var(--dim);align-self:center;font-style:italic;
+  }
+
   .jf-notes-label{
     display:flex;flex-direction:column;gap:4px;font-size:10px;color:var(--dim);
     margin-bottom:14px;
@@ -494,15 +582,61 @@
           </label>
         </div>
   
-        <div class="jf-checks">
-          <div class="jf-checks-title">setup checklist</div>
-          <label class="jf-check"><input type="checkbox" id="jf-check-1"> price above 4H EMA</label>
-          <label class="jf-check"><input type="checkbox" id="jf-check-2"> price not too far from the 4H 200 EMA</label>
-          <label class="jf-check"><input type="checkbox" id="jf-check-3"> swept liquidity</label>
-          <label class="jf-check"><input type="checkbox" id="jf-check-4"> price making HHs and HLs</label>
-          <label class="jf-check"><input type="checkbox" id="jf-check-5"> impulsive candle with FVG</label>
-          <label class="jf-check"><input type="checkbox" id="jf-check-6"> retrace into OTE spot (fibs)</label>
-          <div class="jf-check-note" id="jf-autofill-note"></div>
+        <div class="jf-checklist-executor-row">
+
+          <div class="jf-checks">
+            <div class="jf-checks-title">setup checklist</div>
+            <label class="jf-check"><input type="checkbox" id="jf-check-1"> price above 4H EMA</label>
+            <label class="jf-check"><input type="checkbox" id="jf-check-2"> price not too far from the 4H 200 EMA</label>
+            <label class="jf-check"><input type="checkbox" id="jf-check-3"> swept liquidity</label>
+            <label class="jf-check"><input type="checkbox" id="jf-check-4"> price making HHs and HLs</label>
+            <label class="jf-check"><input type="checkbox" id="jf-check-5"> impulsive candle with FVG</label>
+            <label class="jf-check"><input type="checkbox" id="jf-check-6"> retrace into OTE spot (fibs)</label>
+            <div class="jf-check-note" id="jf-autofill-note"></div>
+          </div>
+
+          <div class="jf-executor">
+            <div class="jf-executor-title">
+              PLACE ON LIGHTER
+              <span class="exec-status off" id="exec-status-badge">STUB MODE</span>
+            </div>
+
+            <div class="exec-order-type-toggle">
+              <button type="button" class="active" id="exec-type-market" onclick="setExecOrderType('market')">MARKET</button>
+              <button type="button" id="exec-type-limit" onclick="setExecOrderType('limit')">LIMIT</button>
+            </div>
+
+            <div class="exec-direction-line">
+              <span>direction:</span> <span class="dir-tag dir-long" id="exec-dir-tag">LONG</span>
+            </div>
+
+            <div class="exec-field-row">
+              <label>size ($)<input type="number" id="exec-size" step="any" placeholder="from notional ↑"></label>
+              <label>limit price<input type="number" id="exec-limit-price" step="any" placeholder="—" disabled></label>
+            </div>
+
+            <div class="exec-field-row">
+              <label>SL price<input type="number" id="exec-sl-price" step="any" placeholder="from SL price ↓"></label>
+            </div>
+            <div class="exec-sl-line">
+              <b>SL auto-attached</b> <span style="color:var(--dim);">editable above, syncs from journal SL price by default</span>
+              <span class="sl-badge">OCO</span>
+            </div>
+
+            <div class="exec-slippage-row">
+              <label><input type="checkbox" id="exec-slippage-enabled" checked> SL slippage tolerance</label>
+              <input type="number" id="exec-slippage-pct" step="any" value="0.5">%
+            </div>
+            <div class="exec-slippage-note">default 0.5% beyond trigger · override per-trade for thin alts</div>
+
+            <div id="exec-validation-msg" class="exec-validation-msg" style="display:none;"></div>
+
+            <div class="jf-actions" style="margin-top:10px;">
+              <button type="button" id="exec-place-btn" onclick="placeOnLighter()" style="border-color:var(--violet);color:var(--violet);">place on Lighter</button>
+              <span class="exec-submit-note">stub mode — logs to console, no live order sent</span>
+            </div>
+          </div>
+
         </div>
   
         <div class="jf-row">
@@ -2328,6 +2462,19 @@ function cancelJournalEdit(){
   if(submitBtn) submitBtn.textContent = 'log trade';
   const cancelBtn = document.getElementById('jf-cancel-edit-btn');
   if(cancelBtn) cancelBtn.style.display = 'none';
+
+  // form.reset() clears jf-sl-price/jf-notional back to blank, but doesn't touch
+  // the executor's own fields or its manual-override locks - reset those
+  // explicitly so a stale prefilled value or a previous lock doesn't linger into
+  // the next entry.
+  execSlTouchedManually = false;
+  execSizeTouchedManually = false;
+  document.getElementById('exec-sl-price').value = '';
+  document.getElementById('exec-size').value = '';
+  document.getElementById('exec-limit-price').value = '';
+  setExecOrderType('market');
+  syncExecDirectionTag();
+  clearExecValidationMsg();
 }
 
 // Loads an existing entry's data back into the form for editing. Most useful for
@@ -2350,6 +2497,15 @@ function editJournalEntry(id){
     const el = document.getElementById('jf-check-' + (i+1));
     if(el) el.checked = !!checked;
   });
+
+  // loading a different entry counts as a fresh prefill for the executor's own
+  // SL price/size, not a continuation of whatever the user was previously
+  // overriding - so the manual-touch locks reset here too.
+  execSlTouchedManually = false;
+  execSizeTouchedManually = false;
+  document.getElementById('exec-sl-price').value = match.slPrice ?? '';
+  document.getElementById('exec-size').value = match.notional ?? '';
+  syncExecDirectionTag();
 
   pendingScreenshotDataUrl = match.screenshot || null;
   const previewWrap = document.getElementById('jf-screenshot-preview-wrap');
@@ -2478,6 +2634,141 @@ function exportJournalCSV(){
   URL.revokeObjectURL(url);
 }
 
+// ===================== LIGHTER TRADE EXECUTOR (STUB) =====================
+// This is the test-phase stub: no signing, no network call to Lighter at all.
+// placeOnLighter() builds the request object Lighter would eventually need and
+// console.logs it, so the data flow/shape can be reviewed before any real signer
+// (the community lighter-ts WASM port) gets wired in as its own separate step.
+//
+// market_index and the integer-scaled amount/price fields are left as explicit
+// null/TODO placeholders rather than guessed at - Lighter identifies markets by
+// an integer market_index (not a ticker string), resolved via its market-list
+// endpoint, and amounts/prices are integers scaled by each market's own decimal
+// precision, not raw dollar floats. Both require a real lookup we don't have yet.
+
+let execOrderType = 'market'; // 'market' | 'limit'
+let execSlTouchedManually = false;
+let execSizeTouchedManually = false;
+
+function setExecOrderType(type){
+  execOrderType = type;
+  document.getElementById('exec-type-market').classList.toggle('active', type === 'market');
+  document.getElementById('exec-type-limit').classList.toggle('active', type === 'limit');
+  document.getElementById('exec-limit-price').disabled = (type === 'market');
+  if(type === 'market') document.getElementById('exec-limit-price').value = '';
+  clearExecValidationMsg();
+}
+
+// Keeps the executor's read-only direction tag in sync with the journal's own
+// direction select - the executor intentionally has no long/short control of its
+// own, since direction is set once at the top of the form, not repeated here.
+function syncExecDirectionTag(){
+  const dirSelect = document.getElementById('jf-direction');
+  const tag = document.getElementById('exec-dir-tag');
+  if(!dirSelect || !tag) return;
+  const dir = dirSelect.value;
+  tag.textContent = dir.toUpperCase();
+  tag.className = 'dir-tag ' + (dir === 'short' ? 'dir-short' : 'dir-long');
+}
+
+// SL price and size both follow the same prefill-then-lock pattern: they mirror
+// the corresponding journal field live UNTIL the user types directly into the
+// executor's own copy, at which point that field stops following the journal
+// field so a manual override isn't silently clobbered by further journal edits.
+function syncExecSlPrice(){
+  if(execSlTouchedManually) return;
+  const journalVal = document.getElementById('jf-sl-price').value;
+  document.getElementById('exec-sl-price').value = journalVal;
+}
+
+function syncExecSize(){
+  if(execSizeTouchedManually) return;
+  const journalVal = document.getElementById('jf-notional').value;
+  document.getElementById('exec-size').value = journalVal;
+}
+
+function showExecValidationMsg(msg){
+  const el = document.getElementById('exec-validation-msg');
+  if(!el) return;
+  el.textContent = msg;
+  el.style.display = 'block';
+  document.getElementById('exec-place-btn').disabled = true;
+}
+
+function clearExecValidationMsg(){
+  const el = document.getElementById('exec-validation-msg');
+  if(!el) return;
+  el.style.display = 'none';
+  el.textContent = '';
+  document.getElementById('exec-place-btn').disabled = false;
+}
+
+// Validates just enough to keep the stub from logging an obviously incomplete
+// order - ticker, size, and SL price are required regardless of order type;
+// limit orders additionally require a limit price. Returns true if valid.
+function validateExecFields(){
+  const ticker = document.getElementById('jf-ticker').value.trim();
+  const size = document.getElementById('exec-size').value;
+  const slPrice = document.getElementById('exec-sl-price').value;
+  const limitPrice = document.getElementById('exec-limit-price').value;
+
+  if(!ticker){ showExecValidationMsg('enter a ticker above before placing on Lighter'); return false; }
+  if(!size || parseFloat(size) <= 0){ showExecValidationMsg('size ($) is required'); return false; }
+  if(!slPrice || parseFloat(slPrice) <= 0){ showExecValidationMsg('SL price is required'); return false; }
+  if(execOrderType === 'limit' && (!limitPrice || parseFloat(limitPrice) <= 0)){
+    showExecValidationMsg('limit price is required for limit orders');
+    return false;
+  }
+  clearExecValidationMsg();
+  return true;
+}
+
+// Builds the stub request object and logs it. No fetch, no signing, no Lighter
+// call of any kind yet - this is purely to nail down the data shape before the
+// signer integration (its own separate step) determines what shape it actually
+// needs its input in.
+function placeOnLighter(){
+  if(!validateExecFields()) return;
+
+  const ticker = document.getElementById('jf-ticker').value.trim().toUpperCase();
+  const direction = document.getElementById('jf-direction').value;
+  const size = parseFloat(document.getElementById('exec-size').value);
+  const slPrice = parseFloat(document.getElementById('exec-sl-price').value);
+  const slippageEnabled = document.getElementById('exec-slippage-enabled').checked;
+  const slippagePct = parseFloat(document.getElementById('exec-slippage-pct').value) || 0;
+  const limitPrice = execOrderType === 'limit' ? parseFloat(document.getElementById('exec-limit-price').value) : null;
+
+  const stubRequest = {
+    // --- fields we can fill in for real right now ---
+    ticker,                                  // plain ticker string, e.g. "BTC" - NOT Lighter's market_index
+    direction,                               // 'long' | 'short' - maps to is_ask: false/true once resolved
+    orderType: execOrderType,                // 'market' | 'limit'
+    sizeUsd: size,                           // dollar notional as typed - NOT the integer base_amount Lighter expects
+    limitPrice,                              // null for market orders
+    slPrice,
+    slSlippage: slippageEnabled ? { enabled: true, pct: slippagePct } : { enabled: false, pct: null },
+    grouping: 'GROUPING_TYPE_ONE_TRIGGERS_THE_OTHER', // entry + SL as one bundled OTO group, per architecture decision
+
+    // --- explicit unresolved placeholders, NOT guessed values ---
+    market_index: null, // TODO: resolve via Lighter's market-list endpoint (ticker -> integer index, e.g. ETH = 0)
+    base_amount: null,  // TODO: sizeUsd converted to integer base units, scaled by this market's own decimal precision
+    price: null,        // TODO: same integer-scaling requirement as base_amount, applies to both entry and SL trigger/execution prices
+    slTriggerPrice: null,   // TODO: slPrice converted to Lighter's integer price format
+    slExecutionPrice: null, // TODO: slPrice + slippage tolerance, converted to integer format
+
+    _stub: true,
+    _note: 'STUB ONLY - no signing, no network call. Logged for data-shape review.'
+  };
+
+  console.log('[Lighter executor stub] would place:', stubRequest);
+
+  const btn = document.getElementById('exec-place-btn');
+  const originalText = btn.textContent;
+  btn.textContent = 'logged to console ✓';
+  setTimeout(() => { btn.textContent = originalText; }, 1800);
+}
+
+
 function initJournalForm(){
   setJournalDatetimeToNow();
   populateJournalTickerList();
@@ -2490,6 +2781,24 @@ function initJournalForm(){
 
   const shareXTextEl = document.getElementById('shareXText');
   if(shareXTextEl) shareXTextEl.addEventListener('input', refreshShareXIntentLink);
+
+  // --- Lighter executor wiring ---
+  const directionSelect = document.getElementById('jf-direction');
+  if(directionSelect) directionSelect.addEventListener('change', syncExecDirectionTag);
+
+  const journalSlPriceInput = document.getElementById('jf-sl-price');
+  if(journalSlPriceInput) journalSlPriceInput.addEventListener('input', syncExecSlPrice);
+
+  const journalNotionalInput = document.getElementById('jf-notional');
+  if(journalNotionalInput) journalNotionalInput.addEventListener('input', syncExecSize);
+
+  const execSlPriceInput = document.getElementById('exec-sl-price');
+  if(execSlPriceInput) execSlPriceInput.addEventListener('input', () => { execSlTouchedManually = true; });
+
+  const execSizeInput = document.getElementById('exec-size');
+  if(execSizeInput) execSizeInput.addEventListener('input', () => { execSizeTouchedManually = true; });
+
+  syncExecDirectionTag();
 
   renderJournalLog();
 }

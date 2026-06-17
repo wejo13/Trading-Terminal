@@ -100,6 +100,11 @@ async function loadTop100SymbolsByVolume(){
 
   const usdtPairs = all.filter(t =>
     t.symbol.endsWith('USDT') &&
+    /^[A-Z0-9]+USDT$/.test(t.symbol) && // ASCII-only ticker - excludes non-Latin-script
+    // meme coins (e.g. the Chinese-character "Binance Life" token that fired a false
+    // signal in production) that can clear the market cap floor purely on hype/whale-
+    // concentrated volume despite having none of the genuine liquidity the filter
+    // is meant to require. Mirrors the same fix in index.html - keep both in sync.
     !t.symbol.includes('UP') && !t.symbol.includes('DOWN') &&
     !t.symbol.includes('BULL') && !t.symbol.includes('BEAR') &&
     !STABLECOIN_BLOCKLIST.has(t.symbol.replace(/USDT$/, ''))

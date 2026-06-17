@@ -177,6 +177,13 @@
   .strip.above{background:var(--green);box-shadow:0 0 6px rgba(45,212,160,0.5);}
   .strip.below{background:var(--red);box-shadow:0 0 6px rgba(255,93,93,0.4);}
 
+  .tv-link{
+    font-size:9px;color:var(--dim);margin-left:8px;text-decoration:none;
+    border:1px solid var(--line);border-radius:3px;padding:1px 4px;vertical-align:middle;
+    font-weight:400;
+  }
+  .tv-link:hover{color:var(--green);border-color:var(--green);}
+
   tbody tr.clickable{cursor:pointer;}
   tbody tr.clickable:hover td.sym{color:var(--green);}
 
@@ -360,7 +367,7 @@
     font-size:18px;cursor:pointer;line-height:1;
   }
   .modal-close:hover{color:var(--text);}
-  .modal-head{display:flex;align-items:baseline;gap:12px;margin-bottom:4px;}
+  .modal-head{display:flex;align-items:baseline;gap:12px;margin-bottom:4px;flex-wrap:wrap;}
   .modal-head .sym{font-size:18px;font-weight:700;}
   .modal-head .dist{font-size:12px;font-weight:700;}
   .modal-sub{font-size:11px;color:var(--dim);margin-bottom:10px;}
@@ -605,6 +612,7 @@
     <div class="modal-head">
       <div class="sym" id="modalSym">—</div>
       <div class="dist" id="modalDist"></div>
+      <a href="#" target="_blank" rel="noopener" class="tv-link" id="modalTvLink" title="open in TradingView">open in TradingView ↗</a>
     </div>
     <div class="modal-sub" id="modalSub">4H · last 120 candles</div>
     <div class="tf-row" id="tfRow">
@@ -1142,6 +1150,19 @@ function fmtPrice(p){
   return p.toFixed(6);
 }
 
+// Builds a direct TradingView chart link for a given Binance spot symbol (e.g.
+// "WLFIUSDT"), so the user can open a pair in TradingView for deeper analysis -
+// extra indicators, drawing tools, etc - that this app intentionally doesn't try to
+// replicate. Always uses the BINANCE exchange prefix since that's this app's own
+// data source, so the chart the user lands on matches what they were just looking
+// at here. No timeframe param is set - opens to TradingView's own default rather
+// than trying to map this app's 4H/12H/1D/3D/1W buttons onto TradingView's interval
+// scheme, since that mapping isn't always 1:1 (e.g. TradingView's interval params
+// are in raw minutes, not all of this app's timeframes translate cleanly).
+function tradingViewUrl(rawSymbol){
+  return `https://www.tradingview.com/chart/?symbol=BINANCE:${rawSymbol}`;
+}
+
 // Builds the <tr> HTML for a list of coins. Extracted out of render() so the same
 // row markup can be reused for both the main (above-EMA) table and the collapsible
 // below-EMA section, without duplicating all the badge/dot/confluence logic twice.
@@ -1213,7 +1234,10 @@ function buildRows(list){
 
     return `
     <tr class="clickable ${tierRowClass}" onclick="openChart('${d.rawSymbol||d.symbol}')">
-      <td class="sym"><span class="strip ${d.above?'above':'below'}"></span>${d.symbol}</td>
+      <td class="sym">
+        <span class="strip ${d.above?'above':'below'}"></span>${d.symbol}
+        <a href="${tradingViewUrl(d.rawSymbol||d.symbol)}" target="_blank" rel="noopener" class="tv-link" title="open in TradingView" onclick="event.stopPropagation()">TV↗</a>
+      </td>
       <td class="num pct ${d.distPct>=0?'pos':'neg'}">${d.distPct>=0?'+':''}${d.distPct.toFixed(2)}%${distDot}</td>
       <td class="num rvol-cell">${rvolBadge}</td>
       <td class="score-cell">${scoreBadge}</td>
@@ -1503,6 +1527,7 @@ function openChart(rawSymbol){
   const distEl = document.getElementById('modalDist');
   distEl.textContent = (item.distPct>=0?'+':'') + item.distPct.toFixed(2) + '% from 200EMA (4H)';
   distEl.style.color = item.distPct>=0 ? 'var(--green)' : 'var(--red)';
+  document.getElementById('modalTvLink').href = tradingViewUrl(rawSymbol);
   document.querySelectorAll('.tf-btn').forEach(b=>b.classList.toggle('active', b.dataset.tf==='4h'));
   document.getElementById('modalBg').classList.add('open');
   renderTimeframe('4h', item.candles);

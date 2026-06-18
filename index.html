@@ -4463,20 +4463,23 @@ async function gridPlaceSingleOrder(price, isAsk, notional, clientOrderIdx){
 async function gridCancelAllOrders(){
   try{
     const signer = await window.__getLighterSigner();
-    // Get marketIndex from stored state
-    const marketIndex = gridState?.levels?.find(lv => lv.marketIndex !== undefined)?.marketIndex ?? GRID_BTC_MARKET;
 
-    // Fetch active orders via REST — works with market_id param
-    const res = await fetch(`${LIGHTER_BASE_URL}/api/v1/accountActiveOrders?account_index=${LIGHTER_ACCOUNT_INDEX}&market_id=${marketIndex}`);
+    // Generate auth token for authenticated REST call
+    const [auth, authErr] = await signer.createAuthTokenWithExpiry(600);
+    if(authErr){ console.warn('[GridBot] auth token error', authErr); }
+
+    // Fetch active orders — BTC is market_id 0
+    const url = `${LIGHTER_BASE_URL}/api/v1/accountActiveOrders?account_index=${LIGHTER_ACCOUNT_INDEX}&market_id=${GRID_BTC_MARKET}${auth ? '&auth=' + auth : ''}`;
+    const res = await fetch(url);
+    if(!res.ok){ console.warn('[GridBot] fetch orders failed', res.status, await res.text()); return; }
     const data = await res.json();
     const orders = data.orders || [];
-    console.log('[GridBot] cancelling', orders.length, 'orders');
+    console.log('[GridBot] cancelling', orders.length, 'orders', orders);
 
     for(const o of orders){
-      // Lighter uses order_index (the exchange-assigned index, not client_order_index) to cancel
-      const orderIndex = o.order_index ?? o.orderIndex;
+      const orderIndex = o.order_index ?? o.orderIndex ?? o.index;
       if(orderIndex === undefined){ console.warn('[GridBot] no order_index in', o); continue; }
-      const [,, err] = await signer.cancelOrder({ marketIndex, orderIndex });
+      const [,, err] = await signer.cancelOrder({ marketIndex: GRID_BTC_MARKET, orderIndex });
       if(err) console.warn('[GridBot] cancel error', orderIndex, err);
       else console.log('[GridBot] cancelled order_index', orderIndex);
     }

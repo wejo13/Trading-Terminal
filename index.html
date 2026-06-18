@@ -4469,10 +4469,9 @@ async function gridPlaceSingleOrder(price, isAsk, notional, _unused){
 async function gridCancelAllOrders(){
   try{
     const signer = await window.__getLighterSigner();
-    // SignerClient.cancelAllOrders(timeInForce, time) — both undefined = cancel all
-    const [tx, hash, error] = await signer.cancelAllOrders(undefined, undefined);
-    if(error) console.warn('[GridBot] cancelAllOrders error', error);
-    else console.log('[GridBot] all orders cancelled', hash);
+    // cancelAllOrders via the REST orderApi — cancels all open orders account-wide
+    const result = await signer.orderApi.cancelAllOrders();
+    console.log('[GridBot] all orders cancelled', result);
   } catch(e){
     console.warn('[GridBot] cancel all orders failed:', e.message || e);
   }

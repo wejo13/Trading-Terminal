@@ -4403,7 +4403,8 @@ async function gridHandleFill(order, clientIdx){
 }
 
 // ---- Order placement ----
-// Uses createOrderOptimized — single limit order, no grouping, no SL leg.
+// Signs via WASM then sends with priceProtection=false to avoid "accidental price" rejection
+// for limit orders placed away from current price (normal for grid bots).
 async function gridPlaceSingleOrder(price, isAsk, notional, _unused){
   try{
     const signer = await window.__getLighterSigner();
@@ -4416,22 +4417,51 @@ async function gridPlaceSingleOrder(price, isAsk, notional, _unused){
     const btcSize = notional / price;
     const priceLighter = toLighterInt(price, priceDecimals);
     const sizeLighter  = toLighterInt(btcSize, sizeDecimals);
+    const expiry = Date.now() + 28 * 24 * 60 * 60 * 1000;
 
-    console.log('[GridBot] placing order', { price, isAsk, btcSize, priceLighter, sizeLighter });
-    const [tx, hash, error] = await signer.createOrderOptimized({
+    // Get nonce
+    const nonceResult = await signer.transactionApi.getNextNonce(signer.config.accountIndex, signer.config.apiKeyIndex);
+    const nonce = nonceResult.nonce;
+
+    // Sign the order via WASM
+    const wasmParams = {
       marketIndex: GRID_BTC_MARKET,
       clientOrderIndex: 0,
       baseAmount: sizeLighter,
       price: priceLighter,
-      isAsk,
+      isAsk: isAsk ? 1 : 0,
       orderType: SC.ORDER_TYPE_LIMIT,
       timeInForce: SC.ORDER_TIME_IN_FORCE_GOOD_TILL_TIME,
-      reduceOnly: false,
+      reduceOnly: 0,
       triggerPrice: 0,
-      orderExpiry: Date.now() + 28 * 24 * 60 * 60 * 1000
-    });
-    if(error){ console.error('[GridBot] order error', error); return false; }
-    console.log('[GridBot] order placed', { tx, hash });
+      orderExpiry: expiry,
+      integratorAccountIndex: 0,
+      integratorTakerFee: 0,
+      integratorMakerFee: 0,
+      skipNonce: 0,
+      nonce,
+      apiKeyIndex: signer.config.apiKeyIndex,
+      accountIndex: signer.config.accountIndex
+    };
+
+    console.log('[GridBot] placing order', { price, isAsk, btcSize, priceLighter, sizeLighter });
+    const wasmResponse = await signer.wallet.signCreateOrder(wasmParams);
+    if(wasmResponse.error){ console.error('[GridBot] sign error', wasmResponse.error); return false; }
+
+    // Send with priceProtection=false — allows limit orders far from mark price
+    const txHash = await signer.transactionApi.sendTxWithIndices(
+      wasmResponse.txType || SC.TX_TYPE_CREATE_ORDER,
+      wasmResponse.txInfo,
+      signer.config.accountIndex,
+      signer.config.apiKeyIndex,
+      false  // priceProtection = false
+    );
+
+    if(txHash.code && txHash.code !== 200){
+      console.error('[GridBot] send error', txHash.message);
+      return false;
+    }
+    console.log('[GridBot] order placed', txHash.tx_hash || txHash.hash);
     return true;
   } catch(e){
     console.error('[GridBot] order exception', e.message || e);

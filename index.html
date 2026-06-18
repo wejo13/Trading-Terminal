@@ -4470,7 +4470,7 @@ async function gridCancelAllOrders(){
   try{
     const signer = await window.__getLighterSigner();
     const SC = signer.constructor;
-    const time = Date.now() + 60 * 1000; // 1 minute from now
+    const time = Date.now() + 28 * 24 * 60 * 60 * 1000; // same format as order expiry
     const [tx, hash, err] = await signer.cancelAllOrders(SC.ORDER_TIME_IN_FORCE_GOOD_TILL_TIME, time);
     if(err) console.warn('[GridBot] cancelAllOrders error:', err);
     else console.log('[GridBot] all orders cancelled', hash);

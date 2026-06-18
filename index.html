@@ -3,43 +3,384 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>4H 200EMA WATCH</title>
+<title>Trading Terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/3.35.0/tabler-icons.min.css">
 <style>
+  /* ===================== DESIGN TOKENS ===================== */
+  /* Palette sampled directly from the Selimor dashboard reference - background,
+     panel, card, and teal accent are exact pixel reads, not approximations.
+     Gain/loss + above/below-EMA semantic colors also intentionally match
+     Selimor's muted tones (cosmetic match, per explicit decision), rather than
+     reusing the old app's punchier neon green/red. */
   :root{
-    --bg:#0a0d0f;
-    --panel:#10151a;
-    --line:#1c2730;
-    --text:#d8e2e8;
-    --dim:#5c6e78;
-    --green:#2dd4a0;
-    --green-dim:#163029;
-    --red:#ff5d5d;
-    --red-dim:#311518;
-    --amber:#f0b429;
-    --violet:#8b7fe8;
-    --mono: 'JetBrains Mono','SF Mono',Consolas,monospace;
+    --bg:#07060c;             /* outer/sidebar background */
+    --panel:#2d2c32;          /* main content panel background */
+    --card:#211f26;           /* card surface */
+    --card-hover:#28262e;
+    --line:#1c1b21;           /* hairline borders/dividers */
+    --text:#f0f2f4;           /* primary text */
+    --text-dim:#9aa0a6;       /* secondary/muted text */
+    --text-faint:#6b7178;     /* tertiary labels, sidebar section headers */
+    --teal:#28d7c8;           /* primary accent */
+    --teal-dim:#1a4a3a;       /* accent tint background (icon badges, success bg) */
+    --green:#3ddc97;          /* gains / above-EMA */
+    --green-dim:#1a3a2e;
+    --red:#e2645f;            /* losses / below-EMA */
+    --red-dim:#3a2226;
+    --amber:#d9a93f;
+    --amber-dim:#3a2f1a;
+    --violet:#9b8ae8;
+    --violet-dim:#2a2440;
+    --font: 'Inter','Segoe UI',Arial,sans-serif;
+    --radius-card:14px;
+    --radius-pill:20px;
+
+    /* ----- legacy aliases -----
+       The watchlist/chart-modal/alerts CSS (ported as-is from the old single-file
+       app) references these older token names throughout. Rather than rewrite
+       every rule, these aliases point the old names at the new Selimor tokens
+       above, so the inherited CSS resolves correctly without modification. New
+       code written going forward should use the tokens above directly, not these
+       aliases - this block exists purely as a migration bridge and can be deleted
+       once nothing in the ported CSS references the old names anymore. */
+    --panel: var(--card);
+    --line: var(--line-old);
+    --line-old:#2f2e35;
+    --dim: var(--text-dim);
+    --mono: var(--font);
   }
   *{box-sizing:border-box;}
   body{
     margin:0;
     background:var(--bg);
     color:var(--text);
-    font-family:var(--mono);
+    font-family:var(--font);
     -webkit-font-smoothing:antialiased;
   }
-  .wrap{max-width:980px;margin:0 auto;padding:28px 18px 60px;}
+  a{color:inherit;}
 
-  header{
-    display:flex;justify-content:center;align-items:flex-end;
+  /* ===================== APP SHELL ===================== */
+  .app-shell{
+    display:flex;
+    min-height:100vh;
+  }
+
+  /* ----- sidebar ----- */
+  .sidebar{
+    width:220px;
+    flex-shrink:0;
+    background:var(--bg);
+    border-right:1px solid var(--line);
+    display:flex;
+    flex-direction:column;
+    padding:20px 0;
+    position:sticky;
+    top:0;
+    height:100vh;
+  }
+  .sidebar-brand{
+    padding:0 20px 18px;
     border-bottom:1px solid var(--line);
-    padding-bottom:14px;margin-bottom:18px;flex-wrap:wrap;gap:10px;
+    margin-bottom:16px;
   }
-  .title{
-    font-size:20px;font-weight:700;letter-spacing:0.5px;color:var(--text);
+  .sidebar-brand-title{
+    font-size:15px;font-weight:600;color:var(--text);letter-spacing:-0.2px;
   }
-  .title span{color:var(--green);}
-  .subtitle{font-size:11px;color:var(--dim);margin-top:4px;letter-spacing:0.5px;}
-  .meta{font-size:11px;color:var(--dim);text-align:right;}
+  .sidebar-brand-title span{color:var(--teal);}
+
+  .sidebar-section-label{
+    padding:0 20px;font-size:10px;color:var(--text-faint);
+    letter-spacing:0.5px;margin:18px 0 8px;text-transform:uppercase;
+  }
+  .sidebar-section-label:first-of-type{margin-top:0;}
+
+  .nav-item{
+    display:flex;align-items:center;gap:10px;
+    padding:10px 20px;margin-right:16px;
+    cursor:pointer;color:var(--text-dim);font-size:13px;font-weight:500;
+    border-radius:0 var(--radius-pill) var(--radius-pill) 0;
+    transition:background 0.12s,color 0.12s;
+    user-select:none;
+  }
+  .nav-item:hover{color:var(--text);background:rgba(255,255,255,0.04);}
+  .nav-item.active{
+    color:var(--bg);background:var(--teal);font-weight:600;
+  }
+  .nav-item.active:hover{background:var(--teal);}
+  .nav-item i{font-size:17px;flex-shrink:0;}
+  .nav-item.disabled{opacity:0.4;cursor:default;}
+  .nav-item.disabled:hover{background:transparent;color:var(--text-dim);}
+
+  /* sidebar sub-items (indented children under a parent nav group) */
+  .nav-group-label{
+    display:flex;align-items:center;gap:10px;
+    padding:10px 20px 6px;color:var(--text-faint);font-size:12px;font-weight:500;
+    user-select:none;cursor:default;
+  }
+  .nav-group-label i{font-size:17px;flex-shrink:0;}
+  .nav-sub-item{
+    display:flex;align-items:center;gap:8px;
+    padding:7px 20px 7px 44px;margin-right:16px;
+    cursor:pointer;color:var(--text-faint);font-size:12px;font-weight:400;
+    border-radius:0 var(--radius-pill) var(--radius-pill) 0;
+    transition:background 0.12s,color 0.12s;
+    user-select:none;
+  }
+  .nav-sub-item:hover{color:var(--text);background:rgba(255,255,255,0.04);}
+  .nav-sub-item.active{
+    color:var(--bg);background:var(--teal);font-weight:600;
+  }
+  .nav-sub-item.active:hover{background:var(--teal);}
+  .nav-sub-dot{
+    width:5px;height:5px;border-radius:50%;background:currentColor;flex-shrink:0;opacity:0.6;
+  }
+
+  .sidebar-footer{
+    margin-top:auto;padding:0 20px;
+  }
+  .sidebar-footer .nav-item{
+    border-top:1px solid var(--line);padding-top:16px;margin-top:8px;
+    border-radius:0;margin-right:0;padding-left:0;padding-right:0;
+  }
+  .sidebar-footer .nav-item:hover{background:transparent;color:var(--text);}
+
+  /* ----- main content area ----- */
+  .main{
+    flex:1;
+    background:var(--panel);
+    padding:24px 28px 60px;
+    min-width:0;
+  }
+  .main-header{
+    display:flex;justify-content:space-between;align-items:center;
+    margin-bottom:20px;
+  }
+  .main-title{
+    font-size:19px;font-weight:600;color:var(--text);
+  }
+  .live-pill{
+    font-size:12px;color:var(--text-dim);background:var(--card);
+    padding:5px 13px;border-radius:var(--radius-pill);
+    display:flex;align-items:center;gap:6px;
+  }
+  .live-pill .dot{
+    width:6px;height:6px;border-radius:50%;background:var(--teal);
+    box-shadow:0 0 6px rgba(40,215,200,0.6);
+  }
+
+  /* generic card, used across all tabs */
+  .card{
+    background:var(--card);border-radius:var(--radius-card);padding:16px;
+  }
+
+  /* ----- placeholder tab styling (used by tabs not yet built) ----- */
+  .placeholder-tab{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:80px 20px;color:var(--text-dim);
+    background:var(--card);border-radius:var(--radius-card);
+    min-height:300px;
+  }
+  .placeholder-tab i{font-size:32px;color:var(--text-faint);margin-bottom:14px;}
+  .placeholder-tab .ph-title{font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px;}
+  .placeholder-tab .ph-sub{font-size:13px;color:var(--text-dim);max-width:360px;line-height:1.5;}
+
+  /* ----- tab view container ----- */
+  .tab-view{display:none;}
+  .tab-view.active{display:block;}
+
+  /* ===== DASHBOARD BALANCE CARDS ===== */
+  .balance-grid{display:grid;grid-template-columns:1.8fr 1fr 1fr;gap:12px;margin-bottom:18px;}
+  .total-card{
+    background:var(--card);border-radius:var(--radius-card);padding:22px 24px;
+    border:0.5px solid var(--line-old);position:relative;overflow:hidden;
+  }
+  .total-card::before{
+    content:'';position:absolute;inset:0;border-radius:var(--radius-card);
+    border:1px solid rgba(40,215,200,0.15);pointer-events:none;
+  }
+  .total-label{font-size:11px;color:var(--text-dim);letter-spacing:0.3px;margin-bottom:8px;}
+  .total-amount{font-size:36px;font-weight:700;color:var(--text);letter-spacing:-1px;line-height:1;}
+  .total-sub{font-size:11px;color:var(--text-faint);margin-top:8px;}
+  .total-change{
+    display:inline-flex;align-items:center;gap:4px;font-size:12px;
+    color:var(--green);margin-top:10px;background:rgba(61,220,151,0.1);
+    padding:3px 10px;border-radius:var(--radius-pill);
+  }
+  .exchange-card{
+    background:var(--card);border-radius:var(--radius-card);padding:18px;
+    border:0.5px solid var(--line-old);
+  }
+  .ex-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+  .ex-name{font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.4px;}
+  .ex-dot{width:6px;height:6px;border-radius:50%;background:var(--green);}
+  .ex-amount{font-size:22px;font-weight:600;color:var(--text);letter-spacing:-0.5px;}
+  .ex-sub{font-size:11px;color:var(--text-faint);margin-top:4px;}
+  .ex-bar{height:2px;background:var(--line-old);border-radius:2px;margin-top:14px;}
+  .ex-bar-fill{height:2px;border-radius:2px;background:var(--teal);}
+  /* blur-toggle for balance privacy */
+  .balances-hidden .total-amount,
+  .balances-hidden .ex-amount{filter:blur(7px);user-select:none;pointer-events:none;}
+  .hide-balance-btn{
+    display:flex;align-items:center;gap:6px;background:rgba(255,255,255,0.04);
+    border:0.5px solid var(--line-old);border-radius:var(--radius-pill);
+    padding:5px 13px;cursor:pointer;color:var(--text-dim);font-size:11px;
+    margin-bottom:16px;font-family:var(--font);
+  }
+  .hide-balance-btn:hover{color:var(--text);border-color:var(--teal);}
+  .hide-balance-btn i{font-size:14px;}
+
+  /* potential trades section header */
+  .section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+  .section-title{font-size:13px;font-weight:600;color:var(--text);}
+  .section-sub{font-size:11px;color:var(--text-faint);}
+  .potential-row{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:10px 0;border-bottom:0.5px solid var(--line-old);cursor:pointer;
+  }
+  .potential-row:last-child{border-bottom:none;}
+  .potential-row:hover .pr-sym{color:var(--teal);}
+  .pr-left{display:flex;align-items:center;gap:10px;}
+  .pr-right{display:flex;align-items:center;gap:14px;}
+  .pr-sym{font-weight:600;color:var(--text);font-size:13px;transition:color 0.1s;}
+  .pr-mkt{font-size:9px;color:var(--text-faint);margin-left:5px;text-transform:uppercase;}
+
+  /* ===== TRADE TAB — EXECUTOR + CHECKLIST ===== */
+  .jf-checks{
+    border:1px solid var(--line);border-radius:var(--radius-card);padding:14px 16px;
+    background:rgba(255,255,255,0.012);
+  }
+  .jf-checks-title{font-size:10px;color:var(--dim);letter-spacing:0.5px;margin-bottom:10px;font-weight:600;}
+  .jf-check{
+    display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);
+    padding:5px 0;cursor:pointer;
+  }
+  .jf-check input{cursor:pointer;accent-color:var(--teal);}
+  .jf-check-note{font-size:10px;color:var(--dim);margin-top:6px;font-style:italic;}
+
+  .trade-layout{display:grid;grid-template-columns:1.2fr 1fr;gap:14px;align-items:start;}
+  @media(max-width:760px){.trade-layout{grid-template-columns:1fr;}}
+
+  .jf-executor{
+    border:1px solid var(--line);border-radius:var(--radius-card);padding:16px;
+    background:rgba(155,138,232,0.03);display:flex;flex-direction:column;gap:10px;
+  }
+  .jf-executor-title{
+    font-size:10px;color:var(--violet);letter-spacing:0.5px;
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .jf-executor-title .exec-status{
+    font-size:9px;font-weight:700;padding:2px 7px;border-radius:3px;letter-spacing:0.3px;
+  }
+  .exec-status.armed{background:var(--teal-dim);color:var(--teal);border:1px solid rgba(40,215,200,0.4);}
+  .exec-status.off{background:rgba(255,255,255,0.04);color:var(--dim);border:1px solid var(--line);}
+
+  .exec-ticker-row{display:flex;gap:8px;align-items:flex-end;}
+  .exec-ticker-row input{
+    flex:1;background:var(--bg);border:1px solid var(--line);color:var(--text);
+    font-family:var(--font);font-size:13px;padding:8px 10px;border-radius:6px;
+  }
+  .exec-ticker-row input:focus{outline:none;border-color:var(--teal);}
+
+  .exec-dir-toggle{display:flex;gap:0;border:1px solid var(--line);border-radius:6px;overflow:hidden;}
+  .exec-dir-toggle button{
+    flex:1;background:none;border:none;color:var(--dim);font-family:var(--font);
+    font-size:11px;padding:7px 0;cursor:pointer;font-weight:500;letter-spacing:0.3px;
+  }
+  .exec-dir-toggle button.active-long{background:var(--teal-dim);color:var(--teal);font-weight:700;}
+  .exec-dir-toggle button.active-short{background:var(--red-dim);color:var(--red);font-weight:700;}
+  .exec-dir-toggle button:not(:last-child){border-right:1px solid var(--line);}
+
+  .exec-order-type-toggle{display:flex;gap:0;border:1px solid var(--line);border-radius:6px;overflow:hidden;}
+  .exec-order-type-toggle button{
+    flex:1;background:none;border:none;color:var(--dim);font-family:var(--font);
+    font-size:10.5px;padding:6px 0;cursor:pointer;letter-spacing:0.3px;
+  }
+  .exec-order-type-toggle button.active{background:var(--violet-dim);color:var(--violet);font-weight:700;}
+  .exec-order-type-toggle button:not(:last-child){border-right:1px solid var(--line);}
+
+  .exec-field-row{display:flex;gap:8px;}
+  .exec-field-row label{
+    display:flex;flex-direction:column;gap:4px;font-size:10px;color:var(--dim);
+    letter-spacing:0.2px;flex:1;min-width:0;
+  }
+  .exec-field-row input{
+    background:var(--bg);border:1px solid var(--line);color:var(--text);
+    font-family:var(--font);font-size:12px;padding:7px 9px;border-radius:6px;width:100%;
+  }
+  .exec-field-row input:disabled{opacity:0.4;cursor:not-allowed;}
+  .exec-field-row input:focus{outline:none;border-color:var(--violet);}
+
+  .exec-sl-line{
+    display:flex;align-items:center;gap:6px;font-size:10px;color:var(--dim);
+    padding:8px 0 2px;border-top:1px solid var(--line);
+  }
+  .exec-sl-line b{color:var(--text);font-weight:600;}
+  .sl-badge{
+    font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;
+    background:var(--red-dim);color:var(--red);border:1px solid rgba(255,93,93,0.3);
+  }
+
+  .exec-slippage-row{
+    display:flex;align-items:center;gap:8px;font-size:10px;color:var(--dim);
+  }
+  .exec-slippage-row label{display:flex;align-items:center;gap:6px;flex:1;}
+  .exec-slippage-row input{
+    width:54px;background:var(--bg);border:1px solid var(--line);color:var(--text);
+    font-family:var(--font);font-size:11px;padding:5px 7px;border-radius:4px;text-align:right;
+  }
+  .exec-slippage-row input:focus{outline:none;border-color:var(--violet);}
+  .exec-slippage-note{font-size:9px;color:var(--dim);font-style:italic;}
+
+  .exec-validation-msg{
+    font-size:10px;color:var(--amber);padding:6px 8px;
+    background:rgba(217,169,63,0.08);border:1px solid rgba(217,169,63,0.25);border-radius:4px;
+  }
+  .exec-place-btn{
+    background:none;border:1px solid var(--violet);color:var(--violet);
+    font-family:var(--font);font-size:12px;padding:10px;border-radius:8px;
+    cursor:pointer;font-weight:600;letter-spacing:0.3px;width:100%;
+  }
+  .exec-place-btn:hover{background:var(--violet-dim);}
+  .exec-place-btn:disabled{opacity:0.4;cursor:default;}
+  .exec-submit-note{font-size:9.5px;color:var(--dim);font-style:italic;text-align:center;}
+
+  .size-pill{
+    background:rgba(255,255,255,0.05);border:1px solid var(--line);color:var(--dim);
+    font-family:var(--font);font-size:10px;padding:3px 9px;border-radius:20px;
+    cursor:pointer;font-weight:500;
+  }
+  .size-pill:hover{border-color:var(--teal);color:var(--teal);background:var(--teal-dim);}
+  .size-pill.active{border-color:var(--teal);color:var(--teal);background:var(--teal-dim);font-weight:600;}
+
+  .exec-modal-overlay{
+    position:fixed;top:0;left:0;width:100%;height:100%;
+    background:rgba(0,0,0,0.6);z-index:1000;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .exec-modal-card{
+    background:var(--bg);border:1px solid var(--red);border-radius:10px;
+    padding:20px 22px;max-width:380px;width:90%;
+  }
+  .exec-modal-title{font-size:13px;font-weight:700;color:var(--red);margin-bottom:10px;}
+  .exec-modal-body{font-size:12px;color:var(--text-dim);line-height:1.5;margin-bottom:16px;}
+  .exec-modal-dismiss{
+    background:none;border:1px solid var(--red);color:var(--red);
+    border-radius:4px;padding:6px 14px;font-size:11px;cursor:pointer;
+    font-family:var(--font);float:right;
+  }
+  .exec-modal-dismiss:hover{background:var(--red-dim);}
+
+  .trade-autofill-note{
+    font-size:10px;color:var(--teal);margin-bottom:6px;font-style:italic;
+  }
+
+  /* ===================== PORTED WATCHLIST/MODAL/ALERTS CSS =====================
+     Brought across verbatim from the old single-file app. Uses legacy --panel/
+     --line/--dim/--mono tokens, aliased above to the new Selimor palette so colors
+     update automatically without needing every rule rewritten by hand. */
   #refreshBtn, .refresh-btn{
     background:none;border:1px solid var(--line);color:var(--text);
     font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:3px;
@@ -47,6 +388,11 @@
   }
   #refreshBtn:hover, .refresh-btn:hover{border-color:var(--green);color:var(--green);}
   #refreshBtn:disabled, .refresh-btn:disabled{opacity:0.4;cursor:default;}
+  /* override the #refreshBtn ID rule when it's used as a small inline button —
+     ID specificity would otherwise win over .refresh-btn-small regardless of order */
+  #refreshBtn.refresh-btn-small{
+    font-size:9px;padding:3px 8px;color:var(--dim);border-color:var(--line);
+  }
 
   .toolbar{display:flex;align-items:center;gap:14px;margin-bottom:16px;flex-wrap:wrap;}
 
@@ -57,6 +403,17 @@
     cursor:pointer;letter-spacing:0.5px;
   }
   .tab.active{color:var(--bg);background:var(--green);border-color:var(--green);font-weight:700;}
+
+  /* refresh button sits inside the tabs row but is intentionally smaller and
+     visually quieter than CRYPTO/STOCKS — it's a utility action, not a primary
+     filter, so it shouldn't compete for attention with the market switcher */
+  .refresh-btn-small{
+    background:none;border:1px solid var(--line);color:var(--dim);
+    font-family:var(--mono);font-size:9px;padding:4px 9px;border-radius:3px;
+    cursor:pointer;letter-spacing:0.3px;margin-left:4px;
+  }
+  .refresh-btn-small:hover{border-color:var(--green);color:var(--green);}
+  .refresh-btn-small:disabled{opacity:0.4;cursor:default;}
 
   /* compact stats strip - this used to be three large boxes, which gave irrelevant
      glance-once numbers far more visual weight than they deserved. Now it's a single
@@ -203,300 +560,6 @@
 
   footer{margin-top:24px;font-size:10px;color:var(--dim);line-height:1.6;}
 
-  /* collapsible below-EMA section - same <details> pattern as the legend, collapsed
-     by default since the user only wants to see above-EMA setups by default and
-     expand this on demand */
-  .below-ema-section{
-    margin-top:18px;border:1px solid var(--line);border-radius:6px;
-    background:var(--panel);padding:2px 16px 16px;
-  }
-  .below-ema-section summary{
-    cursor:pointer;padding:12px 0;font-size:12px;color:var(--dim);
-    list-style:none;user-select:none;letter-spacing:0.3px;
-  }
-  .below-ema-section summary:hover{color:var(--text);}
-  .below-ema-section[open] summary{color:var(--red);}
-  .below-ema-section table{margin-top:8px;}
-
-  .empty-note{
-    text-align:center;color:var(--dim);font-size:11px;padding:18px 0!important;
-  }
-
-  /* collapsible legend/glossary, collapsed by default via the <details> element's
-     native behavior - no JS needed for the toggle itself */
-  .legend-section{
-    margin-top:18px;border:1px solid var(--line);border-radius:6px;
-    background:var(--panel);padding:2px 16px;
-  }
-  .legend-section summary{
-    cursor:pointer;padding:12px 0;font-size:12px;color:var(--dim);
-    list-style:none;user-select:none;
-  }
-  .legend-section summary:hover{color:var(--text);}
-  .legend-section[open] summary{color:var(--green);}
-  .legend-body{padding:4px 0 18px;}
-  .legend-group{margin-bottom:18px;}
-  .legend-group:last-child{margin-bottom:4px;}
-  .legend-group h4{
-    font-size:11px;color:var(--text);margin:0 0 6px;letter-spacing:0.3px;
-    border-bottom:1px solid var(--line);padding-bottom:6px;
-  }
-  .legend-group p{
-    font-size:11px;color:var(--dim);line-height:1.6;margin:0 0 8px;
-  }
-  .legend-group p:last-child{margin-bottom:0;}
-  .legend-group p b{color:var(--text);font-weight:700;}
-
-  /* --- trade journal --- */
-  .journal-section{
-    margin-top:24px;border:1px solid var(--line);border-radius:6px;
-    background:var(--panel);padding:18px 18px 20px;
-  }
-  .journal-title{
-    font-size:13px;letter-spacing:1px;color:var(--text);margin:0 0 14px;font-weight:700;
-  }
-  .journal-summary{
-    display:flex;gap:18px;flex-wrap:wrap;margin-bottom:16px;font-size:11px;color:var(--dim);
-  }
-  .journal-summary b{color:var(--green);font-size:13px;}
-  .journal-summary .neg-stat b{color:var(--red);}
-
-  .journal-form{
-    border:1px solid var(--line);border-radius:5px;padding:14px;margin-bottom:18px;
-    background:rgba(255,255,255,0.012);
-  }
-  .jf-row{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;}
-  .jf-row label{
-    display:flex;flex-direction:column;gap:4px;font-size:10px;color:var(--dim);
-    letter-spacing:0.3px;flex:1;min-width:140px;
-  }
-  .jf-row input, .jf-row select, .journal-form textarea{
-    background:var(--bg);border:1px solid var(--line);color:var(--text);
-    font-family:var(--mono);font-size:12px;padding:7px 9px;border-radius:3px;
-  }
-  .jf-row input:focus, .jf-row select:focus, .journal-form textarea:focus{
-    outline:none;border-color:var(--green);
-  }
-
-  .jf-checks{
-    border:1px solid var(--line);border-radius:4px;padding:10px 12px;margin-bottom:12px;
-    background:rgba(255,255,255,0.012);
-  }
-  .jf-checks-title{font-size:10px;color:var(--dim);letter-spacing:0.5px;margin-bottom:8px;}
-  .jf-check{
-    display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--text);
-    padding:4px 0;cursor:pointer;
-  }
-  .jf-check input{cursor:pointer;}
-  .jf-check-note{font-size:10px;color:var(--dim);margin-top:6px;font-style:italic;}
-
-  /* checklist + executor live side by side; on narrow screens they stack since
-     each needs real width to stay readable (especially the executor's field-row
-     pairs), rather than squeezing both into a too-narrow column */
-  .jf-checklist-executor-row{
-    display:flex;gap:14px;margin-bottom:12px;align-items:stretch;
-  }
-  .jf-checklist-executor-row > *{flex:1;min-width:0;}
-  @media (max-width: 760px){
-    .jf-checklist-executor-row{flex-direction:column;}
-  }
-
-  /* --- trade executor panel (Lighter) --- */
-  .jf-executor{
-    border:1px solid var(--line);border-radius:4px;padding:10px 12px;
-    background:rgba(139,127,232,0.03);
-    display:flex;flex-direction:column;
-  }
-  .jf-executor-title{
-    font-size:10px;color:var(--violet);letter-spacing:0.5px;margin-bottom:8px;
-    display:flex;align-items:center;justify-content:space-between;
-  }
-  .jf-executor-title .exec-status{
-    font-size:9px;font-weight:700;padding:2px 7px;border-radius:3px;letter-spacing:0.3px;
-  }
-  .exec-status.armed{background:var(--green-dim);color:var(--green);border:1px solid rgba(45,212,160,0.4);}
-  .exec-status.off{background:rgba(255,255,255,0.04);color:var(--dim);border:1px solid var(--line);}
-
-  .exec-order-type-toggle{
-    display:flex;gap:0;margin-bottom:10px;border:1px solid var(--line);border-radius:3px;overflow:hidden;
-  }
-  .exec-order-type-toggle button{
-    flex:1;background:none;border:none;color:var(--dim);font-family:var(--mono);
-    font-size:10.5px;padding:6px 0;cursor:pointer;letter-spacing:0.4px;
-  }
-  .exec-order-type-toggle button.active{background:var(--violet);color:var(--bg);font-weight:700;}
-  .exec-order-type-toggle button:not(:last-child){border-right:1px solid var(--line);}
-
-  .exec-direction-line{
-    display:flex;align-items:center;gap:7px;font-size:10px;color:var(--dim);margin-bottom:10px;
-  }
-  .dir-tag{
-    font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:3px;letter-spacing:0.4px;
-  }
-  .dir-tag.dir-long{background:var(--green-dim);color:var(--green);border:1px solid rgba(45,212,160,0.4);}
-  .dir-tag.dir-short{background:var(--red-dim);color:var(--red);border:1px solid rgba(255,93,93,0.4);}
-
-  .exec-field-row{display:flex;gap:8px;margin-bottom:8px;}
-  .exec-field-row label{
-    display:flex;flex-direction:column;gap:4px;font-size:9.5px;color:var(--dim);
-    letter-spacing:0.2px;flex:1;min-width:0;
-  }
-  .exec-field-row input{
-    background:var(--bg);border:1px solid var(--line);color:var(--text);
-    font-family:var(--mono);font-size:11.5px;padding:6px 8px;border-radius:3px;width:100%;
-  }
-  .exec-field-row input:disabled{opacity:0.4;cursor:not-allowed;}
-  .exec-field-row input:focus{outline:none;border-color:var(--violet);}
-
-  .exec-sl-line{
-    display:flex;align-items:center;gap:6px;font-size:10px;color:var(--dim);
-    padding:6px 0 2px;border-top:1px solid var(--line);margin-top:4px;
-  }
-  .exec-sl-line b{color:var(--text);font-weight:600;}
-  .exec-sl-line .sl-badge{
-    font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;
-    background:var(--red-dim);color:var(--red);border:1px solid rgba(255,93,93,0.3);
-  }
-
-  .exec-slippage-row{
-    display:flex;align-items:center;gap:8px;margin-top:8px;font-size:10px;color:var(--dim);
-  }
-  .exec-slippage-row label{display:flex;align-items:center;gap:6px;flex:1;}
-  .exec-slippage-row input{
-    width:54px;background:var(--bg);border:1px solid var(--line);color:var(--text);
-    font-family:var(--mono);font-size:11px;padding:5px 7px;border-radius:3px;text-align:right;
-  }
-  .exec-slippage-row input:focus{outline:none;border-color:var(--violet);}
-  .exec-slippage-note{font-size:9px;color:var(--dim);font-style:italic;margin-top:4px;}
-
-  .exec-validation-msg{
-    font-size:10px;color:var(--amber);margin-top:8px;padding:6px 8px;
-    background:rgba(240,180,41,0.08);border:1px solid rgba(240,180,41,0.25);border-radius:3px;
-  }
-
-  .exec-modal-overlay{
-    position:fixed;top:0;left:0;width:100%;height:100%;
-    background:rgba(0,0,0,0.6);z-index:1000;
-    display:flex;align-items:center;justify-content:center;
-  }
-  .exec-modal-card{
-    background:var(--bg);border:1px solid var(--red);border-radius:6px;
-    padding:20px 22px;max-width:380px;width:90%;
-    box-shadow:0 8px 30px rgba(0,0,0,0.5);
-  }
-  .exec-modal-title{
-    font-size:13px;font-weight:700;color:var(--red);margin-bottom:10px;
-  }
-  .exec-modal-body{
-    font-size:12px;color:#cfd8dc;line-height:1.5;margin-bottom:16px;
-  }
-  .exec-modal-dismiss{
-    background:none;border:1px solid var(--red);color:var(--red);
-    border-radius:3px;padding:6px 14px;font-size:11px;cursor:pointer;
-    font-family:inherit;float:right;
-  }
-  .exec-modal-dismiss:hover{
-    background:var(--red-dim);
-  }
-
-  .exec-submit-note{
-    font-size:9.5px;color:var(--dim);align-self:center;font-style:italic;
-  }
-
-  .jf-notes-label{
-    display:flex;flex-direction:column;gap:4px;font-size:10px;color:var(--dim);
-    margin-bottom:14px;
-  }
-  .journal-form textarea{font-family:var(--mono);resize:vertical;}
-
-  .jf-screenshot-field{margin-bottom:14px;}
-  .jf-screenshot-label{
-    display:flex;flex-direction:column;gap:6px;font-size:10px;color:var(--dim);
-    letter-spacing:0.3px;
-  }
-  .jf-screenshot-label input[type="file"]{
-    font-family:var(--mono);font-size:11px;color:var(--text);
-  }
-  .jf-screenshot-preview-wrap{
-    display:flex;align-items:center;gap:10px;margin-top:8px;
-  }
-  .jf-screenshot-preview-wrap img{
-    max-width:140px;max-height:90px;border:1px solid var(--line);border-radius:4px;
-    object-fit:cover;cursor:pointer;
-  }
-  .jf-screenshot-preview-wrap button{
-    background:none;border:1px solid var(--line);color:var(--dim);
-    font-family:var(--mono);font-size:10px;padding:5px 10px;border-radius:3px;cursor:pointer;
-  }
-  .jf-screenshot-preview-wrap button:hover{border-color:var(--red);color:var(--red);}
-  .jf-screenshot-note{font-size:10px;color:var(--dim);margin-top:6px;font-style:italic;}
-
-  .jf-actions{display:flex;gap:8px;}
-  .jf-actions button{
-    background:none;border:1px solid var(--line);color:var(--text);
-    font-family:var(--mono);font-size:11px;padding:8px 16px;border-radius:3px;cursor:pointer;
-  }
-  .jf-actions button[type="submit"]{border-color:var(--green);color:var(--green);font-weight:700;}
-  .jf-actions button:hover{border-color:var(--green);color:var(--green);}
-
-  .journal-log{overflow-x:auto;}
-  #journalTable{width:100%;border-collapse:collapse;font-size:11px;}
-  #journalTable th{
-    text-align:left;padding:8px 10px;color:var(--dim);font-weight:400;
-    letter-spacing:0.3px;border-bottom:1px solid var(--line);white-space:nowrap;
-  }
-  #journalTable td{
-    padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;
-  }
-  #journalTable td.notes-cell{
-    white-space:normal;max-width:220px;color:var(--dim);font-size:10.5px;
-  }
-  #journalTable td.shot-cell{text-align:center;}
-  #journalTable td.shot-cell img{
-    width:48px;height:32px;object-fit:cover;border:1px solid var(--line);
-    border-radius:3px;cursor:pointer;vertical-align:middle;
-  }
-  #journalTable td.shot-cell span.no-shot{color:var(--dim);}
-  .jt-outcome-win{color:var(--green);font-weight:700;}
-  .jt-outcome-loss{color:var(--red);font-weight:700;}
-  .jt-outcome-open{color:var(--amber);}
-  .jt-outcome-breakeven{color:var(--dim);}
-  .jt-pct-pos{color:var(--green);font-weight:700;}
-  .jt-pct-neg{color:var(--red);font-weight:700;}
-  .jt-delete-btn{
-    background:none;border:1px solid var(--line);color:var(--dim);
-    font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:3px;cursor:pointer;
-  }
-  .jt-delete-btn:hover{border-color:var(--red);color:var(--red);}
-  .jt-share-btn{
-    background:none;border:1px solid var(--line);color:var(--dim);
-    font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:3px;cursor:pointer;
-    margin-right:4px;
-  }
-  .jt-share-btn:hover{border-color:var(--violet);color:var(--violet);}
-  .jt-edit-btn{
-    background:none;border:1px solid var(--line);color:var(--dim);
-    font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:3px;cursor:pointer;
-    margin-right:4px;
-  }
-  .jt-edit-btn:hover{border-color:var(--amber);color:var(--amber);}
-  .journal-empty-note{text-align:center;color:var(--dim);font-size:11px;padding:16px 0;}
-  .journal-storage-note{font-size:10px;color:var(--dim);margin-top:8px;}
-  .journal-storage-note.storage-warn{color:var(--amber);}
-
-  .screenshot-modal{max-width:90vw;width:auto;padding:14px;text-align:center;}
-  .screenshot-modal img{max-width:100%;max-height:80vh;border-radius:4px;display:block;margin:0 auto;}
-  .share-x-modal{max-width:520px;}
-  #shareXText{
-    width:100%;background:var(--bg);border:1px solid var(--line);border-radius:4px;
-    color:var(--text);font-family:var(--mono);font-size:12px;padding:10px;resize:vertical;
-    box-sizing:border-box;
-  }
-
-  ::-webkit-scrollbar{height:6px;width:6px;}
-  ::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px;}
-
-  /* chart modal */
   .modal-bg{
     position:fixed;inset:0;background:rgba(0,0,0,0.7);
     display:none;align-items:center;justify-content:center;z-index:50;padding:16px;
@@ -561,360 +624,732 @@
     font-family:var(--mono);font-size:10px;padding:4px 9px;border-radius:3px;cursor:pointer;
   }
   #clearLogBtn:hover{border-color:var(--red);color:var(--red);}
+
+  /* ===================== JOURNAL TAB ===================== */
+  .journal-stats-row{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;
+  }
+  .jstat-card{
+    background:var(--card);border-radius:var(--radius-card);padding:14px 16px;
+    border:0.5px solid var(--line-old);
+  }
+  .jstat-label{font-size:10px;color:var(--text-faint);letter-spacing:0.3px;margin-bottom:6px;}
+  .jstat-value{font-size:22px;font-weight:700;color:var(--text);letter-spacing:-0.5px;}
+  .jstat-value.win{color:var(--green);}
+  .jstat-value.loss{color:var(--red);}
+  .jstat-sub{font-size:10px;color:var(--text-faint);margin-top:4px;}
+
+  /* manual entry form */
+  .journal-form-card{
+    background:var(--card);border-radius:var(--radius-card);padding:16px;
+    border:0.5px solid var(--line-old);margin-bottom:16px;
+  }
+  .journal-form-header{
+    display:flex;align-items:center;justify-content:space-between;
+    cursor:pointer;user-select:none;margin-bottom:0;
+  }
+  .journal-form-header.open{margin-bottom:16px;}
+  .journal-form-title{font-size:12px;font-weight:600;color:var(--text-dim);letter-spacing:0.3px;}
+  .journal-form-toggle{
+    font-size:10px;color:var(--teal);border:1px solid rgba(40,215,200,0.3);
+    border-radius:var(--radius-pill);padding:3px 10px;cursor:pointer;
+    background:none;font-family:var(--font);
+  }
+  .journal-form-toggle:hover{background:var(--teal-dim);}
+  .journal-form-body{display:none;}
+  .journal-form-body.open{display:block;}
+
+  .jf-row{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;}
+  .jf-field{display:flex;flex-direction:column;gap:4px;font-size:10px;color:var(--text-faint);flex:1;min-width:100px;}
+  .jf-field input,.jf-field select{
+    background:var(--bg);border:1px solid var(--line-old);color:var(--text);
+    font-family:var(--font);font-size:12px;padding:7px 9px;border-radius:6px;width:100%;
+  }
+  .jf-field input:focus,.jf-field select:focus{outline:none;border-color:var(--teal);}
+
+  .jf-checks-inline{
+    display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;
+  }
+  .jf-check-pill{
+    display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text-dim);
+    background:rgba(255,255,255,0.03);border:1px solid var(--line-old);
+    border-radius:var(--radius-pill);padding:4px 10px;cursor:pointer;
+  }
+  .jf-check-pill input{cursor:pointer;accent-color:var(--teal);}
+  .jf-check-pill:has(input:checked){border-color:var(--teal);color:var(--teal);background:var(--teal-dim);}
+
+  .journal-form-actions{display:flex;gap:8px;margin-top:4px;}
+  .jf-submit-btn{
+    background:none;border:1px solid var(--teal);color:var(--teal);
+    font-family:var(--font);font-size:11px;padding:8px 18px;border-radius:6px;
+    cursor:pointer;font-weight:600;
+  }
+  .jf-submit-btn:hover{background:var(--teal-dim);}
+  .jf-cancel-btn{
+    background:none;border:1px solid var(--line-old);color:var(--text-dim);
+    font-family:var(--font);font-size:11px;padding:8px 14px;border-radius:6px;cursor:pointer;
+  }
+  .jf-cancel-btn:hover{border-color:var(--red);color:var(--red);}
+
+  /* trade log table */
+  .journal-log-card{
+    background:var(--card);border-radius:var(--radius-card);padding:16px;
+    border:0.5px solid var(--line-old);
+  }
+  .journal-log-header{
+    display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;
+  }
+  .journal-log-title{font-size:12px;font-weight:600;color:var(--text-dim);letter-spacing:0.3px;}
+  .journal-export-row{display:flex;gap:6px;}
+  .journal-export-btn{
+    background:none;border:1px solid var(--line-old);color:var(--text-faint);
+    font-family:var(--font);font-size:10px;padding:4px 10px;border-radius:var(--radius-pill);
+    cursor:pointer;display:flex;align-items:center;gap:4px;
+  }
+  .journal-export-btn:hover{border-color:var(--teal);color:var(--teal);}
+  .journal-export-btn i{font-size:12px;}
+
+  .journal-table{width:100%;border-collapse:collapse;font-size:11px;}
+  .journal-table thead th{
+    text-align:left;font-size:9px;color:var(--text-faint);letter-spacing:0.5px;
+    padding:5px 8px;border-bottom:1px solid var(--line-old);white-space:nowrap;
+    user-select:none;
+  }
+  .journal-table tbody tr{border-bottom:0.5px solid var(--line-old);}
+  .journal-table tbody tr:hover{background:rgba(255,255,255,0.025);}
+  .journal-table tbody tr:last-child{border-bottom:none;}
+  .journal-table td{padding:8px 8px;white-space:nowrap;color:var(--text);}
+
+  .jt-dir-long{font-size:9px;font-weight:700;color:var(--teal);background:var(--teal-dim);
+    border-radius:3px;padding:2px 6px;letter-spacing:0.3px;}
+  .jt-dir-short{font-size:9px;font-weight:700;color:var(--red);background:var(--red-dim);
+    border-radius:3px;padding:2px 6px;letter-spacing:0.3px;}
+
+  .jt-outcome{font-size:9px;font-weight:700;border-radius:3px;padding:2px 6px;letter-spacing:0.3px;}
+  .jt-outcome.open{background:var(--violet-dim);color:var(--violet);}
+  .jt-outcome.win{background:var(--green-dim);color:var(--green);}
+  .jt-outcome.loss{background:var(--red-dim);color:var(--red);}
+
+  .jt-score{font-size:10px;color:var(--text-dim);font-variant-numeric:tabular-nums;}
+  .jt-score.full{color:var(--green);}
+  .jt-pct{font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;}
+  .jt-pct.pos{color:var(--green);}
+  .jt-pct.neg{color:var(--red);}
+  .jt-pct.open{color:var(--text-faint);}
+
+  .jt-action-btn{
+    background:none;border:none;color:var(--text-faint);cursor:pointer;
+    font-size:13px;padding:2px 4px;border-radius:3px;
+  }
+  .jt-action-btn:hover{color:var(--text);background:rgba(255,255,255,0.06);}
+  .jt-action-btn.del:hover{color:var(--red);}
+
+  .journal-empty{
+    padding:40px 20px;text-align:center;color:var(--text-faint);font-size:12px;
+  }
+  .journal-empty i{font-size:28px;display:block;margin-bottom:10px;color:var(--text-faint);}
+
+  /* edit modal */
+  .journal-edit-overlay{
+    position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:200;
+    display:none;align-items:center;justify-content:center;padding:20px;
+  }
+  .journal-edit-overlay.open{display:flex;}
+  .journal-edit-modal{
+    background:var(--bg);border:1px solid var(--line-old);border-radius:12px;
+    padding:22px 24px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;
+  }
+  .journal-edit-title{font-size:13px;font-weight:600;color:var(--text);margin-bottom:16px;
+    display:flex;align-items:center;justify-content:space-between;}
+  .journal-edit-close{
+    background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;line-height:1;
+  }
+  .journal-edit-close:hover{color:var(--text);}
+  .journal-edit-actions{display:flex;gap:8px;margin-top:16px;justify-content:flex-end;}
+
+  /* image attachment */
+  .jf-image-upload{
+    display:flex;align-items:center;gap:10px;margin-bottom:10px;
+  }
+  .jf-image-label{
+    display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text-faint);
+    border:1px dashed var(--line-old);border-radius:6px;padding:7px 12px;cursor:pointer;
+    background:rgba(255,255,255,0.02);transition:border-color 0.15s,color 0.15s;
+  }
+  .jf-image-label:hover{border-color:var(--teal);color:var(--teal);}
+  .jf-image-label i{font-size:14px;}
+  .jf-image-preview{
+    width:48px;height:48px;border-radius:6px;object-fit:cover;
+    border:1px solid var(--line-old);cursor:pointer;display:none;
+  }
+  .jf-image-preview.visible{display:block;}
+  .jf-image-remove{
+    background:none;border:none;color:var(--text-faint);font-size:12px;cursor:pointer;
+    padding:2px 5px;border-radius:3px;display:none;
+  }
+  .jf-image-remove.visible{display:inline-block;}
+  .jf-image-remove:hover{color:var(--red);}
+
+  /* thumbnail in trade log table */
+  .jt-thumb{
+    width:32px;height:32px;border-radius:4px;object-fit:cover;
+    border:1px solid var(--line-old);cursor:pointer;vertical-align:middle;
+    transition:transform 0.15s;
+  }
+  .jt-thumb:hover{transform:scale(1.15);}
+
+  /* full image lightbox */
+  .journal-lightbox{
+    position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:400;
+    display:none;align-items:center;justify-content:center;padding:20px;cursor:zoom-out;
+  }
+  .journal-lightbox.open{display:flex;}
+  .journal-lightbox img{
+    max-width:100%;max-height:90vh;border-radius:8px;
+    box-shadow:0 8px 40px rgba(0,0,0,0.6);
+  }
+
+  /* auto-journal toast */
+  .journal-toast{
+    position:fixed;bottom:24px;right:24px;z-index:300;
+    background:var(--card);border:1px solid var(--teal);border-radius:10px;
+    padding:12px 16px;font-size:12px;color:var(--teal);
+    display:flex;align-items:center;gap:8px;
+    box-shadow:0 4px 20px rgba(40,215,200,0.15);
+    transform:translateY(80px);opacity:0;transition:transform 0.25s,opacity 0.25s;
+    pointer-events:none;
+  }
+  .journal-toast.show{transform:translateY(0);opacity:1;}
+  .journal-toast i{font-size:16px;}
+
+  /* strategies sub-tabs */
+
 </style>
 </head>
 <body>
-<div class="wrap">
 
-  <header>
-    <div>
-      <div class="title">4H <span>200</span> EMA WATCHLIST</div>
+<div class="app-shell">
+
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-brand-title">Trading <span>Terminal</span></div>
     </div>
-  </header>
 
-  <div class="toolbar">
-    <button id="refreshBtn" onclick="loadAll()">↻ refresh</button>
-    <div class="tabs">
-      <button class="tab active" data-mkt="crypto" onclick="setMarket('crypto')">CRYPTO</button>
-      <button class="tab" data-mkt="stocks" onclick="setMarket('stocks')">STOCKS</button>
+    <div class="sidebar-section-label">Main</div>
+    <div class="nav-item active" data-tab="dashboard" onclick="switchTab('dashboard')">
+      <i class="ti ti-layout-dashboard"></i>Dashboard
     </div>
-    <div class="stats-strip">
-      <span id="aboveCount">–</span> above &nbsp;·&nbsp; <span id="totalCount">–</span> tracked
+    <div class="nav-group-label">
+      <i class="ti ti-chart-candle"></i>Strategies
     </div>
-  </div>
-
-  <div class="alert-panel">
-    <div class="alert-info">
-      <span class="alert-status off" id="alertStatusBadge">ALERTS OFF</span>
-      &nbsp; touch alert: <b>was above 4H 200EMA → price comes back down and touches it</b>, checked hourly while this tab is open
-      <div id="notifPermissionNote" style="margin-top:4px;"></div>
-      <div class="alert-log" id="alertLog"></div>
+    <div class="nav-sub-item" data-tab="ema" onclick="switchTab('ema')">
+      <span class="nav-sub-dot"></span>EMA Strategy
     </div>
-    <button id="alertToggleBtn" onclick="toggleAlerts()">enable alerts</button>
-    <button class="alert-btn" onclick="sendTestNotification()">send test notification</button>
-    <button class="alert-btn" onclick="checkTouchAlerts(true)">check now</button>
-    <button id="clearLogBtn" onclick="clearAlertLog()">clear log</button>
-  </div>
+    <div class="nav-sub-item" data-tab="grid" onclick="switchTab('grid')">
+      <span class="nav-sub-dot"></span>Grid Block
+    </div>
+    <div class="nav-item" data-tab="trade" onclick="switchTab('trade')">
+      <i class="ti ti-rocket"></i>Trade
+    </div>
+    <div class="nav-item" data-tab="journal" onclick="switchTab('journal')">
+      <i class="ti ti-notebook"></i>Journal
+    </div>
 
-  <div id="content"><div class="loading">loading 4H candles…</div></div>
+    <div class="sidebar-section-label">Research</div>
+    <div class="nav-item" data-tab="seasonality" onclick="switchTab('seasonality')">
+      <i class="ti ti-calendar-stats"></i>BTC seasonality
+    </div>
 
-  <section class="journal-section">
-      <h2 class="journal-title">TRADE JOURNAL</h2>
-  
-      <div class="journal-summary" id="journalSummary"></div>
-  
-      <form id="journalForm" class="journal-form" onsubmit="submitJournalEntry(event)">
+    <div class="sidebar-footer">
+      <div class="nav-item" data-tab="settings" onclick="switchTab('settings')">
+        <i class="ti ti-settings"></i>Settings
+      </div>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="main-header">
+      <div class="main-title" id="mainTitle">Dashboard</div>
+      <div class="live-pill"><span class="dot"></span>Live</div>
+    </div>
+
+    <!-- ===================== DASHBOARD TAB ===================== -->
+    <div class="tab-view active" id="tab-dashboard" data-title="Dashboard">
+
+      <!-- hide/show balance toggle - useful when streaming or screensharing -->
+      <button class="hide-balance-btn" id="hideBalanceBtn" onclick="toggleBalanceVisibility()">
+        <i class="ti ti-eye" id="hideBalanceIcon"></i>
+        <span id="hideBalanceLabel">hide balances</span>
+      </button>
+
+      <!-- balance overview - placeholder amounts until Bybit + Lighter balance
+           fetching is wired up (queued as separate follow-up work). The proportional
+           fill bars on each exchange card show that exchange's share of total as a
+           visual ratio, so you can see allocation at a glance even before the live
+           numbers are connected. -->
+      <div class="balance-grid" id="balanceGrid">
+        <div class="total-card">
+          <div class="total-label">Total balance</div>
+          <div class="total-amount" id="dashTotalBalance">—</div>
+          <div class="total-sub">Bybit + Lighter combined</div>
+          <div class="total-change" id="dashTotalChange" style="display:none;">
+            <i class="ti ti-trending-up" style="font-size:13px;" aria-hidden="true"></i>
+            <span id="dashTotalChangeTxt"></span>
+          </div>
+        </div>
+        <div class="exchange-card">
+          <div class="ex-header">
+            <div class="ex-name">Bybit</div>
+            <div class="ex-dot" title="connected"></div>
+          </div>
+          <div class="ex-amount" id="dashBybitBalance">—</div>
+          <div class="ex-sub">balance fetch coming soon</div>
+          <div class="ex-bar"><div class="ex-bar-fill" id="dashBybitBar" style="width:0%"></div></div>
+        </div>
+        <div class="exchange-card">
+          <div class="ex-header">
+            <div class="ex-name">Lighter</div>
+            <div class="ex-dot" title="connected"></div>
+          </div>
+          <div class="ex-amount" id="dashLighterBalance">—</div>
+          <div class="ex-sub">balance + liquidation coming soon</div>
+          <div class="ex-bar"><div class="ex-bar-fill" id="dashLighterBar" style="width:0%"></div></div>
+        </div>
+      </div>
+
+      <!-- potential trades: ONLY excellent/excellent+ across both crypto and stocks,
+           sorted excellent+ first, then by closest to 4H 200EMA. If nothing qualifies
+           there's nothing worth instantly acting on - go to Strategies for the full list. -->
+      <div class="card">
+        <div class="section-head">
+          <div class="section-title">Potential trades</div>
+          <div class="section-sub">crypto + stocks · excellent only</div>
+        </div>
+        <div id="dashboardHighlights"><div class="loading">loading…</div></div>
+      </div>
+
+    </div>
+
+    <!-- ===================== EMA STRATEGY TAB ===================== -->
+    <div class="tab-view" id="tab-ema" data-title="EMA Strategy">
+
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px;letter-spacing:0.2px;">4H 200 EMA</div>
+      <div class="toolbar">
+        <div class="tabs">
+          <button class="tab active" data-mkt="crypto" onclick="setMarket('crypto')">CRYPTO</button>
+          <button class="tab" data-mkt="stocks" onclick="setMarket('stocks')">STOCKS</button>
+          <button id="refreshBtn" class="refresh-btn-small" onclick="loadAll()">↻ manual refresh</button>
+        </div>
+        <div class="stats-strip">
+          <span id="aboveCount">–</span> above &nbsp;·&nbsp; <span id="totalCount">–</span> tracked
+        </div>
+      </div>
+
+      <div class="alert-panel">
+        <div class="alert-info">
+          <span class="alert-status off" id="alertStatusBadge">ALERTS OFF</span>
+          &nbsp; touch alert: <b>was above 4H 200EMA → price comes back down and touches it</b>, checked hourly while this tab is open
+          <div id="notifPermissionNote" style="margin-top:4px;"></div>
+          <div class="alert-log" id="alertLog"></div>
+        </div>
+        <button id="alertToggleBtn" onclick="toggleAlerts()">enable alerts</button>
+        <button class="alert-btn" onclick="sendTestNotification()">send test notification</button>
+        <button class="alert-btn" onclick="checkTouchAlerts(true)">check now</button>
+        <button id="clearLogBtn" onclick="clearAlertLog()">clear log</button>
+      </div>
+
+      <div id="content"><div class="loading">loading 4H candles…</div></div>
+
+      <div class="modal-bg" id="modalBg" onclick="if(event.target===this) closeModal()">
+        <div class="modal">
+          <button class="modal-close" onclick="closeModal()">✕</button>
+          <div class="modal-head">
+            <div class="sym" id="modalSym">—</div>
+            <div class="dist" id="modalDist"></div>
+            <a href="#" target="_blank" rel="noopener" class="tv-link" id="modalTvLink" title="open in TradingView">open in TradingView ↗</a>
+          </div>
+          <div class="modal-sub" id="modalSub">4H · last 120 candles</div>
+          <div class="tf-row" id="tfRow">
+            <button class="tf-btn active" data-tf="4h" onclick="switchTimeframe('4h')">4H</button>
+            <button class="tf-btn" data-tf="12h" onclick="switchTimeframe('12h')">12H</button>
+            <button class="tf-btn" data-tf="1d" onclick="switchTimeframe('1d')">1D</button>
+            <button class="tf-btn" data-tf="3d" onclick="switchTimeframe('3d')">3D</button>
+            <button class="tf-btn" data-tf="1w" onclick="switchTimeframe('1w')">1W</button>
+          </div>
+          <div id="chartArea"><div class="chart-loading">drawing chart…</div></div>
+          <div class="legend">
+            <span><span class="dot up"></span>close above open</span>
+            <span><span class="dot down"></span>close below open</span>
+            <span><span class="dot ema"></span>4H 200 EMA (native, 4H chart only)</span>
+            <span><span class="dot ema4h"></span>4H 200 EMA level (reference, 12H/1D/3D/1W only)</span>
+          </div>
+          <div class="legend" style="margin-top:6px;">
+            <span><span class="dot resting"></span>resting liquidity (untouched swing low)</span>
+            <span><span class="dot swept"></span>swept, not reclaimed</span>
+            <span><span class="dot reclaimed"></span>swept + reclaimed (bullish close above)</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ===================== GRID BLOCK TAB ===================== -->
+    <div class="tab-view" id="tab-grid" data-title="Grid Block">
+      <div class="placeholder-tab">
+        <i class="ti ti-grid-dots"></i>
+        <div class="ph-title">Grid Block</div>
+        <div class="ph-sub">Grid trading strategy tools will live here.</div>
+      </div>
+    </div>
+
+    <!-- ===================== TRADE TAB ===================== -->
+    <div class="tab-view" id="tab-trade" data-title="Trade">
+
+      <div class="trade-layout">
+
+        <!-- left column: order executor -->
+        <div class="jf-executor">
+          <div class="jf-executor-title">
+            Trade on Lighter
+            <span class="exec-status armed" id="exec-status-badge">LIVE</span>
+          </div>
+
+          <div class="exec-order-type-toggle">
+            <button type="button" class="active" id="exec-type-market" onclick="setExecOrderType('market')">MARKET</button>
+            <button type="button" id="exec-type-limit" onclick="setExecOrderType('limit')">LIMIT</button>
+          </div>
+
+          <!-- ticker + direction, now inside the executor below the order type toggle -->
+          <div style="display:flex;gap:8px;align-items:flex-end;">
+            <div style="flex:1;">
+              <div style="font-size:10px;color:var(--dim);margin-bottom:4px;">Ticker</div>
+              <input type="text" id="jf-ticker" list="jf-ticker-list" placeholder="BTC, ETH, HYPE…" autocomplete="off"
+                style="width:100%;background:var(--bg);border:1px solid var(--line);color:var(--text);font-family:var(--font);font-size:13px;font-weight:600;padding:8px 10px;border-radius:6px;letter-spacing:0.3px;">
+              <datalist id="jf-ticker-list">
+                <option value="BTC">
+                <option value="ETH">
+                <option value="HYPE">
+                <option value="LIGHTER">
+              </datalist>
+            </div>
+            <div style="flex:1;">
+              <div style="font-size:10px;color:var(--dim);margin-bottom:4px;">Direction</div>
+              <select id="jf-direction" onchange="syncExecDirectionTag()"
+                style="width:100%;background:var(--bg);border:1px solid var(--line);color:var(--text);font-family:var(--font);font-size:12px;padding:8px 10px;border-radius:6px;cursor:pointer;">
+                <option value="long">Long</option>
+                <option value="short">Short</option>
+              </select>
+            </div>
+          </div>
+          <div class="trade-autofill-note" id="jf-autofill-note" style="display:none;"></div>
+
+          <!-- quick-select pills fill the notional size field instantly -->
+          <div style="display:flex;gap:5px;margin-bottom:6px;">
+            <button type="button" onclick="setExecSize(5000)" class="size-pill">$5K</button>
+            <button type="button" onclick="setExecSize(10000)" class="size-pill">$10K</button>
+            <button type="button" onclick="setExecSize(50000)" class="size-pill">$50K</button>
+          </div>
+
+          <div class="exec-field-row">
+            <label>Notional size ($)<input type="number" id="jf-notional" step="any" placeholder="or type custom"></label>
+            <label>Limit price<input type="number" id="exec-limit-price" step="any" placeholder="—" disabled></label>
+          </div>
+
+          <div class="exec-field-row">
+            <label>SL price<input type="number" id="exec-sl-price" step="any" placeholder="e.g. 63,000"></label>
+          </div>
+
+          <div class="exec-sl-line">
+            <b>SL auto-attached</b>
+            <span style="color:var(--dim);">triggers automatically with the order</span>
+            <span class="sl-badge">OCO</span>
+          </div>
+
+          <div class="exec-slippage-row" id="exec-entry-slippage-row">
+            <label><input type="checkbox" id="exec-entry-slippage-enabled" checked> Entry slippage</label>
+            <input type="number" id="exec-entry-slippage-pct" step="any" value="0.5">%
+          </div>
+          <div class="exec-slippage-note">market orders · worst acceptable price vs current · default 0.5%</div>
+
+          <div class="exec-slippage-row">
+            <label><input type="checkbox" id="exec-slippage-enabled" checked> SL slippage</label>
+            <input type="number" id="exec-slippage-pct" step="any" value="0.5">%
+          </div>
+          <div class="exec-slippage-note">0.5% beyond trigger · override for thin alts</div>
+
+          <div id="exec-validation-msg" class="exec-validation-msg" style="display:none;"></div>
+
+          <button type="button" id="exec-place-btn" class="exec-place-btn" onclick="placeOnLighter()">
+            Trade on Lighter
+          </button>
+          <div class="exec-submit-note">live order — submits to Lighter mainnet</div>
+        </div>
+
+        <!-- right column: setup checklist -->
+        <div class="jf-checks">
+          <div class="jf-checks-title">Setup checklist</div>
+          <label class="jf-check"><input type="checkbox" id="jf-check-1"> Price above 4H 200 EMA</label>
+          <label class="jf-check"><input type="checkbox" id="jf-check-2"> Price not too far from 4H 200 EMA</label>
+          <label class="jf-check"><input type="checkbox" id="jf-check-3"> Swept liquidity</label>
+          <label class="jf-check"><input type="checkbox" id="jf-check-4"> Price making HHs and HLs</label>
+          <label class="jf-check"><input type="checkbox" id="jf-check-5"> Impulsive candle with FVG</label>
+          <label class="jf-check"><input type="checkbox" id="jf-check-6"> Retrace into OTE spot (fibs)</label>
+        </div>
+
+      </div>
+
+      <!-- ticker-not-tradable modal -->
+      <div id="exec-ticker-modal-overlay" class="exec-modal-overlay" style="display:none;">
+        <div class="exec-modal-card">
+          <div class="exec-modal-title">⚠ Ticker not tradable on Lighter</div>
+          <div class="exec-modal-body" id="exec-ticker-modal-body"></div>
+          <button type="button" class="exec-modal-dismiss" onclick="closeExecTickerModal()">dismiss</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ===================== JOURNAL TAB ===================== -->
+    <div class="tab-view" id="tab-journal" data-title="Journal">
+
+      <!-- stats strip -->
+      <div class="journal-stats-row" id="journalStatsRow">
+        <div class="jstat-card">
+          <div class="jstat-label">Total trades</div>
+          <div class="jstat-value" id="jstat-total">0</div>
+          <div class="jstat-sub">all time</div>
+        </div>
+        <div class="jstat-card">
+          <div class="jstat-label">Win rate</div>
+          <div class="jstat-value win" id="jstat-wr">—</div>
+          <div class="jstat-sub">closed trades</div>
+        </div>
+        <div class="jstat-card">
+          <div class="jstat-label">Avg result</div>
+          <div class="jstat-value" id="jstat-avg">—</div>
+          <div class="jstat-sub">closed trades</div>
+        </div>
+        <div class="jstat-card">
+          <div class="jstat-label">Checklist avg</div>
+          <div class="jstat-value" id="jstat-checks">—</div>
+          <div class="jstat-sub">checks / 6</div>
+        </div>
+      </div>
+
+      <!-- manual entry form (collapsible) -->
+      <div class="journal-form-card">
+        <div class="journal-form-header" id="journalFormHeader" onclick="toggleJournalForm()">
+          <div class="journal-form-title">+ LOG MANUAL TRADE</div>
+          <button class="journal-form-toggle" id="journalFormToggleBtn" type="button">open</button>
+        </div>
+        <div class="journal-form-body" id="journalFormBody">
+
+          <div class="jf-row">
+            <div class="jf-field" style="max-width:120px;">
+              Ticker
+              <input type="text" id="jman-ticker" placeholder="BTC" autocomplete="off" style="text-transform:uppercase;">
+            </div>
+            <div class="jf-field" style="max-width:110px;">
+              Direction
+              <select id="jman-direction">
+                <option value="long">Long</option>
+                <option value="short">Short</option>
+              </select>
+            </div>
+            <div class="jf-field" style="max-width:130px;">
+              Outcome
+              <select id="jman-outcome">
+                <option value="open">Open</option>
+                <option value="win">Win</option>
+                <option value="loss">Loss</option>
+              </select>
+            </div>
+            <div class="jf-field" style="max-width:130px;">
+              Date
+              <input type="datetime-local" id="jman-date">
+            </div>
+          </div>
+
+          <div class="jf-row">
+            <div class="jf-field">
+              Notional ($)
+              <input type="number" id="jman-notional" step="any" placeholder="e.g. 10000">
+            </div>
+            <div class="jf-field">
+              Entry price
+              <input type="number" id="jman-entry" step="any" placeholder="e.g. 65000">
+            </div>
+            <div class="jf-field">
+              SL price
+              <input type="number" id="jman-sl" step="any" placeholder="e.g. 63000">
+            </div>
+            <div class="jf-field">
+              Exit price
+              <input type="number" id="jman-exit" step="any" placeholder="leave blank if open">
+            </div>
+          </div>
+
+          <!-- checklist -->
+          <div style="font-size:10px;color:var(--text-faint);margin-bottom:8px;letter-spacing:0.3px;">SETUP CHECKLIST</div>
+          <div class="jf-checks-inline">
+            <label class="jf-check-pill"><input type="checkbox" id="jman-c1"> Above 4H 200 EMA</label>
+            <label class="jf-check-pill"><input type="checkbox" id="jman-c2"> Not too far from EMA</label>
+            <label class="jf-check-pill"><input type="checkbox" id="jman-c3"> Swept liquidity</label>
+            <label class="jf-check-pill"><input type="checkbox" id="jman-c4"> HHs and HLs</label>
+            <label class="jf-check-pill"><input type="checkbox" id="jman-c5"> Impulsive candle + FVG</label>
+            <label class="jf-check-pill"><input type="checkbox" id="jman-c6"> OTE retrace (fibs)</label>
+          </div>
+
+          <div class="jf-image-upload">
+            <label class="jf-image-label" for="jman-image">
+              <i class="ti ti-photo"></i>Attach chart screenshot
+            </label>
+            <input type="file" id="jman-image" accept="image/*" style="display:none;" onchange="previewJournalImage('jman-image','jman-preview','jman-remove')">
+            <img id="jman-preview" class="jf-image-preview" onclick="openLightbox(this.src)" alt="chart">
+            <button type="button" id="jman-remove" class="jf-image-remove" onclick="removeJournalImage('jman-image','jman-preview','jman-remove')">✕</button>
+          </div>
+
+          <div class="journal-form-actions">
+            <button type="button" class="jf-submit-btn" onclick="submitManualJournalEntry()">Save trade</button>
+            <button type="button" class="jf-cancel-btn" onclick="toggleJournalForm()">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- trade log -->
+      <div class="journal-log-card">
+        <div class="journal-log-header">
+          <div class="journal-log-title">TRADE LOG</div>
+          <div class="journal-export-row">
+            <button class="journal-export-btn" onclick="exportJournalCSV()" title="Export CSV">
+              <i class="ti ti-file-text"></i>CSV
+            </button>
+            <button class="journal-export-btn" onclick="exportJournalJSON()" title="Export JSON">
+              <i class="ti ti-code"></i>JSON
+            </button>
+            <button class="journal-export-btn" onclick="shareJournalToX()" title="Share to X">
+              <i class="ti ti-brand-x"></i>Share
+            </button>
+          </div>
+        </div>
+        <div id="journalLogWrap">
+          <div class="journal-empty"><i class="ti ti-notebook"></i>No trades logged yet. Place an order or log one manually above.</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- journal edit modal -->
+    <div class="journal-edit-overlay" id="journalEditOverlay" onclick="if(event.target===this)closeJournalEdit()">
+      <div class="journal-edit-modal">
+        <div class="journal-edit-title">
+          Edit trade
+          <button class="journal-edit-close" onclick="closeJournalEdit()">✕</button>
+        </div>
+        <input type="hidden" id="jedit-id">
+
         <div class="jf-row">
-          <label>date/time<input type="datetime-local" id="jf-datetime" required></label>
-          <label>ticker
-            <input type="text" id="jf-ticker" list="jf-ticker-list" placeholder="e.g. BTC" autocomplete="off" required>
-            <datalist id="jf-ticker-list"></datalist>
-          </label>
-          <label>direction
-            <select id="jf-direction">
-              <option value="long">long</option>
-              <option value="short">short</option>
+          <div class="jf-field" style="max-width:120px;">
+            Ticker
+            <input type="text" id="jedit-ticker" style="text-transform:uppercase;">
+          </div>
+          <div class="jf-field" style="max-width:110px;">
+            Direction
+            <select id="jedit-direction">
+              <option value="long">Long</option>
+              <option value="short">Short</option>
             </select>
-          </label>
-        </div>
-  
-        <div class="jf-checklist-executor-row">
-
-          <div class="jf-checks">
-            <div class="jf-checks-title">setup checklist</div>
-            <label class="jf-check"><input type="checkbox" id="jf-check-1"> price above 4H EMA</label>
-            <label class="jf-check"><input type="checkbox" id="jf-check-2"> price not too far from the 4H 200 EMA</label>
-            <label class="jf-check"><input type="checkbox" id="jf-check-3"> swept liquidity</label>
-            <label class="jf-check"><input type="checkbox" id="jf-check-4"> price making HHs and HLs</label>
-            <label class="jf-check"><input type="checkbox" id="jf-check-5"> impulsive candle with FVG</label>
-            <label class="jf-check"><input type="checkbox" id="jf-check-6"> retrace into OTE spot (fibs)</label>
-            <div class="jf-check-note" id="jf-autofill-note"></div>
           </div>
-
-          <div class="jf-executor">
-            <div class="jf-executor-title">
-              PLACE ON LIGHTER
-              <span class="exec-status armed" id="exec-status-badge">LIVE</span>
-            </div>
-
-            <div class="exec-order-type-toggle">
-              <button type="button" class="active" id="exec-type-market" onclick="setExecOrderType('market')">MARKET</button>
-              <button type="button" id="exec-type-limit" onclick="setExecOrderType('limit')">LIMIT</button>
-            </div>
-
-            <div class="exec-direction-line">
-              <span>direction:</span> <span class="dir-tag dir-long" id="exec-dir-tag">LONG</span>
-            </div>
-
-            <div class="exec-field-row">
-              <label>size ($)<input type="number" id="exec-size" step="any" placeholder="from notional ↑"></label>
-              <label>limit price<input type="number" id="exec-limit-price" step="any" placeholder="—" disabled></label>
-            </div>
-
-            <div class="exec-field-row">
-              <label>SL price<input type="number" id="exec-sl-price" step="any" placeholder="from SL price ↓"></label>
-            </div>
-            <div class="exec-sl-line">
-              <b>SL auto-attached</b> <span style="color:var(--dim);">editable above, syncs from journal SL price by default</span>
-              <span class="sl-badge">OCO</span>
-            </div>
-
-            <div class="exec-slippage-row" id="exec-entry-slippage-row">
-              <label><input type="checkbox" id="exec-entry-slippage-enabled" checked> entry slippage tolerance</label>
-              <input type="number" id="exec-entry-slippage-pct" step="any" value="0.5">%
-            </div>
-            <div class="exec-slippage-note">market orders only · worst acceptable price vs current price · default 0.5%</div>
-
-            <div class="exec-slippage-row">
-              <label><input type="checkbox" id="exec-slippage-enabled" checked> SL slippage tolerance</label>
-              <input type="number" id="exec-slippage-pct" step="any" value="0.5">%
-            </div>
-            <div class="exec-slippage-note">default 0.5% beyond trigger · override per-trade for thin alts</div>
-
-            <div id="exec-validation-msg" class="exec-validation-msg" style="display:none;"></div>
-
-            <div class="jf-actions" style="margin-top:10px;">
-              <button type="button" id="exec-place-btn" onclick="placeOnLighter()" style="border-color:var(--violet);color:var(--violet);">place on Lighter</button>
-              <span class="exec-submit-note">live order — submits to Lighter mainnet</span>
-            </div>
-          </div>
-
-        </div>
-
-        <div id="exec-ticker-modal-overlay" class="exec-modal-overlay" style="display:none;">
-          <div class="exec-modal-card">
-            <div class="exec-modal-title">⚠ ticker not tradable on Lighter</div>
-            <div class="exec-modal-body" id="exec-ticker-modal-body"></div>
-            <button type="button" class="exec-modal-dismiss" onclick="closeExecTickerModal()">dismiss</button>
-          </div>
-        </div>
-  
-        <div class="jf-row">
-          <label>notional size ($)<input type="number" id="jf-notional" step="any" placeholder="e.g. 1000"></label>
-          <label>SL price<input type="number" id="jf-sl-price" step="any" placeholder="e.g. 0.0598"></label>
-        </div>
-  
-        <div class="jf-row">
-          <label>entry price<input type="number" id="jf-entry" step="any" placeholder="optional"></label>
-          <label>exit price<input type="number" id="jf-exit" step="any" placeholder="optional, fill in later"></label>
-          <label>outcome
-            <select id="jf-outcome">
-              <option value="open">open / not closed yet</option>
-              <option value="win">win</option>
-              <option value="loss">loss</option>
-              <option value="breakeven">breakeven</option>
+          <div class="jf-field" style="max-width:130px;">
+            Outcome
+            <select id="jedit-outcome">
+              <option value="open">Open</option>
+              <option value="win">Win</option>
+              <option value="loss">Loss</option>
             </select>
-          </label>
-        </div>
-  
-        <label class="jf-notes-label">notes
-          <textarea id="jf-notes" rows="2" placeholder="anything that doesn't fit a checkbox..."></textarea>
-        </label>
-
-        <div class="jf-screenshot-field">
-          <label class="jf-screenshot-label">screenshot (optional, for reference later)
-            <input type="file" id="jf-screenshot-input" accept="image/*">
-          </label>
-          <div class="jf-screenshot-preview-wrap" id="jf-screenshot-preview-wrap" style="display:none;">
-            <img id="jf-screenshot-preview" alt="screenshot preview" onclick="openScreenshotModal(pendingScreenshotDataUrl)" style="cursor:pointer;">
-            <button type="button" id="jf-screenshot-remove" onclick="clearJournalScreenshotInput()">remove</button>
           </div>
-          <div class="jf-screenshot-note" id="jf-screenshot-note"></div>
         </div>
-  
-        <div class="jf-actions">
-          <button type="submit">log trade</button>
-          <button type="button" id="jf-cancel-edit-btn" onclick="cancelJournalEdit()" style="display:none;">cancel edit</button>
-          <button type="button" onclick="exportJournalCSV()">export CSV</button>
-          <button type="button" onclick="exportJournalJSON()">export JSON</button>
+        <div class="jf-row">
+          <div class="jf-field">
+            Notional ($)
+            <input type="number" id="jedit-notional" step="any">
+          </div>
+          <div class="jf-field">
+            Entry price
+            <input type="number" id="jedit-entry" step="any">
+          </div>
+          <div class="jf-field">
+            SL price
+            <input type="number" id="jedit-sl" step="any">
+          </div>
+          <div class="jf-field">
+            Exit price
+            <input type="number" id="jedit-exit" step="any" placeholder="blank if open">
+          </div>
         </div>
-        <div class="jf-check-note">screenshots are included in JSON export, not CSV (CSV can't hold image data)</div>
-      </form>
-  
-      <div class="journal-log">
-        <table id="journalTable">
-          <thead>
-            <tr>
-              <th>date</th><th>ticker</th><th>dir</th><th>checks</th>
-              <th>notional</th><th>SL price</th>
-              <th>entry</th><th>exit</th><th>outcome</th><th>R</th><th>result %</th><th>chart</th><th>notes</th><th></th>
-            </tr>
-          </thead>
-          <tbody id="journalTableBody"></tbody>
-        </table>
+        <div style="font-size:10px;color:var(--text-faint);margin-bottom:8px;letter-spacing:0.3px;">SETUP CHECKLIST</div>
+        <div class="jf-checks-inline">
+          <label class="jf-check-pill"><input type="checkbox" id="jedit-c1"> Above 4H 200 EMA</label>
+          <label class="jf-check-pill"><input type="checkbox" id="jedit-c2"> Not too far from EMA</label>
+          <label class="jf-check-pill"><input type="checkbox" id="jedit-c3"> Swept liquidity</label>
+          <label class="jf-check-pill"><input type="checkbox" id="jedit-c4"> HHs and HLs</label>
+          <label class="jf-check-pill"><input type="checkbox" id="jedit-c5"> Impulsive candle + FVG</label>
+          <label class="jf-check-pill"><input type="checkbox" id="jedit-c6"> OTE retrace (fibs)</label>
+        </div>
+        <div class="jf-image-upload" style="margin-top:10px;">
+          <label class="jf-image-label" for="jedit-image">
+            <i class="ti ti-photo"></i>Chart screenshot
+          </label>
+          <input type="file" id="jedit-image" accept="image/*" style="display:none;" onchange="previewJournalImage('jedit-image','jedit-preview','jedit-remove')">
+          <img id="jedit-preview" class="jf-image-preview" onclick="openLightbox(this.src)" alt="chart">
+          <button type="button" id="jedit-remove" class="jf-image-remove" onclick="removeJournalImage('jedit-image','jedit-preview','jedit-remove')">✕</button>
+        </div>
+        <div class="journal-edit-actions">
+          <button type="button" class="jf-cancel-btn" onclick="closeJournalEdit()">Cancel</button>
+          <button type="button" class="jf-submit-btn" onclick="saveJournalEdit()">Save changes</button>
+        </div>
       </div>
-    </section>
-
-  <details class="legend-section">
-    <summary>what does this all mean? (click to expand)</summary>
-    <div class="legend-body">
-
-      <div class="legend-group">
-        <h4>The 4H 200 EMA</h4>
-        <p>Every coin's price is compared to its own 200-period EMA on the 4-hour timeframe. <b>ABOVE</b> means the last 4H close is trading above that line; <b>BELOW</b> means it's trading under it. On charts, the solid amber line is this EMA drawn natively on the 4H view; on the 12H/1D/3D/1W charts, the same 4H EMA value is shown as a dashed violet reference line so you can see where that level sits relative to higher-timeframe structure (it's hidden on the 4H chart itself since it would just duplicate the solid line).</p>
-      </div>
-
-      <div class="legend-group">
-        <h4>Score: Bad / Good / Excellent / Excellent+</h4>
-        <p>The score combines two things: whether price is above or below the 4H 200EMA, and whether a structural low has been swept recently on the 4H, 12H, or 3D timeframe.</p>
-        <p><b>Bad</b> — price is below the 4H 200EMA and no recent sweep was found on any of the three timeframes.<br>
-        <b>Good</b> — price is below the 4H 200EMA, but a recent sweep was found.<br>
-        <b>Excellent</b> — price is above the 4H 200EMA, with a recent sweep on exactly one of 4H/12H/3D.<br>
-        <b>Excellent+</b> — price is above the 4H 200EMA, with a recent sweep on two or more of those timeframes at the same time — a stronger signal than just one lining up.</p>
-        <p>"Recent" has a strict, deliberately short window so the score doesn't light up on stale, irrelevant history: max 3 candles ago on 4H, max 1 candle ago on 12H, max 1 candle ago on 3D.</p>
-        <p>On top of that, distance from the EMA acts as a ceiling on the score, since this system never chases price. If price is more than 6% away from the 4H 200EMA, the score is capped at Bad no matter how clean the sweep looks. Between 2% and 6% away, the score is capped at Good at most. Within 2%, there's no cap and the sweep logic decides the tier freely. This cap only ever pulls a score down — it never raises one.</p>
-      </div>
-
-      <div class="legend-group">
-        <h4>DIST % FROM 200EMA and the small dot next to it</h4>
-        <p>How far the current price is from the 4H 200EMA, as a percentage. The tiny dot next to the number is a separate, independent indicator of how extended that distance is: dim/grey means tight (within 2%), amber means extended (2-8%), red means very extended (8%+, meaningful chasing risk). This dot uses its own thresholds and is shown regardless of what the score cap above decides.</p>
-      </div>
-
-      <div class="legend-group">
-        <h4>SWEPT column</h4>
-        <p>Shows which timeframe(s) had a qualifying recent sweep — 4H, 12H, 3D, or a combination like "4H+12H" if more than one lined up at once. The small "Xc ago" text next to it shows how many candles ago the freshest of those sweeps happened, on whichever timeframe it occurred on. A dash means no qualifying sweep was found on any timeframe.</p>
-      </div>
-
-      <div class="legend-group">
-        <h4>RVOL</h4>
-        <p>Relative volume: the current 4H candle's trading volume compared to the average of that same coin's previous 20 four-hour candles. 1.0x is normal for that coin; higher numbers (shown in amber once above 1.5x) mean unusually high participation on the current candle, which often adds weight to a sweep or breakout rather than it happening on thin, easily-reversed volume. This is a per-coin, per-candle read — not a comparison across different coins, and unrelated to the volume used to decide which 100 coins make this list in the first place.</p>
-      </div>
-
-      <div class="legend-group">
-        <h4>FUNDING column and open interest dot</h4>
-        <p>Where available (not every coin has a Bybit perpetual contract), the FUNDING column shows that coin's current perpetual futures funding rate. Hovering the small dot next to it also shows the 24-hour open interest change. Negative funding means short positions are paying long positions — a sign of crowded short positioning, which can be a contrarian-bullish tell that pairs naturally with this system's liquidity-sweep logic. The dot is colored green-ish when that contrarian read leans bullish, red-ish when it leans cautionary, and grey when it's roughly neutral or there's no data for that coin. A dash means no perpetual contract was found for that coin on Bybit.</p>
-      </div>
-
-      <div class="legend-group">
-        <h4>Alerts</h4>
-        <p>The alert panel above the table can check, once per hour while this page stays open in a browser tab, whether any coin that was trading above its 4H 200EMA has come back down and touched it. When that happens, a browser notification fires (if permission was granted) and the event is logged below. The log persists across reloads on this device/browser, but alerts only run while the tab is actually open — they can't notify you if the page or browser is closed.</p>
-      </div>
-
-      <div class="legend-group">
-        <h4>Chart markers (inside a coin's chart popup)</h4>
-        <p>Green/red candle wicks show whether that candle closed above or below its own open. The horizontal markers mark out old swing lows where stop-loss liquidity tends to cluster: a grey dashed marker is a low that's never been touched (still "resting"), a blue marker means price swept below that low but hasn't closed back above it yet, and a thicker white marker means price swept below it and then closed back above it with a bullish candle — the sweep-and-reclaim pattern this whole system is built around hunting for.</p>
-      </div>
-
-      <div class="legend-group">
-        <h4>The watchlist itself</h4>
-        <p>This list isn't a fixed 100 coins — it's rebuilt from Bybit's USDT perpetual pairs, ranked by 7-day average trading volume (not just the last 24 hours, which can be skewed by a single spike day), then filtered to only coins with at least $450M in market cap via CoinGecko, with known stablecoins excluded entirely. The goal is to keep the list to genuinely liquid, real assets rather than thin or wash-traded pairs.</p>
-      </div>
-
-      <div class="legend-group">
-        <h4>Stocks tab — manual refresh only</h4>
-        <p>Stocks use a different data source (Twelve Data) than crypto, since the free crypto-style feeds don't allow browser-based requests for stock data. That free tier is rate-limited (8 requests/minute, 800/day), so unlike crypto, stock data is <b>never</b> fetched automatically on page load or by the main refresh button — it only loads when the "refresh stock data" button on this tab is clicked. A full refresh can take a minute or more if the watchlist has more than 8 symbols, since it fetches in rate-limit-safe batches with a pause between each; the status text shows real progress during that wait. Stock data also only has daily-close granularity (not 4H like crypto), so distance from the 200EMA is a daily-equivalent approximation.</p>
-      </div>
-
     </div>
-  </details>
 
+    <!-- image lightbox -->
+    <div class="journal-lightbox" id="journalLightbox" onclick="closeLightbox()">
+      <img id="journalLightboxImg" src="" alt="chart">
+    </div>
+
+    <!-- auto-journal toast notification -->
+    <div class="journal-toast" id="journalToast">
+      <i class="ti ti-check"></i>
+      <span id="journalToastMsg">Trade auto-logged to Journal</span>
+    </div>
+
+    <!-- ===================== SEASONALITY TAB ===================== -->
+    <div class="tab-view" id="tab-seasonality" data-title="BTC Seasonality">
+      <div class="placeholder-tab">
+        <i class="ti ti-calendar-stats"></i>
+        <div class="ph-title">BTC seasonality - coming soon</div>
+        <div class="ph-sub">Per-day historical up/down probability across BTC's full price history.</div>
+      </div>
+    </div>
+
+    <!-- ===================== SETTINGS TAB ===================== -->
+    <div class="tab-view" id="tab-settings" data-title="Settings">
+      <div class="placeholder-tab">
+        <i class="ti ti-settings"></i>
+        <div class="ph-title">Settings - coming soon</div>
+        <div class="ph-sub">Lighter API key, alert preferences, and other configuration will live here.</div>
+      </div>
+    </div>
+
+  </main>
 </div>
-
-<div class="modal-bg" id="modalBg" onclick="if(event.target===this) closeModal()">
-  <div class="modal">
-    <button class="modal-close" onclick="closeModal()">✕</button>
-    <div class="modal-head">
-      <div class="sym" id="modalSym">—</div>
-      <div class="dist" id="modalDist"></div>
-      <a href="#" target="_blank" rel="noopener" class="tv-link" id="modalTvLink" title="open in TradingView">open in TradingView ↗</a>
-    </div>
-    <div class="modal-sub" id="modalSub">4H · last 120 candles</div>
-    <div class="tf-row" id="tfRow">
-      <button class="tf-btn active" data-tf="4h" onclick="switchTimeframe('4h')">4H</button>
-      <button class="tf-btn" data-tf="12h" onclick="switchTimeframe('12h')">12H</button>
-      <button class="tf-btn" data-tf="1d" onclick="switchTimeframe('1d')">1D</button>
-      <button class="tf-btn" data-tf="3d" onclick="switchTimeframe('3d')">3D</button>
-      <button class="tf-btn" data-tf="1w" onclick="switchTimeframe('1w')">1W</button>
-    </div>
-    <div id="chartArea"><div class="chart-loading">drawing chart…</div></div>
-    <div class="legend">
-      <span><span class="dot up"></span>close above open</span>
-      <span><span class="dot down"></span>close below open</span>
-      <span><span class="dot ema"></span>4H 200 EMA (native, 4H chart only)</span>
-      <span><span class="dot ema4h"></span>4H 200 EMA level (reference, 12H/1D/3D/1W only)</span>
-    </div>
-    <div class="legend" style="margin-top:6px;">
-      <span><span class="dot resting"></span>resting liquidity (untouched swing low)</span>
-      <span><span class="dot swept"></span>swept, not reclaimed</span>
-      <span><span class="dot reclaimed"></span>swept + reclaimed (bullish close above)</span>
-    </div>
-  </div>
-</div>
-
-<div class="modal-bg" id="screenshotModalBg" onclick="if(event.target===this) closeScreenshotModal()">
-  <div class="modal screenshot-modal">
-    <button class="modal-close" onclick="closeScreenshotModal()">✕</button>
-    <img id="screenshotModalImg" alt="trade screenshot">
-  </div>
-</div>
-
-<div class="modal-bg" id="shareXModalBg" onclick="if(event.target===this) closeShareToXModal()">
-  <div class="modal share-x-modal">
-    <button class="modal-close" onclick="closeShareToXModal()">✕</button>
-    <div class="sym" style="font-size:16px;margin-bottom:10px;">share trade to X</div>
-    <textarea id="shareXText" rows="6"></textarea>
-    <div id="shareXScreenshotNote" class="jf-check-note"></div>
-    <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">
-      <button class="refresh-btn" id="shareXCopyBtn" onclick="copyShareXText()">copy text</button>
-      <a id="shareXDownloadLink" class="refresh-btn" style="display:none;text-decoration:none;" download="trade_screenshot.jpg">download screenshot</a>
-      <a id="shareXIntentLink" class="refresh-btn" style="text-decoration:none;" target="_blank" rel="noopener">open on X ↗</a>
-    </div>
-    <div class="jf-check-note" style="margin-top:10px;">
-      X's compose box can't be pre-filled with an image through a simple link — if this trade has a screenshot, download it first, then attach it manually after the composer opens.
-    </div>
-  </div>
-</div>
-
-<script type="module">
-window.__lighterSignerReady = false;
-window.__lighterSignerClient = null;
-window.__lighterSignerError = null;
-
-// lighter-ts-sdk's browser bundle has a couple of unguarded `process.env.DEBUG`
-// reads (inconsistent with its own `typeof process !== 'undefined'` guards
-// elsewhere) that throw in a real browser since there's no global `process`.
-// Minimal polyfill so those lines read undefined instead of crashing.
-if(typeof window.process === 'undefined'){
-  window.process = { env: {} };
-}
-
-import { SignerClient, GroupingType } from './lighter-ts-sdk.browser.js';
-
-// Private key is read fresh from localStorage at signer-creation time (not
-// cached at module load), so a key entered after page load is picked up.
-async function buildLighterSigner(){
-  const privateKey = localStorage.getItem('lighterPrivateKey');
-  if(!privateKey) throw new Error('no Lighter private key stored in localStorage (key: lighterPrivateKey)');
-
-  const signer = new SignerClient({
-    url: 'https://mainnet.zklighter.elliot.ai',
-    privateKey,
-    accountIndex: 21229,
-    apiKeyIndex: 5,
-    wasmConfig: { wasmPath: 'wasm/lighter-signer.wasm', wasmExecPath: 'wasm/wasm_exec.js' }
-  });
-
-  await signer.initialize();       // loads + instantiates the WASM module
-  await signer.ensureWasmClient(); // registers privateKey/chainId/indices with the WASM module (createClient)
-  return signer;
-}
-
-// Exposed for the classic script below to call. Lazily builds + caches the
-// signer on first use rather than at page load, so a missing/blank key
-// doesn't throw before the user has tried to place anything.
-window.__getLighterSigner = async function(){
-  if(window.__lighterSignerClient) return window.__lighterSignerClient;
-  const signer = await buildLighterSigner();
-  window.__lighterSignerClient = signer;
-  window.__lighterSignerReady = true;
-  return signer;
-};
-
-window.__LighterGroupingType = GroupingType;
-</script>
 
 <script>
-// Fallback list used only if the live ranking fetch fails (e.g. offline).
+// ===================== PORTED WATCHLIST + ALERTS ENGINE =====================
+// Brought across verbatim from the old single-file app (scoring, candle fetch,
+// table rendering, chart modal, touch alerts). Journal and Lighter executor are
+// migrated in separate steps - nothing here depends on those, but a few guarded
+// calls (typeof populateJournalTickerList === 'function') exist for when they
+// are added later, so they were left in place rather than stripped out.
 const FALLBACK_CRYPTO_SYMBOLS = [
   "BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","ADAUSDT","DOGEUSDT","AVAXUSDT",
   "LINKUSDT","TONUSDT","SUIUSDT","DOTUSDT","LTCUSDT","NEARUSDT","APTUSDT","ARBUSDT",
@@ -1753,6 +2188,54 @@ function render(){
   `;
 }
 
+// Builds the Dashboard's "excellent setups right now" list - deliberately the
+// opposite of render()'s full table: only EXCELLENT/EXCELLENT+ scored symbols,
+// combined across BOTH crypto and stocks into one flat list, no sort/tabs/
+// below-EMA section. Each row tags its own market explicitly (rather than relying
+// on the global currentMarket toggle, which belongs to the Strategies tab and may
+// not match a given row) so openChart resolves correctly regardless of which
+// market the Strategies tab happens to be sitting on. Called from the same refresh
+// points as render() (loadAll/loadStocksManual) so it never drifts out of sync.
+function renderDashboardHighlights(){
+  const target = document.getElementById('dashboardHighlights');
+  if(!target) return;
+
+  const tagged = [
+    ...cryptoData.map(d => ({...d, _market:'crypto'})),
+    ...stockData.map(d => ({...d, _market:'stocks'}))
+  ];
+  const excellentOnly = tagged.filter(d => d.score && (d.score.tier === 'excellent' || d.score.tier === 'excellent_plus'));
+
+  if(!excellentOnly.length){
+    target.innerHTML = `<div class="empty-note" style="padding:24px 0;">nothing excellent right now — browse the Trade tab for other setups</div>`;
+    return;
+  }
+
+  // excellent+ first, then by closeness to the 4H 200EMA within each tier - the
+  // same "closest first" convention as the main watchlist's default sort
+  excellentOnly.sort((a,b) => {
+    if(a.score.tier !== b.score.tier) return a.score.tier === 'excellent_plus' ? -1 : 1;
+    return Math.abs(a.distPct) - Math.abs(b.distPct);
+  });
+
+  target.innerHTML = excellentOnly.map(d => {
+    const scoreBadge = `<span class="score-badge ${d.score.tier}">${SCORE_LABELS[d.score.tier]}</span>`;
+    const distDot = `<span class="dist-tier-dot ${d.distTier}" title="${DIST_TIER_LABELS[d.distTier]}"></span>`;
+    const marketTag = `<span class="pr-mkt">${d._market}</span>`;
+    return `
+    <div class="potential-row" onclick="openChart('${d.rawSymbol||d.symbol}', '${d._market}')">
+      <div class="pr-left">
+        <span class="strip ${d.above?'above':'below'}"></span>
+        <div><span class="pr-sym">${d.symbol}</span>${marketTag}</div>
+      </div>
+      <div class="pr-right">
+        <span class="pct ${d.distPct>=0?'pos':'neg'}">${d.distPct>=0?'+':''}${d.distPct.toFixed(2)}%${distDot}</span>
+        ${scoreBadge}
+      </div>
+    </div>`;
+  }).join('');
+}
+
 // Checks a single timeframe's candles for a RECENT swept structural low: a fractal low
 // that has been swept (price traded below it) within the last `recentWindow` candles.
 // "Swept" alone counts here - it does not need to be reclaimed yet, since the scoring
@@ -1884,6 +2367,7 @@ async function loadAll(){
   }
   btn.disabled = false;
   if(currentMarket === 'crypto') render();
+  renderDashboardHighlights(); // Dashboard's excellent-only list needs to refresh every time crypto data changes, regardless of which Strategies sub-tab (crypto/stocks) is currently active
   // refresh the journal's ticker autocomplete list now that cryptoData is populated -
   // this also keeps it in sync on every manual refresh, not just the initial page load
   if(typeof populateJournalTickerList === 'function') populateJournalTickerList();
@@ -1908,6 +2392,7 @@ async function loadStocksManual(){
 
   stocksLoading = false;
   render();
+  renderDashboardHighlights(); // same reasoning as loadAll - Dashboard's combined list needs stock data too
   // same as loadAll's crypto path - keep the journal's ticker autocomplete in sync
   // once stockData is populated, so stock tickers show up too, not just crypto.
   if(typeof populateJournalTickerList === 'function') populateJournalTickerList();
@@ -1922,21 +2407,28 @@ function setMarket(mkt){
 const TF_LABELS = {'4h':'4H · last 120 candles','12h':'12H · last 120 candles','1d':'1D · last 120 candles','3d':'3D · last 100 candles','1w':'1W · last 100 candles'};
 const TF_BAR_COUNTS = {'4h':120,'12h':120,'1d':120,'3d':100,'1w':100};
 
-function openChart(rawSymbol){
-  const sourceData = currentMarket === 'crypto' ? cryptoData : stockData;
+// marketOverride lets a caller explicitly state which market a symbol belongs to,
+// rather than relying on the global currentMarket toggle - needed because the
+// Dashboard's excellent-setups list can mix crypto and stock symbols together,
+// where currentMarket (the Strategies tab's crypto/stocks switch) may not match
+// the symbol actually being clicked. Strategies' own table rows omit this param
+// and fall back to currentMarket exactly as before.
+function openChart(rawSymbol, marketOverride){
+  const market = marketOverride || currentMarket;
+  const sourceData = market === 'crypto' ? cryptoData : stockData;
   const item = sourceData.find(d => d.rawSymbol === rawSymbol);
   if(!item){
     return;
   }
   currentChartSymbol = rawSymbol;
-  currentChartMarket = currentMarket; // remember which source this chart belongs to, for timeframe switches
-  currentChartLabel = currentMarket === 'crypto' ? (item.symbol + ' / USDT') : item.symbol;
+  currentChartMarket = market; // remember which source this chart belongs to, for timeframe switches
+  currentChartLabel = market === 'crypto' ? (item.symbol + ' / USDT') : item.symbol;
   currentChart4hEma = item.ema200;
   document.getElementById('modalSym').textContent = currentChartLabel;
   const distEl = document.getElementById('modalDist');
   distEl.textContent = (item.distPct>=0?'+':'') + item.distPct.toFixed(2) + '% from 200EMA (4H)';
   distEl.style.color = item.distPct>=0 ? 'var(--green)' : 'var(--red)';
-  document.getElementById('modalTvLink').href = tradingViewUrl(rawSymbol, currentMarket);
+  document.getElementById('modalTvLink').href = tradingViewUrl(rawSymbol, market);
   document.querySelectorAll('.tf-btn').forEach(b=>b.classList.toggle('active', b.dataset.tf==='4h'));
   document.getElementById('modalBg').classList.add('open');
   renderTimeframe('4h', item.candles);
@@ -2342,552 +2834,93 @@ async function toggleAlerts(){
 // user explicitly chose this over a GitHub-API write-back approach to avoid storing
 // a write-access credential in the browser. The export buttons exist specifically as
 // a manual backup path given that tradeoff.
-const JOURNAL_STORAGE_KEY = 'ema_watch_journal_v1';
 
-function loadJournalEntries(){
-  try{
-    const raw = localStorage.getItem(JOURNAL_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch(e){ return []; }
-}
+// ===================== BOOT (Dashboard tab only - journal/executor boot calls
+// are added in their own migration steps, not here) =====================
+loadAll();
+renderAlertLog();
+renderNotifPermissionNote();
 
-function saveJournalEntries(entries){
-  try{ localStorage.setItem(JOURNAL_STORAGE_KEY, JSON.stringify(entries)); }
-  catch(e){ console.error('failed to save journal entries (storage full or unavailable)', e); }
-}
+</script>
 
-let journalEntries = loadJournalEntries();
-
-// Sets the datetime-local input to "now" by default, formatted the way that input
-// type requires (local time, no timezone suffix, minute precision).
-function setJournalDatetimeToNow(){
-  const el = document.getElementById('jf-datetime');
-  if(!el) return;
-  const now = new Date();
-  const pad = n => String(n).padStart(2,'0');
-  const formatted = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
-  el.value = formatted;
-}
-
-// Populates the ticker datalist from whatever's currently loaded in cryptoData and
-// stockData combined, so typing a ticker that's actively on either watchlist offers
-// autocomplete - and, more importantly, lets us look up that symbol's live data for
-// the checklist auto-prefill regardless of which market it came from.
-function populateJournalTickerList(){
-  const list = document.getElementById('jf-ticker-list');
-  if(!list) return;
-  const all = [...cryptoData, ...stockData];
-  list.innerHTML = all.map(d => `<option value="${d.symbol}">`).join('');
-}
-
-// When the user types/selects a ticker that matches a symbol currently in cryptoData
-// or stockData, auto-prefill checks 1-3 (above EMA, not too far, swept liquidity)
-// from that symbol's live computed data, regardless of which market it came from.
-// The user can still override any of these manually afterward - this only runs
-// once per ticker change, it doesn't lock the checkboxes.
-function autofillJournalChecksFromTicker(){
-  const tickerInput = document.getElementById('jf-ticker');
-  const note = document.getElementById('jf-autofill-note');
-  if(!tickerInput || !note) return;
-  const ticker = tickerInput.value.trim().toUpperCase();
-  const match = cryptoData.find(d => d.symbol === ticker) || stockData.find(d => d.symbol === ticker);
-
-  if(!match){
-    note.textContent = ticker ? 'ticker not found in current watchlist - fill checklist manually' : '';
-    return;
-  }
-
-  // check 1: above EMA
-  document.getElementById('jf-check-1').checked = !!match.above;
-  // check 2: "not too far" from EMA - reuse the same tight/extended boundary the
-  // score cap itself uses (<=2% counts as "not too far" for this checkbox's purpose)
-  document.getElementById('jf-check-2').checked = Math.abs(match.distPct) <= 2;
-  // check 3: swept liquidity - true if any timeframe has a qualifying recent sweep
-  document.getElementById('jf-check-3').checked = !!(match.score && match.score.sweptTFs.length > 0);
-
-  note.textContent = `checks 1-3 auto-filled from ${ticker}'s live data (${match.distPct>=0?'+':''}${match.distPct.toFixed(2)}% from EMA) - override any of them if needed`;
-}
-
-// Derives SL% from entry price and SL price - used to feed the existing R-multiple
-// formula, which is expressed in terms of percentage risk per unit rather than
-// requiring a separate price-based formula. Returns null if either input is missing
-// or if they're equal (zero risk, meaningless for R-multiple purposes).
-function deriveSlPctFromPrice(entry, slPrice){
-  if(entry == null || slPrice == null || entry <= 0) return null;
-  const pct = Math.abs(entry - slPrice) / entry * 100;
-  return pct > 0 ? pct : null;
-}
-
-// R-multiple: how many "stop-loss units" the realized profit/loss represents.
-// (exit - entry) / (entry - implied-stop-distance-from-SL%). SL% itself is now
-// derived from entry price and the literal SL price field via deriveSlPctFromPrice,
-// rather than being typed in directly.
-function computeRMultiple(direction, entry, exit, slPct){
-  if(!entry || !exit || !slPct) return null;
-  const riskPerUnit = entry * (slPct/100);
-  if(riskPerUnit <= 0) return null;
-  const pnlPerUnit = direction === 'short' ? (entry - exit) : (exit - entry);
-  return pnlPerUnit / riskPerUnit;
-}
-
-// --- trade screenshot handling ---
-// Screenshots are stored as base64 JPEG data URLs directly inside each journal entry
-// in localStorage (no backend, same storage model as the rest of the journal). To
-// keep storage usage manageable, every image is downscaled to a max width and
-// re-encoded as JPEG at moderate quality client-side before it's ever stored -
-// a typical screenshot becomes a few dozen KB rather than several MB.
-const JOURNAL_SCREENSHOT_MAX_WIDTH = 800;
-const JOURNAL_SCREENSHOT_JPEG_QUALITY = 0.7;
-
-// Holds the processed (resized/compressed) data URL for whatever screenshot is
-// currently attached to the form, before the entry is actually submitted. Cleared
-// on submit and on explicit removal.
-let pendingScreenshotDataUrl = null;
-
-// Reads a File, draws it to an off-screen canvas at a capped width (preserving
-// aspect ratio, never upscaling smaller images), and resolves with a compressed
-// JPEG data URL. Rejects if the file can't be read or decoded as an image.
-function resizeAndCompressImage(file){
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('could not read file'));
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = () => reject(new Error('could not decode image'));
-      img.onload = () => {
-        const scale = Math.min(1, JOURNAL_SCREENSHOT_MAX_WIDTH / img.width);
-        const targetW = Math.round(img.width * scale);
-        const targetH = Math.round(img.height * scale);
-        const canvas = document.createElement('canvas');
-        canvas.width = targetW;
-        canvas.height = targetH;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, targetW, targetH);
-        resolve(canvas.toDataURL('image/jpeg', JOURNAL_SCREENSHOT_JPEG_QUALITY));
-      };
-      img.src = reader.result;
-    };
-    reader.readAsDataURL(file);
+<script>
+// Single source of truth for which tab is showing. Each tab's content lives in
+// its own .tab-view div in the DOM at all times (not lazily injected) - this
+// keeps the shell simple for now; if any tab's content becomes heavy enough
+// that mounting it upfront is wasteful, that's a later optimization, not a
+// concern at this stage.
+function switchTab(tabName){
+  document.querySelectorAll('.nav-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.tab === tabName);
+  });
+  document.querySelectorAll('.nav-sub-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.tab === tabName);
+  });
+  document.querySelectorAll('.tab-view').forEach(el => {
+    const isMatch = el.id === 'tab-' + tabName;
+    el.classList.toggle('active', isMatch);
+    if(isMatch) document.getElementById('mainTitle').textContent = el.dataset.title;
   });
 }
 
-// Fired when the user picks a file in the screenshot input. Processes it
-// immediately (rather than waiting for form submit) so the preview shows right
-// away and any decode failure surfaces before the user fills out the rest of the
-// form. Resets the file input itself afterward since the processed data now lives
-// in pendingScreenshotDataUrl, not the input - this also makes the "remove" button
-// behave consistently whether or not the browser has re-rendered the input's value.
-function handleJournalScreenshotSelected(evt){
-  const file = evt.target.files && evt.target.files[0];
-  const note = document.getElementById('jf-screenshot-note');
-  if(!file) return;
+let balancesHidden = false;
+function toggleBalanceVisibility(){
+  balancesHidden = !balancesHidden;
+  document.getElementById('balanceGrid').classList.toggle('balances-hidden', balancesHidden);
+  document.getElementById('hideBalanceIcon').className = balancesHidden ? 'ti ti-eye-off' : 'ti ti-eye';
+  document.getElementById('hideBalanceLabel').textContent = balancesHidden ? 'show balances' : 'hide balances';
+}
 
-  if(note) note.textContent = 'processing image…';
-
-  resizeAndCompressImage(file).then(dataUrl => {
-    pendingScreenshotDataUrl = dataUrl;
-    showJournalScreenshotPreview(dataUrl);
-    if(note) note.textContent = '';
-  }).catch(err => {
-    console.error('screenshot processing failed', err);
-    pendingScreenshotDataUrl = null;
-    if(note) note.textContent = 'could not process that image - try a different file';
+// fills the exec-size field and highlights the active pill
+function setExecSize(amount){
+  const input = document.getElementById('jf-notional');
+  if(input) input.value = amount;
+  document.querySelectorAll('.size-pill').forEach(p => {
+    p.classList.toggle('active', parseInt(p.textContent.replace(/\D/g,'')) * (p.textContent.includes('K') ? 1000 : 1) === amount);
   });
 }
+</script>
 
-function showJournalScreenshotPreview(dataUrl){
-  const wrap = document.getElementById('jf-screenshot-preview-wrap');
-  const img = document.getElementById('jf-screenshot-preview');
-  if(!wrap || !img) return;
-  img.src = dataUrl;
-  wrap.style.display = 'flex';
+<script type="module">
+window.__lighterSignerReady = false;
+window.__lighterSignerClient = null;
+window.__lighterSignerError = null;
+
+if(typeof window.process === 'undefined'){
+  window.process = { env: {} };
 }
 
-// Clears any attached screenshot (pending state + preview + the file input itself),
-// used both by the explicit "remove" button and after a successful submit/reset.
-function clearJournalScreenshotInput(){
-  pendingScreenshotDataUrl = null;
-  const fileInput = document.getElementById('jf-screenshot-input');
-  const wrap = document.getElementById('jf-screenshot-preview-wrap');
-  const img = document.getElementById('jf-screenshot-preview');
-  const note = document.getElementById('jf-screenshot-note');
-  if(fileInput) fileInput.value = '';
-  if(wrap) wrap.style.display = 'none';
-  if(img) img.src = '';
-  if(note) note.textContent = '';
-}
+import { SignerClient, GroupingType } from './lighter-ts-sdk.browser.js';
 
-function openScreenshotModal(dataUrl){
-  if(!dataUrl) return;
-  document.getElementById('screenshotModalImg').src = dataUrl;
-  document.getElementById('screenshotModalBg').classList.add('open');
-}
+async function buildLighterSigner(){
+  const privateKey = localStorage.getItem('lighterPrivateKey');
+  if(!privateKey) throw new Error('no Lighter private key stored in localStorage (key: lighterPrivateKey)');
 
-// Used by the log table's thumbnails - looks up the entry by id rather than having
-// every row embed its full (tens-of-KB) base64 string directly in an onclick
-// attribute.
-function openScreenshotModalForEntry(id){
-  const match = journalEntries.find(e => e.id === id);
-  if(match && match.screenshot) openScreenshotModal(match.screenshot);
-}
-
-function closeScreenshotModal(){
-  document.getElementById('screenshotModalBg').classList.remove('open');
-}
-
-// Builds a plain-text trade recap draft from a journal entry - used as a starting
-// point for the share-to-X feature, never auto-posted. Kept factual and free of
-// hype/promises, since this is meant to genuinely reflect what happened on a trade
-// for self-reflection/teaching purposes, not to oversell a result.
-// Matches the 6 checkbox labels in the journal form exactly - used to turn the
-// boolean checks array on an entry into actual readable text for the share-to-X
-// draft, rather than just a count like "5/6".
-const JOURNAL_CHECK_LABELS = [
-  'price above 4H EMA',
-  'price not too far from the 4H 200 EMA',
-  'swept liquidity',
-  'price making HHs and HLs',
-  'impulsive candle with FVG',
-  'retrace into OTE spot (fibs)'
-];
-
-function buildShareXDraft(e){
-  const lines = [];
-  const verbLabel = e.direction === 'long' ? 'Longed' : 'Shorted';
-  lines.push(`${verbLabel} $${e.ticker}`);
-
-  const markedConfluences = JOURNAL_CHECK_LABELS.filter((label, i) => e.checks[i]);
-  if(markedConfluences.length){
-    lines.push('Setup confluence:');
-    markedConfluences.forEach(c => lines.push(`• ${c}`));
-  } else {
-    lines.push('Setup confluence: none marked');
-  }
-
-  lines.push(`Entry price: ${e.entry != null ? e.entry : '\u2014'}`);
-  lines.push(`Stoploss price: ${e.slPrice != null ? e.slPrice : '\u2014'}`);
-
-  return lines.join('\n');
-}
-
-let shareXCurrentEntryId = null;
-
-function openShareToXModal(id){
-  const match = journalEntries.find(e => e.id === id);
-  if(!match) return;
-  shareXCurrentEntryId = id;
-
-  document.getElementById('shareXText').value = buildShareXDraft(match);
-
-  const downloadLink = document.getElementById('shareXDownloadLink');
-  const note = document.getElementById('shareXScreenshotNote');
-  if(match.screenshot){
-    downloadLink.href = match.screenshot;
-    downloadLink.download = `${match.ticker}_${(match.datetime||'trade').replace(/[:T]/g,'-')}.jpg`;
-    downloadLink.style.display = 'inline-block';
-    note.textContent = 'this trade has a screenshot attached - use the download button below, then attach it manually in the X composer.';
-  } else {
-    downloadLink.style.display = 'none';
-    note.textContent = 'no screenshot attached to this trade entry.';
-  }
-
-  refreshShareXIntentLink();
-  document.getElementById('shareXModalBg').classList.add('open');
-}
-
-function closeShareToXModal(){
-  document.getElementById('shareXModalBg').classList.remove('open');
-  shareXCurrentEntryId = null;
-}
-
-// Keeps the "open on X" link's href in sync with whatever's currently in the
-// editable textarea, so edits the user makes before posting are reflected -
-// called on every keystroke rather than only once at modal-open time.
-function refreshShareXIntentLink(){
-  const text = document.getElementById('shareXText').value;
-  const intentUrl = 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(text);
-  document.getElementById('shareXIntentLink').href = intentUrl;
-}
-
-async function copyShareXText(){
-  const text = document.getElementById('shareXText').value;
-  try{
-    await navigator.clipboard.writeText(text);
-    const btn = document.getElementById('shareXCopyBtn');
-    if(btn){
-      const original = btn.textContent;
-      btn.textContent = 'copied!';
-      setTimeout(() => { btn.textContent = original; }, 1500);
-    }
-  } catch(e){
-    alert('could not copy automatically - select the text and copy manually');
-  }
-}
-
-// Rough estimate of how much of localStorage's typical ~5-10MB-per-origin budget
-// the journal (screenshots included, since those dominate) is currently using.
-// This is an estimate, not exact - browsers vary in their actual quota and in how
-// they count string storage overhead - but it's useful as an early warning before
-// saveJournalEntries starts silently failing because the quota is exhausted.
-function estimateJournalStorageUsage(){
-  let raw;
-  try{ raw = localStorage.getItem(JOURNAL_STORAGE_KEY) || ''; }
-  catch(e){ return null; }
-  const bytes = raw.length; // close enough for UTF-8/base64-heavy content
-  const kb = bytes / 1024;
-  return kb;
-}
-
-// Plain percentage gain/loss on the trade itself, independent of stop-loss or
-// position sizing - this is the "how did the trade actually do" number, separate
-// from R-multiple (which measures performance relative to risk taken, not the raw
-// price move). Returns null until both entry and exit are filled in.
-function computePctResult(direction, entry, exit){
-  if(entry == null || exit == null || entry <= 0) return null;
-  const raw = direction === 'short' ? (entry - exit) / entry : (exit - entry) / entry;
-  return raw * 100;
-}
-
-// Tracks which entry (if any) is currently being edited, so submitJournalEntry
-// knows whether to update an existing entry in place or push a brand-new one.
-// Null means "creating a new entry" (the normal/default state).
-let journalEditingId = null;
-
-function submitJournalEntry(evt){
-  evt.preventDefault();
-
-  const ticker = document.getElementById('jf-ticker').value.trim().toUpperCase();
-  if(!ticker){ return; }
-
-  const direction = document.getElementById('jf-direction').value;
-  const notional = parseFloat(document.getElementById('jf-notional').value) || null;
-  const slPrice = parseFloat(document.getElementById('jf-sl-price').value) || null;
-  const entry = parseFloat(document.getElementById('jf-entry').value) || null;
-  const exit = parseFloat(document.getElementById('jf-exit').value) || null;
-  const outcome = document.getElementById('jf-outcome').value;
-  const notes = document.getElementById('jf-notes').value.trim();
-
-  const checks = [1,2,3,4,5,6].map(n => document.getElementById('jf-check-'+n).checked);
-
-  // SL% is derived from entry + SL price (not typed directly anymore), purely to
-  // feed the existing R-multiple formula - see deriveSlPctFromPrice
-  const slPct = deriveSlPctFromPrice(entry, slPrice);
-  const rMultiple = computeRMultiple(direction, entry, exit, slPct);
-  const pctResult = computePctResult(direction, entry, exit);
-
-  const entry_obj = {
-    id: journalEditingId || (Date.now() + '_' + Math.random().toString(36).slice(2,7)),
-    datetime: document.getElementById('jf-datetime').value,
-    ticker, direction, checks,
-    notional, slPrice, entry, exit, outcome,
-    rMultiple, pctResult, notes,
-    screenshot: pendingScreenshotDataUrl || null
-  };
-
-  if(journalEditingId){
-    const idx = journalEntries.findIndex(e => e.id === journalEditingId);
-    if(idx !== -1) journalEntries[idx] = entry_obj;
-    else journalEntries.push(entry_obj); // entry was deleted mid-edit somehow - fall back to adding it
-  } else {
-    journalEntries.push(entry_obj);
-  }
-
-  saveJournalEntries(journalEntries);
-  renderJournalLog();
-  cancelJournalEdit();
-}
-
-// Resets the form back to "create new entry" mode - called after a successful
-// submit, and also available as an explicit "cancel edit" action so the user isn't
-// stuck mid-edit with no way out except submitting or refreshing the page.
-function cancelJournalEdit(){
-  journalEditingId = null;
-  document.getElementById('journalForm').reset();
-  setJournalDatetimeToNow();
-  document.getElementById('jf-autofill-note').textContent = '';
-  clearJournalScreenshotInput();
-  const submitBtn = document.querySelector('#journalForm button[type="submit"]');
-  if(submitBtn) submitBtn.textContent = 'log trade';
-  const cancelBtn = document.getElementById('jf-cancel-edit-btn');
-  if(cancelBtn) cancelBtn.style.display = 'none';
-
-  // form.reset() clears jf-sl-price/jf-notional back to blank, but doesn't touch
-  // the executor's own fields or its manual-override locks - reset those
-  // explicitly so a stale prefilled value or a previous lock doesn't linger into
-  // the next entry.
-  execSlTouchedManually = false;
-  execSizeTouchedManually = false;
-  document.getElementById('exec-sl-price').value = '';
-  document.getElementById('exec-size').value = '';
-  document.getElementById('exec-limit-price').value = '';
-  setExecOrderType('market');
-  syncExecDirectionTag();
-  clearExecValidationMsg();
-}
-
-// Loads an existing entry's data back into the form for editing. Most useful for
-// filling in exit price/outcome after a trade closes, but every field is editable.
-function editJournalEntry(id){
-  const match = journalEntries.find(e => e.id === id);
-  if(!match) return;
-  journalEditingId = id;
-
-  document.getElementById('jf-datetime').value = match.datetime || '';
-  document.getElementById('jf-ticker').value = match.ticker || '';
-  document.getElementById('jf-direction').value = match.direction || 'long';
-  document.getElementById('jf-notional').value = match.notional ?? '';
-  document.getElementById('jf-sl-price').value = match.slPrice ?? '';
-  document.getElementById('jf-entry').value = match.entry ?? '';
-  document.getElementById('jf-exit').value = match.exit ?? '';
-  document.getElementById('jf-outcome').value = match.outcome || 'open';
-  document.getElementById('jf-notes').value = match.notes || '';
-  (match.checks || []).forEach((checked, i) => {
-    const el = document.getElementById('jf-check-' + (i+1));
-    if(el) el.checked = !!checked;
+  const signer = new SignerClient({
+    url: 'https://mainnet.zklighter.elliot.ai',
+    privateKey,
+    accountIndex: 21229,
+    apiKeyIndex: 5,
+    wasmConfig: { wasmPath: 'wasm/lighter-signer.wasm', wasmExecPath: 'wasm/wasm_exec.js' }
   });
 
-  // loading a different entry counts as a fresh prefill for the executor's own
-  // SL price/size, not a continuation of whatever the user was previously
-  // overriding - so the manual-touch locks reset here too.
-  execSlTouchedManually = false;
-  execSizeTouchedManually = false;
-  document.getElementById('exec-sl-price').value = match.slPrice ?? '';
-  document.getElementById('exec-size').value = match.notional ?? '';
-  syncExecDirectionTag();
-
-  pendingScreenshotDataUrl = match.screenshot || null;
-  const previewWrap = document.getElementById('jf-screenshot-preview-wrap');
-  const previewImg = document.getElementById('jf-screenshot-preview');
-  if(match.screenshot && previewWrap && previewImg){
-    previewImg.src = match.screenshot;
-    previewWrap.style.display = '';
-  } else if(previewWrap){
-    previewWrap.style.display = 'none';
-  }
-
-  const submitBtn = document.querySelector('#journalForm button[type="submit"]');
-  if(submitBtn) submitBtn.textContent = 'update trade';
-  const cancelBtn = document.getElementById('jf-cancel-edit-btn');
-  if(cancelBtn) cancelBtn.style.display = '';
-
-  document.getElementById('journalForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  await signer.initialize();
+  await signer.ensureWasmClient();
+  return signer;
 }
 
-function deleteJournalEntry(id){
-  journalEntries = journalEntries.filter(e => e.id !== id);
-  saveJournalEntries(journalEntries);
-  renderJournalLog();
-}
+window.__getLighterSigner = async function(){
+  if(window.__lighterSignerClient) return window.__lighterSignerClient;
+  const signer = await buildLighterSigner();
+  window.__lighterSignerClient = signer;
+  window.__lighterSignerReady = true;
+  return signer;
+};
 
-function renderJournalSummary(){
-  const el = document.getElementById('journalSummary');
-  if(!el) return;
-  if(!journalEntries.length){ el.innerHTML = ''; return; }
-
-  const closed = journalEntries.filter(e => e.outcome === 'win' || e.outcome === 'loss' || e.outcome === 'breakeven');
-  const wins = closed.filter(e => e.outcome === 'win').length;
-  const winRate = closed.length ? ((wins/closed.length)*100).toFixed(1) : null;
-  const rValues = journalEntries.filter(e => e.rMultiple != null).map(e => e.rMultiple);
-  const avgR = rValues.length ? (rValues.reduce((s,v)=>s+v,0)/rValues.length).toFixed(2) : null;
-  const storageKb = estimateJournalStorageUsage();
-  const shotCount = journalEntries.filter(e => e.screenshot).length;
-
-  el.innerHTML = `
-    <div>total trades: <b>${journalEntries.length}</b></div>
-    <div>closed: <b>${closed.length}</b></div>
-    ${winRate != null ? `<div class="${winRate<50?'neg-stat':''}">win rate: <b>${winRate}%</b></div>` : ''}
-    ${avgR != null ? `<div class="${avgR<0?'neg-stat':''}">avg R: <b>${avgR>=0?'+':''}${avgR}</b></div>` : ''}
-    ${storageKb != null ? `<div class="${storageKb>4000?'neg-stat':''}">journal storage: <b>${storageKb>=1024?(storageKb/1024).toFixed(1)+'MB':storageKb.toFixed(0)+'KB'}</b>${shotCount?` (${shotCount} screenshot${shotCount===1?'':'s'})`:''}</div>` : ''}
-  `;
-}
-
-function renderJournalLog(){
-  const tbody = document.getElementById('journalTableBody');
-  if(!tbody) return;
-
-  renderJournalSummary();
-
-  if(!journalEntries.length){
-    tbody.innerHTML = '<tr><td colspan="14" class="journal-empty-note">no trades logged yet</td></tr>';
-    return;
-  }
-
-  // most recent first
-  const sorted = [...journalEntries].sort((a,b) => new Date(b.datetime) - new Date(a.datetime));
-
-  tbody.innerHTML = sorted.map(e => {
-    const checksPassedCount = e.checks.filter(Boolean).length;
-    const dt = e.datetime ? e.datetime.replace('T',' ') : '—';
-    const fmt = v => v == null ? '—' : v;
-    const rText = e.rMultiple != null ? `${e.rMultiple>=0?'+':''}${e.rMultiple.toFixed(2)}` : '—';
-    const pctResultText = e.pctResult != null
-      ? `<span class="${e.pctResult>=0?'jt-pct-pos':'jt-pct-neg'}">${e.pctResult>=0?'+':''}${e.pctResult.toFixed(2)}%</span>`
-      : '—';
-    const shotCell = e.screenshot
-      ? `<img src="${e.screenshot}" onclick="openScreenshotModalForEntry('${e.id}')" alt="trade screenshot thumbnail">`
-      : `<span class="no-shot">—</span>`;
-    return `
-    <tr>
-      <td>${dt}</td>
-      <td>${e.ticker}</td>
-      <td>${e.direction}</td>
-      <td title="${e.checks.map((c,i)=>`check ${i+1}: ${c?'✓':'✗'}`).join(', ')}">${checksPassedCount}/6</td>
-      <td>${fmt(e.notional)}</td>
-      <td>${fmt(e.slPrice)}</td>
-      <td>${fmt(e.entry)}</td>
-      <td>${fmt(e.exit)}</td>
-      <td class="jt-outcome-${e.outcome}">${e.outcome}</td>
-      <td>${rText}</td>
-      <td>${pctResultText}</td>
-      <td class="shot-cell">${shotCell}</td>
-      <td class="notes-cell">${e.notes ? e.notes.replace(/</g,'&lt;') : ''}</td>
-      <td>
-        <button class="jt-edit-btn" onclick="editJournalEntry('${e.id}')" title="edit this trade, e.g. to fill in exit price">edit</button>
-        <button class="jt-share-btn" onclick="openShareToXModal('${e.id}')" title="prepare a tweet about this trade">share</button>
-        <button class="jt-delete-btn" onclick="deleteJournalEntry('${e.id}')">del</button>
-      </td>
-    </tr>`;
-  }).join('');
-}
-
-function exportJournalJSON(){
-  if(!journalEntries.length){ alert('no journal entries to export yet'); return; }
-  const blob = new Blob([JSON.stringify(journalEntries, null, 2)], {type:'application/json'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `trade_journal_${new Date().toISOString().slice(0,10)}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function exportJournalCSV(){
-  if(!journalEntries.length){ alert('no journal entries to export yet'); return; }
-  const headers = ['datetime','ticker','direction','check1','check2','check3','check4','check5','check6',
-    'notional','slPrice','entry','exit','outcome','rMultiple','pctResult','hasScreenshot','notes'];
-  const rows = journalEntries.map(e => [
-    e.datetime, e.ticker, e.direction,
-    ...e.checks.map(c => c ? 'TRUE' : 'FALSE'),
-    e.notional ?? '', e.slPrice ?? '', e.entry ?? '', e.exit ?? '',
-    e.outcome, e.rMultiple != null ? e.rMultiple.toFixed(3) : '',
-    e.pctResult != null ? e.pctResult.toFixed(3) : '',
-    e.screenshot ? 'TRUE' : 'FALSE',
-    (e.notes||'').replace(/"/g,'""')
-  ]);
-  const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n');
-  const blob = new Blob([csv], {type:'text/csv'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `trade_journal_${new Date().toISOString().slice(0,10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-// ===================== LIGHTER MARKET DATA (live lookup) =====================
-// Resolves ticker -> { marketIndex, sizeDecimals, priceDecimals } via Lighter's
-// public, no-auth orderBooks endpoint. Fetched once per page load and cached in
-// memory; ~200 markets exist and the list can change (new listings, delistings),
-// so this stays a live fetch rather than a hardcoded map.
-
+window.__LighterGroupingType = GroupingType;
+</script>
+<script>
+// ===================== LIGHTER EXECUTOR =====================
 let lighterMarketMap = null;       // ticker (uppercase) -> { marketIndex, sizeDecimals, priceDecimals, status }
 let lighterMarketFetchPromise = null;
 
@@ -2982,17 +3015,8 @@ function syncExecDirectionTag(){
 // the corresponding journal field live UNTIL the user types directly into the
 // executor's own copy, at which point that field stops following the journal
 // field so a manual override isn't silently clobbered by further journal edits.
-function syncExecSlPrice(){
-  if(execSlTouchedManually) return;
-  const journalVal = document.getElementById('jf-sl-price').value;
-  document.getElementById('exec-sl-price').value = journalVal;
-}
-
-function syncExecSize(){
-  if(execSizeTouchedManually) return;
-  const journalVal = document.getElementById('jf-notional').value;
-  document.getElementById('exec-size').value = journalVal;
-}
+function syncExecSlPrice(){ /* no-op: SL is now a direct input on the Trade tab */ }
+function syncExecSize(){ /* no-op: size is now a direct input on the Trade tab */ }
 
 function showExecValidationMsg(msg){
   const el = document.getElementById('exec-validation-msg');
@@ -3033,12 +3057,12 @@ function closeExecTickerModal(){
 // slippage cap can be anchored to a real current price, not a guess.
 function validateExecFields(){
   const ticker = document.getElementById('jf-ticker').value.trim().toUpperCase();
-  const size = document.getElementById('exec-size').value;
+  const notional = document.getElementById('jf-notional').value;
   const slPrice = document.getElementById('exec-sl-price').value;
   const limitPrice = document.getElementById('exec-limit-price').value;
 
   if(!ticker){ showExecValidationMsg('enter a ticker above before placing on Lighter'); return false; }
-  if(!size || parseFloat(size) <= 0){ showExecValidationMsg('size ($) is required'); return false; }
+  if(!notional || parseFloat(notional) <= 0){ showExecValidationMsg('notional size is required'); return false; }
   if(!slPrice || parseFloat(slPrice) <= 0){ showExecValidationMsg('SL price is required'); return false; }
   if(execOrderType === 'limit' && (!limitPrice || parseFloat(limitPrice) <= 0)){
     showExecValidationMsg('limit price is required for limit orders');
@@ -3062,7 +3086,7 @@ function placeOnLighter(){
 
   const ticker = document.getElementById('jf-ticker').value.trim().toUpperCase();
   const direction = document.getElementById('jf-direction').value;
-  const size = parseFloat(document.getElementById('exec-size').value);
+  const size = parseFloat(document.getElementById('jf-notional').value);
   const slPrice = parseFloat(document.getElementById('exec-sl-price').value);
   const slippageEnabled = document.getElementById('exec-slippage-enabled').checked;
   const slippagePct = parseFloat(document.getElementById('exec-slippage-pct').value) || 0;
@@ -3199,6 +3223,8 @@ async function submitOrderToLighter(orderRequest){
     } else {
       btn.textContent = 'placed ✓';
       console.log('[Lighter] order placed:', { tx, hash });
+      // auto-log to journal - capture checklist state at the moment of placement
+      if(typeof journalAutoEntry === 'function') journalAutoEntry(orderRequest);
     }
   } catch(err){
     btn.textContent = 'failed ✗';
@@ -3213,46 +3239,393 @@ async function submitOrderToLighter(orderRequest){
 }
 
 
-function initJournalForm(){
-  setJournalDatetimeToNow();
-  populateJournalTickerList();
 
-  const tickerInput = document.getElementById('jf-ticker');
-  if(tickerInput) tickerInput.addEventListener('input', autofillJournalChecksFromTicker);
+// ---- image attachment helpers ----
 
-  const screenshotInput = document.getElementById('jf-screenshot-input');
-  if(screenshotInput) screenshotInput.addEventListener('change', handleJournalScreenshotSelected);
-
-  const shareXTextEl = document.getElementById('shareXText');
-  if(shareXTextEl) shareXTextEl.addEventListener('input', refreshShareXIntentLink);
-
-  // --- Lighter executor wiring ---
-  const directionSelect = document.getElementById('jf-direction');
-  if(directionSelect) directionSelect.addEventListener('change', syncExecDirectionTag);
-
-  const journalSlPriceInput = document.getElementById('jf-sl-price');
-  if(journalSlPriceInput) journalSlPriceInput.addEventListener('input', syncExecSlPrice);
-
-  const journalNotionalInput = document.getElementById('jf-notional');
-  if(journalNotionalInput) journalNotionalInput.addEventListener('input', syncExecSize);
-
-  const execSlPriceInput = document.getElementById('exec-sl-price');
-  if(execSlPriceInput) execSlPriceInput.addEventListener('input', () => { execSlTouchedManually = true; });
-
-  const execSizeInput = document.getElementById('exec-size');
-  if(execSizeInput) execSizeInput.addEventListener('input', () => { execSizeTouchedManually = true; });
-
-  syncExecDirectionTag();
-  fetchLighterMarketMap(); // warm the cache early so it's ready by the time someone places an order
-
-  renderJournalLog();
+function previewJournalImage(inputId, previewId, removeId){
+  const file = document.getElementById(inputId).files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const prev = document.getElementById(previewId);
+    const rem = document.getElementById(removeId);
+    prev.src = e.target.result;
+    prev.classList.add('visible');
+    rem.classList.add('visible');
+  };
+  reader.readAsDataURL(file);
 }
-// ===================== END TRADE JOURNAL =====================
 
-loadAll();
-renderAlertLog();
-renderNotifPermissionNote();
-initJournalForm();
+function removeJournalImage(inputId, previewId, removeId){
+  document.getElementById(inputId).value = '';
+  const prev = document.getElementById(previewId);
+  const rem = document.getElementById(removeId);
+  prev.src = '';
+  prev.classList.remove('visible');
+  rem.classList.remove('visible');
+}
+
+function openLightbox(src){
+  document.getElementById('journalLightboxImg').src = src;
+  document.getElementById('journalLightbox').classList.add('open');
+}
+function closeLightbox(){
+  document.getElementById('journalLightbox').classList.remove('open');
+}
+
+// reads base64 from a preview img element (already loaded by previewJournalImage)
+function getImageBase64(previewId){
+  const el = document.getElementById(previewId);
+  return (el && el.classList.contains('visible')) ? el.src : null;
+}
+
+// ===================== JOURNAL ENGINE =====================
+const JOURNAL_KEY = 'ema_watch_journal_v1';
+
+function journalLoad(){
+  try{ return JSON.parse(localStorage.getItem(JOURNAL_KEY) || '[]'); }
+  catch(e){ return []; }
+}
+function journalSave(entries){
+  try{ localStorage.setItem(JOURNAL_KEY, JSON.stringify(entries)); } catch(e){}
+}
+function journalGenId(){
+  return Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+}
+
+// Calculates result % for a closed trade.
+// For a long: (exit - entry) / entry * 100
+// For a short: (entry - exit) / entry * 100
+// Returns null when either price is missing or outcome is 'open'.
+function journalCalcResultPct(entry){
+  if(entry.outcome === 'open' || !entry.entryPrice || !entry.exitPrice) return null;
+  const e = parseFloat(entry.entryPrice);
+  const x = parseFloat(entry.exitPrice);
+  if(!e || isNaN(x)) return null;
+  return entry.direction === 'short'
+    ? ((e - x) / e) * 100
+    : ((x - e) / e) * 100;
+}
+
+// Called by submitOrderToLighter on success. Reads the current Trade tab state
+// and appends an "open" entry to the journal automatically.
+function journalAutoEntry(orderRequest){
+  const checks = [1,2,3,4,5,6].map(i => {
+    const el = document.getElementById('jf-check-'+i);
+    return el ? el.checked : false;
+  });
+  const liveMatch = cryptoData.find(d => d.symbol === orderRequest.ticker) || stockData.find(d => d.symbol === orderRequest.ticker);
+  const livePrice = liveMatch ? liveMatch.price : null;
+
+  const entry = {
+    id: journalGenId(),
+    ts: Date.now(),
+    source: 'auto',
+    ticker: orderRequest.ticker,
+    direction: orderRequest.direction,
+    outcome: 'open',
+    notional: orderRequest.sizeUsd,
+    entryPrice: livePrice,
+    slPrice: orderRequest.slPrice,
+    exitPrice: null,
+    checklist: checks,
+  };
+
+  const entries = journalLoad();
+  entries.unshift(entry);
+  journalSave(entries);
+  journalRender();
+  journalShowToast('Trade auto-logged to Journal');
+}
+
+function journalShowToast(msg){
+  const toast = document.getElementById('journalToast');
+  const msgEl = document.getElementById('journalToastMsg');
+  if(!toast) return;
+  msgEl.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 3000);
+}
+
+function journalRender(){
+  const entries = journalLoad();
+  const wrap = document.getElementById('journalLogWrap');
+  if(!wrap) return;
+
+  // update stats
+  const closed = entries.filter(e => e.outcome !== 'open');
+  const wins = closed.filter(e => e.outcome === 'win');
+  const wr = closed.length ? Math.round(wins.length / closed.length * 100) : null;
+  const results = closed.map(e => journalCalcResultPct(e)).filter(v => v !== null);
+  const avgResult = results.length ? results.reduce((a,b)=>a+b,0) / results.length : null;
+  const checkAvg = entries.length
+    ? entries.reduce((s,e) => s + (e.checklist ? e.checklist.filter(Boolean).length : 0), 0) / entries.length
+    : null;
+
+  document.getElementById('jstat-total').textContent = entries.length;
+  document.getElementById('jstat-wr').textContent = wr !== null ? wr + '%' : '—';
+  document.getElementById('jstat-avg').textContent = avgResult !== null
+    ? (avgResult >= 0 ? '+' : '') + avgResult.toFixed(1) + '%' : '—';
+  document.getElementById('jstat-avg').className = 'jstat-value' + (avgResult > 0 ? ' win' : avgResult < 0 ? ' loss' : '');
+  document.getElementById('jstat-checks').textContent = checkAvg !== null ? checkAvg.toFixed(1) : '—';
+
+  if(!entries.length){
+    wrap.innerHTML = '<div class="journal-empty"><i class="ti ti-notebook"></i>No trades logged yet. Place an order or log one manually above.</div>';
+    return;
+  }
+
+  const rows = entries.map(e => {
+    const checkCount = e.checklist ? e.checklist.filter(Boolean).length : 0;
+    const pct = journalCalcResultPct(e);
+    const pctStr = pct !== null
+      ? `<span class="jt-pct ${pct>=0?'pos':'neg'}">${pct>=0?'+':''}${pct.toFixed(1)}%</span>`
+      : `<span class="jt-pct open">—</span>`;
+    const dateStr = new Date(e.ts).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'});
+    const dirBadge = e.direction === 'long'
+      ? `<span class="jt-dir-long">LONG</span>`
+      : `<span class="jt-dir-short">SHORT</span>`;
+    const outcomeBadge = `<span class="jt-outcome ${e.outcome}">${e.outcome.toUpperCase()}</span>`;
+    const scoreClass = checkCount === 6 ? 'full' : '';
+    const autoBadge = e.source === 'auto' ? `<span style="font-size:8px;color:var(--teal);margin-left:5px;">auto</span>` : '';
+
+    const thumbCell = e.image
+      ? `<td><img class="jt-thumb" src="${e.image}" alt="chart" onclick="openLightbox('${e.image.replace(/'/g,"\\'")}')"></td>`
+      : `<td style="color:var(--text-faint);font-size:10px;">—</td>`;
+
+    return `<tr>
+      <td style="color:var(--text-faint);font-size:10px;">${dateStr}</td>
+      <td style="font-weight:700;">${e.ticker}${autoBadge}</td>
+      <td>${dirBadge}</td>
+      <td>${outcomeBadge}</td>
+      <td class="jt-score ${scoreClass}">${checkCount}/6</td>
+      <td style="color:var(--text-dim);font-size:11px;">${e.notional ? '$'+Number(e.notional).toLocaleString() : '—'}</td>
+      <td style="color:var(--text-dim);font-size:11px;">${e.entryPrice ? Number(e.entryPrice).toLocaleString() : '—'}</td>
+      <td style="color:var(--text-dim);font-size:11px;">${e.slPrice ? Number(e.slPrice).toLocaleString() : '—'}</td>
+      <td>${pctStr}</td>
+      ${thumbCell}
+      <td>
+        <button class="jt-action-btn" onclick="openJournalEdit('${e.id}')" title="Edit"><i class="ti ti-pencil"></i></button>
+        <button class="jt-action-btn del" onclick="deleteJournalEntry('${e.id}')" title="Delete"><i class="ti ti-trash"></i></button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `<table class="journal-table">
+    <thead><tr>
+      <th>DATE</th><th>TICKER</th><th>DIR</th><th>OUTCOME</th>
+      <th>CHECKS</th><th>NOTIONAL</th><th>ENTRY</th><th>SL</th><th>RESULT</th><th>CHART</th><th></th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function toggleJournalForm(){
+  const body = document.getElementById('journalFormBody');
+  const header = document.getElementById('journalFormHeader');
+  const btn = document.getElementById('journalFormToggleBtn');
+  const isOpen = body.classList.contains('open');
+  body.classList.toggle('open', !isOpen);
+  header.classList.toggle('open', !isOpen);
+  btn.textContent = isOpen ? 'open' : 'close';
+  if(!isOpen){
+    // pre-fill date to now
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    const el = document.getElementById('jman-date');
+    if(el) el.value = now.toISOString().slice(0,16);
+  }
+}
+
+function submitManualJournalEntry(){
+  const ticker = document.getElementById('jman-ticker').value.trim().toUpperCase();
+  if(!ticker){ alert('Ticker is required.'); return; }
+  const checks = [1,2,3,4,5,6].map(i => document.getElementById('jman-c'+i).checked);
+  const entry = {
+    id: journalGenId(),
+    ts: (() => { const d = document.getElementById('jman-date').value; return d ? new Date(d).getTime() : Date.now(); })(),
+    source: 'manual',
+    ticker,
+    direction: document.getElementById('jman-direction').value,
+    outcome: document.getElementById('jman-outcome').value,
+    notional: parseFloat(document.getElementById('jman-notional').value) || null,
+    entryPrice: parseFloat(document.getElementById('jman-entry').value) || null,
+    slPrice: parseFloat(document.getElementById('jman-sl').value) || null,
+    exitPrice: parseFloat(document.getElementById('jman-exit').value) || null,
+    checklist: checks,
+    image: getImageBase64('jman-preview'),
+  };
+  const entries = journalLoad();
+  entries.unshift(entry);
+  journalSave(entries);
+  // reset form
+  ['jman-ticker','jman-notional','jman-entry','jman-sl','jman-exit'].forEach(id => {
+    const el = document.getElementById(id); if(el) el.value = '';
+  });
+  [1,2,3,4,5,6].forEach(i => { const el = document.getElementById('jman-c'+i); if(el) el.checked = false; });
+  document.getElementById('jman-outcome').value = 'open';
+  removeJournalImage('jman-image','jman-preview','jman-remove');
+  toggleJournalForm();
+  journalRender();
+  journalShowToast('Trade logged');
+}
+
+function deleteJournalEntry(id){
+  if(!confirm('Delete this trade from the journal?')) return;
+  const entries = journalLoad().filter(e => e.id !== id);
+  journalSave(entries);
+  journalRender();
+}
+
+function openJournalEdit(id){
+  const entries = journalLoad();
+  const e = entries.find(x => x.id === id);
+  if(!e) return;
+  document.getElementById('jedit-id').value = id;
+  document.getElementById('jedit-ticker').value = e.ticker || '';
+  document.getElementById('jedit-direction').value = e.direction || 'long';
+  document.getElementById('jedit-outcome').value = e.outcome || 'open';
+  document.getElementById('jedit-notional').value = e.notional || '';
+  document.getElementById('jedit-entry').value = e.entryPrice || '';
+  document.getElementById('jedit-sl').value = e.slPrice || '';
+  document.getElementById('jedit-exit').value = e.exitPrice || '';
+  [1,2,3,4,5,6].forEach(i => {
+    const el = document.getElementById('jedit-c'+i);
+    if(el) el.checked = e.checklist ? e.checklist[i-1] : false;
+  });
+  // load existing image into preview
+  const editPrev = document.getElementById('jedit-preview');
+  const editRem = document.getElementById('jedit-remove');
+  if(e.image){
+    editPrev.src = e.image;
+    editPrev.classList.add('visible');
+    editRem.classList.add('visible');
+  } else {
+    editPrev.src = '';
+    editPrev.classList.remove('visible');
+    editRem.classList.remove('visible');
+  }
+  document.getElementById('journalEditOverlay').classList.add('open');
+}
+
+function closeJournalEdit(){
+  document.getElementById('journalEditOverlay').classList.remove('open');
+}
+
+function saveJournalEdit(){
+  const id = document.getElementById('jedit-id').value;
+  const entries = journalLoad();
+  const idx = entries.findIndex(e => e.id === id);
+  if(idx === -1) return;
+  const checks = [1,2,3,4,5,6].map(i => document.getElementById('jedit-c'+i).checked);
+  entries[idx] = {
+    ...entries[idx],
+    ticker: document.getElementById('jedit-ticker').value.trim().toUpperCase(),
+    direction: document.getElementById('jedit-direction').value,
+    outcome: document.getElementById('jedit-outcome').value,
+    notional: parseFloat(document.getElementById('jedit-notional').value) || null,
+    entryPrice: parseFloat(document.getElementById('jedit-entry').value) || null,
+    slPrice: parseFloat(document.getElementById('jedit-sl').value) || null,
+    exitPrice: parseFloat(document.getElementById('jedit-exit').value) || null,
+    checklist: checks,
+    image: getImageBase64('jedit-preview') || entries[idx].image || null,
+  };
+  journalSave(entries);
+  closeJournalEdit();
+  journalRender();
+}
+
+function exportJournalCSV(){
+  const entries = journalLoad();
+  if(!entries.length){ alert('No trades to export.'); return; }
+  const headers = ['Date','Ticker','Direction','Outcome','Checks','Notional','Entry','SL','Exit','Result%'];
+  const rows = entries.map(e => {
+    const pct = journalCalcResultPct(e);
+    return [
+      new Date(e.ts).toISOString().slice(0,10),
+      e.ticker, e.direction, e.outcome,
+      e.checklist ? e.checklist.filter(Boolean).length : 0,
+      e.notional || '', e.entryPrice || '', e.slPrice || '', e.exitPrice || '',
+      pct !== null ? pct.toFixed(2) : ''
+    ].join(',');
+  });
+  const blob = new Blob([[headers.join(','), ...rows].join('\n')], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'journal_'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click();
+}
+
+function exportJournalJSON(){
+  const entries = journalLoad();
+  if(!entries.length){ alert('No trades to export.'); return; }
+  const blob = new Blob([JSON.stringify(entries, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'journal_'+new Date().toISOString().slice(0,10)+'.json';
+  a.click();
+}
+
+function shareJournalToX(){
+  const entries = journalLoad();
+  const closed = entries.filter(e => e.outcome !== 'open');
+  const wins = closed.filter(e => e.outcome === 'win');
+  const wr = closed.length ? Math.round(wins.length / closed.length * 100) : null;
+  const results = closed.map(e => journalCalcResultPct(e)).filter(v=>v!==null);
+  const avg = results.length ? (results.reduce((a,b)=>a+b,0)/results.length).toFixed(1) : null;
+  const last5 = entries.slice(0,5).map(e => {
+    const pct = journalCalcResultPct(e);
+    const sign = e.outcome==='open' ? '⏳' : e.outcome==='win' ? '✅' : '❌';
+    return `${sign} ${e.ticker} ${e.direction==='long'?'↑':'↓'}${pct!==null?(pct>=0?' +':' ')+pct.toFixed(1)+'%':''}`;
+  });
+  const text = [
+    `📒 Journal update — ${entries.length} trades logged`,
+    wr !== null ? `Win rate: ${wr}% · Avg: ${avg!==null?(avg>0?'+':'')+avg+'%':'—'}` : '',
+    '',
+    last5.join('\n'),
+    '',
+    '#BTC #crypto'
+  ].filter(l=>l!==undefined).join('\n');
+  window.open('https://x.com/intent/post?text='+encodeURIComponent(text), '_blank');
+}
+
+// render journal when switching to that tab
+const _origSwitchTab = window.switchTab;
+// patch switchTab to trigger journal render
+(function(){
+  const orig = window.switchTab;
+  if(typeof orig === 'function'){
+    window.switchTab = function(tab){
+      orig(tab);
+      if(tab === 'journal') journalRender();
+    };
+  }
+})();
+
+// render on page load in case journal is the landing tab
+journalRender();
+
+// ===================== END JOURNAL ENGINE =====================
+// wire ticker autocomplete and direction tag on page load
+const _tickerInput = document.getElementById('jf-ticker');
+if(_tickerInput) _tickerInput.addEventListener('input', autofillJournalChecksFromTicker);
+syncExecDirectionTag();
+setExecOrderType('market');
+
+// populates the ticker datalist keeping the pinned four (BTC/ETH/HYPE/LIGHTER)
+// at the top, appending everything else from the live watchlist below them
+function populateJournalTickerList(){
+  const list = document.getElementById('jf-ticker-list');
+  if(!list) return;
+  const pinned = new Set(['BTC','ETH','HYPE','LIGHTER']);
+  const all = [...cryptoData, ...stockData];
+  [...list.querySelectorAll('option[data-dynamic]')].forEach(o => o.remove());
+  all.filter(d => !pinned.has(d.symbol)).forEach(d => {
+    const opt = document.createElement('option');
+    opt.value = d.symbol;
+    opt.dataset.dynamic = '1';
+    list.appendChild(opt);
+  });
+}
 </script>
 </body>
 </html>

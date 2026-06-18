@@ -848,6 +848,46 @@
   </div>
 </div>
 
+<script type="module">
+window.__lighterSignerReady = false;
+window.__lighterSignerClient = null;
+window.__lighterSignerError = null;
+
+import { SignerClient, GroupingType } from './lighter-ts-sdk.browser.js';
+
+// Private key is read fresh from localStorage at signer-creation time (not
+// cached at module load), so a key entered after page load is picked up.
+async function buildLighterSigner(){
+  const privateKey = localStorage.getItem('lighterPrivateKey');
+  if(!privateKey) throw new Error('no Lighter private key stored in localStorage (key: lighterPrivateKey)');
+
+  const signer = new SignerClient({
+    url: 'https://mainnet.zklighter.elliot.ai',
+    privateKey,
+    accountIndex: 21229,
+    apiKeyIndex: 5,
+    wasmConfig: { wasmPath: 'wasm/lighter-signer.wasm', wasmExecPath: 'wasm/wasm_exec.js' }
+  });
+
+  await signer.initialize();       // loads + instantiates the WASM module
+  await signer.ensureWasmClient(); // registers privateKey/chainId/indices with the WASM module (createClient)
+  return signer;
+}
+
+// Exposed for the classic script below to call. Lazily builds + caches the
+// signer on first use rather than at page load, so a missing/blank key
+// doesn't throw before the user has tried to place anything.
+window.__getLighterSigner = async function(){
+  if(window.__lighterSignerClient) return window.__lighterSignerClient;
+  const signer = await buildLighterSigner();
+  window.__lighterSignerClient = signer;
+  window.__lighterSignerReady = true;
+  return signer;
+};
+
+window.__LighterGroupingType = GroupingType;
+</script>
+
 <script>
 // Fallback list used only if the live ranking fetch fails (e.g. offline).
 const FALLBACK_CRYPTO_SYMBOLS = [
@@ -2925,8 +2965,11 @@ function placeOnLighter(){
   submitOrderToLighter(orderRequest);
 }
 
-const LIGHTER_WORKER_URL = 'https://lighter-signer.wimneys.workers.dev';
-
+// In-browser signing via lighter-ts-sdk (loaded as an ESM module above, which
+// exposes window.__getLighterSigner + window.__LighterGroupingType since this
+// classic script can't use `import` directly). Entry + SL are bundled as one
+// OTO (One-Triggers-the-Other) grouped order: leg 0 is the entry (market or
+// limit), leg 1 is the SL, ReduceOnly, opposite side, triggered off slPrice.
 async function submitOrderToLighter(orderRequest){
   const btn = document.getElementById('exec-place-btn');
   const originalText = btn.textContent;
@@ -2934,24 +2977,55 @@ async function submitOrderToLighter(orderRequest){
   btn.textContent = 'placing...';
 
   try{
-    const res = await fetch(LIGHTER_WORKER_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(orderRequest)
-    });
-    const data = await res.json();
+    const signer = await window.__getLighterSigner();
+    const SC = signer.constructor; // SignerClient, for its static ORDER_TYPE_* / TIF_* constants
+    const GroupingType = window.__LighterGroupingType;
 
-    if(data.success){
-      btn.textContent = 'placed ✓';
-      console.log('[Lighter] order placed:', data);
-    } else {
+    const isAsk = orderRequest.is_ask; // true = short/sell, false = long/buy
+    const entryOrderType = orderRequest.orderType === 'market' ? SC.ORDER_TYPE_MARKET : SC.ORDER_TYPE_LIMIT;
+    const entryTimeInForce = orderRequest.orderType === 'market'
+      ? SC.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL
+      : SC.ORDER_TIME_IN_FORCE_GOOD_TILL_TIME;
+
+    const entryLeg = {
+      marketIndex: orderRequest.market_index,
+      clientOrderIndex: 0,
+      baseAmount: orderRequest.base_amount,
+      price: orderRequest.price,
+      isAsk,
+      orderType: entryOrderType,
+      timeInForce: entryTimeInForce,
+      reduceOnly: false,
+      triggerPrice: 0,
+      orderExpiry: -1
+    };
+
+    const slLeg = {
+      marketIndex: orderRequest.market_index,
+      clientOrderIndex: 0,
+      baseAmount: orderRequest.base_amount,
+      price: orderRequest.slExecutionPrice,
+      isAsk: !isAsk, // SL closes the position, so it's the opposite side of entry
+      orderType: SC.ORDER_TYPE_STOP_LOSS,
+      timeInForce: SC.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL,
+      reduceOnly: true,
+      triggerPrice: orderRequest.slTriggerPrice,
+      orderExpiry: -1
+    };
+
+    const [tx, hash, error] = await signer.createGroupedOrders(GroupingType.OTO, [entryLeg, slLeg]);
+
+    if(error){
       btn.textContent = 'failed ✗';
-      showExecValidationMsg(data.error || 'order failed - see console');
-      console.error('[Lighter] order failed:', data);
+      showExecValidationMsg(error || 'order failed - see console');
+      console.error('[Lighter] order failed:', error);
+    } else {
+      btn.textContent = 'placed ✓';
+      console.log('[Lighter] order placed:', { tx, hash });
     }
   } catch(err){
     btn.textContent = 'failed ✗';
-    showExecValidationMsg('network error - see console');
+    showExecValidationMsg(err?.message || 'signing/network error - see console');
     console.error('[Lighter] request error:', err);
   } finally {
     setTimeout(() => {

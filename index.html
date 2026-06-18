@@ -2634,17 +2634,71 @@ function exportJournalCSV(){
   URL.revokeObjectURL(url);
 }
 
+// ===================== LIGHTER MARKET DATA (live lookup) =====================
+// Resolves ticker -> { marketIndex, sizeDecimals, priceDecimals } via Lighter's
+// public, no-auth orderBooks endpoint. Fetched once per page load and cached in
+// memory; ~200 markets exist and the list can change (new listings, delistings),
+// so this stays a live fetch rather than a hardcoded map.
+
+let lighterMarketMap = null;       // ticker (uppercase) -> { marketIndex, sizeDecimals, priceDecimals, status }
+let lighterMarketFetchPromise = null;
+
+async function fetchLighterMarketMap(){
+  if(lighterMarketMap) return lighterMarketMap;
+  if(lighterMarketFetchPromise) return lighterMarketFetchPromise;
+
+  lighterMarketFetchPromise = (async () => {
+    try{
+      const res = await fetch('https://mainnet.zklighter.elliot.ai/api/v1/orderBooks');
+      if(!res.ok) throw new Error(`orderBooks HTTP ${res.status}`);
+      const data = await res.json();
+      const map = {};
+      for(const ob of (data.order_books || [])){
+        map[ob.symbol.toUpperCase()] = {
+          marketIndex: ob.market_id,
+          sizeDecimals: ob.supported_size_decimals,
+          priceDecimals: ob.supported_price_decimals,
+          status: ob.status
+        };
+      }
+      lighterMarketMap = map;
+      return map;
+    } catch(err){
+      console.error('[Lighter market data] failed to fetch orderBooks:', err);
+      lighterMarketFetchPromise = null; // allow retry on next call
+      return null;
+    }
+  })();
+
+  return lighterMarketFetchPromise;
+}
+
+// Looks up a single ticker in the cached map. Returns null if the map hasn't
+// loaded yet or the ticker isn't found (delisted, or naming mismatch between
+// our watchlist ticker and Lighter's symbol string, e.g. "1000PEPE" vs "PEPE").
+function resolveLighterMarket(ticker){
+  if(!lighterMarketMap || !ticker) return null;
+  return lighterMarketMap[ticker.toUpperCase()] || null;
+}
+
+// Converts a human-readable size/price into Lighter's required integer format,
+// scaled by that market's own decimal precision. Per Lighter's docs: amounts and
+// prices are passed as integers, e.g. priceDecimals=2 means $3100.00 -> 310000.
+function toLighterInt(value, decimals){
+  if(value === null || value === undefined || isNaN(value)) return null;
+  return Math.round(value * Math.pow(10, decimals));
+}
+
 // ===================== LIGHTER TRADE EXECUTOR (STUB) =====================
-// This is the test-phase stub: no signing, no network call to Lighter at all.
-// placeOnLighter() builds the request object Lighter would eventually need and
-// console.logs it, so the data flow/shape can be reviewed before any real signer
-// (the community lighter-ts WASM port) gets wired in as its own separate step.
+// This is the test-phase stub: no signing, no network call to Lighter to place
+// orders. placeOnLighter() builds the request object Lighter would eventually
+// need and console.logs it, so the data flow/shape can be reviewed before any
+// real signer (the community lighter-ts WASM port) gets wired in as its own
+// separate step.
 //
-// market_index and the integer-scaled amount/price fields are left as explicit
-// null/TODO placeholders rather than guessed at - Lighter identifies markets by
-// an integer market_index (not a ticker string), resolved via its market-list
-// endpoint, and amounts/prices are integers scaled by each market's own decimal
-// precision, not raw dollar floats. Both require a real lookup we don't have yet.
+// market_index and the integer-scaled amount/price fields are now resolved for
+// real via the live orderBooks lookup above, rather than left as placeholders -
+// but the actual order submission (signing + network call) is still stubbed.
 
 let execOrderType = 'market'; // 'market' | 'limit'
 let execSlTouchedManually = false;
@@ -2723,10 +2777,10 @@ function validateExecFields(){
   return true;
 }
 
-// Builds the stub request object and logs it. No fetch, no signing, no Lighter
-// call of any kind yet - this is purely to nail down the data shape before the
-// signer integration (its own separate step) determines what shape it actually
-// needs its input in.
+// Builds the stub request object and logs it. market_index, base_amount, and
+// price are now resolved for real via the live orderBooks lookup. Still a stub:
+// no signing, no actual order-placement network call to Lighter yet - that's
+// the separate WASM signer integration step.
 function placeOnLighter(){
   if(!validateExecFields()) return;
 
@@ -2738,26 +2792,45 @@ function placeOnLighter(){
   const slippagePct = parseFloat(document.getElementById('exec-slippage-pct').value) || 0;
   const limitPrice = execOrderType === 'limit' ? parseFloat(document.getElementById('exec-limit-price').value) : null;
 
+  const market = resolveLighterMarket(ticker);
+  if(!market){
+    showExecValidationMsg(
+      lighterMarketMap
+        ? `"${ticker}" not found on Lighter - check ticker matches Lighter's symbol exactly`
+        : 'Lighter market list still loading - try again in a moment'
+    );
+    return;
+  }
+
+  // entry price used for scaling: limit price if set, else SL price as a stand-in
+  // reference (market orders don't have a fixed entry price ahead of execution)
+  const referencePrice = limitPrice !== null ? limitPrice : slPrice;
+  const slippageFraction = slippageEnabled ? slippagePct / 100 : 0;
+  const slExecutionPrice = slippageEnabled
+    ? (direction === 'short' ? slPrice * (1 + slippageFraction) : slPrice * (1 - slippageFraction))
+    : slPrice;
+
   const stubRequest = {
-    // --- fields we can fill in for real right now ---
-    ticker,                                  // plain ticker string, e.g. "BTC" - NOT Lighter's market_index
-    direction,                               // 'long' | 'short' - maps to is_ask: false/true once resolved
+    // --- human-readable fields ---
+    ticker,
+    direction,                               // 'long' | 'short' - maps to is_ask: false/true
     orderType: execOrderType,                // 'market' | 'limit'
-    sizeUsd: size,                           // dollar notional as typed - NOT the integer base_amount Lighter expects
+    sizeUsd: size,
     limitPrice,                              // null for market orders
     slPrice,
     slSlippage: slippageEnabled ? { enabled: true, pct: slippagePct } : { enabled: false, pct: null },
-    grouping: 'GROUPING_TYPE_ONE_TRIGGERS_THE_OTHER', // entry + SL as one bundled OTO group, per architecture decision
+    grouping: 'GROUPING_TYPE_ONE_TRIGGERS_THE_OTHER', // entry + SL as one bundled OTO group
 
-    // --- explicit unresolved placeholders, NOT guessed values ---
-    market_index: null, // TODO: resolve via Lighter's market-list endpoint (ticker -> integer index, e.g. ETH = 0)
-    base_amount: null,  // TODO: sizeUsd converted to integer base units, scaled by this market's own decimal precision
-    price: null,        // TODO: same integer-scaling requirement as base_amount, applies to both entry and SL trigger/execution prices
-    slTriggerPrice: null,   // TODO: slPrice converted to Lighter's integer price format
-    slExecutionPrice: null, // TODO: slPrice + slippage tolerance, converted to integer format
+    // --- resolved Lighter wire-format fields ---
+    market_index: market.marketIndex,
+    base_amount: toLighterInt(size, market.sizeDecimals),
+    price: toLighterInt(referencePrice, market.priceDecimals),
+    slTriggerPrice: toLighterInt(slPrice, market.priceDecimals),
+    slExecutionPrice: toLighterInt(slExecutionPrice, market.priceDecimals),
+    is_ask: direction === 'short',
 
     _stub: true,
-    _note: 'STUB ONLY - no signing, no network call. Logged for data-shape review.'
+    _note: 'STUB ONLY - market_index/amounts resolved for real, but no signing or network call yet.'
   };
 
   console.log('[Lighter executor stub] would place:', stubRequest);
@@ -2799,6 +2872,7 @@ function initJournalForm(){
   if(execSizeInput) execSizeInput.addEventListener('input', () => { execSizeTouchedManually = true; });
 
   syncExecDirectionTag();
+  fetchLighterMarketMap(); // warm the cache early so it's ready by the time someone places an order
 
   renderJournalLog();
 }

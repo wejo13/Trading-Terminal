@@ -2864,113 +2864,88 @@ async function toggleAlerts(){
 // a write-access credential in the browser. The export buttons exist specifically as
 // a manual backup path given that tradeoff.
 
-// ===================== LIGHTER BALANCE (WebSocket) =====================
-// Subscribes to user_stats:{accountIndex} on Lighter's WebSocket stream.
-// This channel pushes collateral, portfolio_value, available_balance, and leverage
-// in real time without any auth token (read-only data is public).
-// Reconnects automatically if the connection drops.
+// ===================== LIGHTER BALANCE (REST polling) =====================
+// Uses the public /api/v1/account endpoint (no auth needed) to fetch collateral,
+// available balance, and open positions including liquidation prices.
+// Polls every 60 seconds to stay current.
 
 const LIGHTER_ACCOUNT_INDEX = 21229;
-const LIGHTER_WS_URL = 'wss://mainnet.zklighter.elliot.ai/stream';
-let _lighterWs = null;
-let _lighterWsReconnectTimer = null;
-let _lighterWsKeepaliveTimer = null;
+const LIGHTER_BASE_URL = 'https://mainnet.zklighter.elliot.ai';
+let _lighterBalanceTimer = null;
 
-function connectLighterBalanceWs(){
-  if(_lighterWs && (_lighterWs.readyState === WebSocket.OPEN || _lighterWs.readyState === WebSocket.CONNECTING)) return;
-
-  _lighterWs = new WebSocket(LIGHTER_WS_URL);
-
-  _lighterWs.onopen = () => {
-    console.log('[LighterWS] connected');
-    setLighterDot('connecting');
-    // subscribe to user_stats for this account
-    _lighterWs.send(JSON.stringify({
-      type: 'subscribe',
-      channel: `user_stats:${LIGHTER_ACCOUNT_INDEX}`
-    }));
-    // keepalive: send a ping every 90s so the server doesn't close us (2min timeout)
-    _lighterWsKeepaliveTimer = setInterval(() => {
-      if(_lighterWs.readyState === WebSocket.OPEN) _lighterWs.send(JSON.stringify({type:'ping'}));
-    }, 90000);
-  };
-
-  _lighterWs.onmessage = (evt) => {
-    let msg;
-    try{ msg = JSON.parse(evt.data); } catch(e){ return; }
-    if(msg.type === 'update/user_stats' || (msg.channel && msg.channel.startsWith('user_stats'))){
-      const stats = msg.stats || msg;
-      updateLighterBalanceDisplay(stats);
-    }
-  };
-
-  _lighterWs.onerror = (e) => {
-    console.warn('[LighterWS] error', e);
+async function fetchLighterBalance(){
+  try{
+    const res = await fetch(`${LIGHTER_BASE_URL}/api/v1/account?by=index&value=${LIGHTER_ACCOUNT_INDEX}`);
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    updateLighterBalanceDisplay(data);
+    setLighterDot('live');
+  } catch(e){
+    console.warn('[LighterBalance] fetch failed', e);
     setLighterDot('error');
-  };
-
-  _lighterWs.onclose = () => {
-    console.warn('[LighterWS] closed — reconnecting in 10s');
-    setLighterDot('error');
-    clearInterval(_lighterWsKeepaliveTimer);
-    _lighterWsReconnectTimer = setTimeout(connectLighterBalanceWs, 10000);
-  };
+    const subEl = document.getElementById('dashLighterSub');
+    if(subEl) subEl.textContent = 'fetch failed — retrying';
+  }
 }
 
 function setLighterDot(state){
   const dot = document.getElementById('lighterDot');
   if(!dot) return;
   if(state === 'live')       { dot.style.background = 'var(--green)'; dot.title = 'live'; }
-  else if(state === 'error') { dot.style.background = 'var(--red)';   dot.title = 'disconnected'; }
+  else if(state === 'error') { dot.style.background = 'var(--red)';   dot.title = 'error'; }
   else                       { dot.style.background = 'var(--amber)'; dot.title = 'connecting…'; }
 }
 
-function updateLighterBalanceDisplay(stats){
-  const collateral = parseFloat(stats.collateral);
-  const portfolioValue = parseFloat(stats.portfolio_value);
-  const available = parseFloat(stats.available_balance);
-  const leverage = parseFloat(stats.leverage);
+function updateLighterBalanceDisplay(data){
+  const collateral = parseFloat(data.collateral);
+  const available  = parseFloat(data.available_balance);
+  const totalAsset = parseFloat(data.total_asset_value);
 
-  if(isNaN(collateral)) return;
-
-  // use portfolio_value if we have open positions (includes unrealised PnL),
-  // otherwise collateral is the cleaner number
-  const displayBalance = !isNaN(portfolioValue) && portfolioValue !== 0 ? portfolioValue : collateral;
+  // total_asset_value includes unrealised PnL; use it if present, else collateral
+  const displayBalance = (!isNaN(totalAsset) && totalAsset > 0) ? totalAsset : collateral;
+  if(isNaN(displayBalance)) return;
 
   const balEl = document.getElementById('dashLighterBalance');
   const subEl = document.getElementById('dashLighterSub');
 
-  if(balEl) balEl.textContent = '$' + displayBalance.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  if(balEl) balEl.textContent = '$' + displayBalance.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 
   const subParts = [];
   if(!isNaN(available)) subParts.push(`avail $${available.toLocaleString('en-US',{maximumFractionDigits:0})}`);
-  if(!isNaN(leverage) && leverage > 0) subParts.push(`${leverage.toFixed(1)}× lev`);
-  if(subEl) subEl.textContent = subParts.join(' · ') || 'live';
 
-  setLighterDot('live');
+  // show liquidation price if there's an open position
+  const positions = data.positions || [];
+  const openPos = positions.find(p => parseFloat(p.position) !== 0);
+  if(openPos && openPos.liquidation_price){
+    const liqPrice = parseFloat(openPos.liquidation_price);
+    if(!isNaN(liqPrice) && liqPrice > 0){
+      subParts.push(`liq $${liqPrice.toLocaleString('en-US',{maximumFractionDigits:0})}`);
+    }
+  }
+
+  if(subEl) subEl.textContent = subParts.join(' · ') || 'live';
   updateDashboardTotal();
 }
 
 function updateDashboardTotal(){
-  // update total card once Lighter balance is available
-  // Bybit is not yet wired, so total = Lighter only for now
   const lighterText = document.getElementById('dashLighterBalance')?.textContent;
   if(!lighterText || lighterText === '—') return;
   const lighterVal = parseFloat(lighterText.replace(/[$,]/g,''));
   if(isNaN(lighterVal)) return;
 
   const totalEl = document.getElementById('dashTotalBalance');
-  const subEl = document.querySelector('.total-sub');
+  const subEl   = document.querySelector('.total-sub');
   if(totalEl) totalEl.textContent = '$' + lighterVal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-  if(subEl) subEl.textContent = 'Lighter · Bybit coming soon';
+  if(subEl)   subEl.textContent = 'Lighter · Bybit coming soon';
 
-  // fill bar: Lighter is 100% until Bybit is wired
   const barEl = document.getElementById('dashLighterBar');
   if(barEl) barEl.style.width = '100%';
 }
 
-// kick off on page load
-connectLighterBalanceWs();
+// fetch immediately, then every 60s
+fetchLighterBalance();
+_lighterBalanceTimer = setInterval(fetchLighterBalance, 60000);
+
 
 
 renderAlertLog();

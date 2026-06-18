@@ -4455,6 +4455,7 @@ function gridStartPriceWs(){
 }
 
 // REST price fallback — fetch BTC mark price from Lighter REST API
+// Runs on load and then every 15s as a safety net in case the WS price parse fails.
 async function gridFetchPriceFallback(){
   try{
     const map = await fetchLighterMarketMap();
@@ -4462,10 +4463,11 @@ async function gridFetchPriceFallback(){
     const res = await fetch(`${LIGHTER_BASE_URL}/api/v1/orderBooks`);
     if(!res.ok) return;
     const data = await res.json();
-    const btcBook = (data.order_books || []).find(ob => ob.market_id === GRID_BTC_MARKET);
+    const btcBook = (data.order_books || []).find(ob => ob.market_id === GRID_BTC_MARKET || ob.market_index === GRID_BTC_MARKET);
     if(btcBook){
+      // mark_price and last_price come as plain USD floats from REST
       const p = parseFloat(btcBook.mark_price || btcBook.last_price || 0);
-      if(p > 1000 && gridCurrentPrice === null){
+      if(p > 1000){
         gridCurrentPrice = p;
         gridUpdateStat('gstat-price', '$' + p.toLocaleString('en-US',{maximumFractionDigits:1}));
         gridVizDirty = true;
@@ -4473,6 +4475,8 @@ async function gridFetchPriceFallback(){
     }
   } catch(e){}
 }
+// Poll REST every 15s so price stat always shows even if WS parse fails
+setInterval(gridFetchPriceFallback, 15000);
 
 function gridStopPriceWs(){
   if(gridPriceWs){ try{ gridPriceWs.close(); }catch(e){} gridPriceWs=null; }
@@ -4488,12 +4492,18 @@ function gridStartOrderWs(){
   gridOrderWs.onmessage = async (ev) => {
     try{
       const msg = JSON.parse(ev.data);
+      // Log ALL account_all_orders messages so we can see exact field names/values on fills
+      if((msg.channel || '').startsWith('account_all_orders')){
+        console.log('[GridBot] order WS raw:', JSON.stringify(msg).slice(0, 400));
+      }
       if((msg.channel || '').startsWith('account_all_orders') && msg.data){
         const orders = Array.isArray(msg.data) ? msg.data : [msg.data];
         for(const order of orders){
-          const status = order.status || order.order_status;
-          const clientIdx = order.client_order_index ?? order.clientOrderIndex;
-          if(status === 'filled' || status === 2){ // 2 = filled in some SDK versions
+          const status = order.status ?? order.order_status ?? order.state ?? '';
+          const clientIdx = order.client_order_index ?? order.clientOrderIndex ?? order.client_order_idx;
+          const isFilled = status === 'filled' || status === 'FILLED' || status === 2 || status === 'closed';
+          console.log('[GridBot] order update — status:', status, 'clientIdx:', clientIdx, 'isFilled:', isFilled);
+          if(isFilled){
             await gridHandleFill(order, clientIdx);
           }
         }
@@ -4518,8 +4528,14 @@ function levelIdxFromClientIdx(ci){ return ci - 100; }
 
 async function gridHandleFill(order, clientIdx){
   if(!gridState || !gridState.running || gridState.paused) return;
-  const li = levelIdxFromClientIdx(clientIdx);
-  if(li < 0 || li >= gridState.levels.length) return;
+  // clientIdx may be string or number — coerce
+  const ci = parseInt(clientIdx, 10);
+  console.log('[GridBot] fill detected clientIdx=', ci, 'order=', order);
+  const li = ci - 100; // levels use clientOrderIndex 100+i
+  if(isNaN(ci) || li < 0 || li >= gridState.levels.length){
+    console.log('[GridBot] fill ignored — not a grid level idx', ci);
+    return;
+  }
 
   const level = gridState.levels[li];
   if(!level || level.status === 'filled') return; // already handled
@@ -4804,31 +4820,29 @@ async function gridBotStop(isSL){
   gridStopPriceWs();
   gridStopOrderWs();
 
-  // Cancel all grid orders on Lighter + market close
+  // Cancel all grid orders on Lighter + always market close any open position
   await gridCancelAllOrders();
-  if(isSL){
-    try{
-      const signer = await window.__getLighterSigner();
-      const SC = signer.constructor;
-      await signer.createOrderOptimized({
-        marketIndex: GRID_BTC_MARKET,
-        clientOrderIndex: 0,
-        baseAmount: 0,
-        price: 0,
-        isAsk: false,
-        orderType: SC.ORDER_TYPE_MARKET,
-        timeInForce: SC.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL,
-        reduceOnly: true,
-        triggerPrice: 0,
-        orderExpiry: 0
-      });
-      console.log('[GridBot] market close sent');
-    } catch(e){ console.warn('[GridBot] market close failed', e); }
-  }
+  try{
+    const signer = await window.__getLighterSigner();
+    const SC = signer.constructor;
+    await signer.createOrderOptimized({
+      marketIndex: GRID_BTC_MARKET,
+      clientOrderIndex: 0,
+      baseAmount: 0,
+      price: 0,
+      isAsk: false,
+      orderType: SC.ORDER_TYPE_MARKET,
+      timeInForce: SC.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL,
+      reduceOnly: true,
+      triggerPrice: 0,
+      orderExpiry: 0
+    });
+    console.log('[GridBot] market close sent');
+  } catch(e){ console.warn('[GridBot] market close failed (may have no position)', e); }
 
   gridRenderLevelTable();
   gridVizDirty = true;
-  if(!isSL) gridToast('Bot stopped. All orders cancelled.');
+  if(!isSL) gridToast('Bot stopped. Orders cancelled & position closed.');
 }
 
 // ---- Uptime ----

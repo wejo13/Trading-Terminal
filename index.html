@@ -4419,7 +4419,6 @@ async function gridPlaceSingleOrder(price, isAsk, notional, clientOrderIdx){
 
     const leg = {
       marketIndex: GRID_BTC_MARKET,
-      clientOrderIndex: clientOrderIdx,
       baseAmount: sizeLighter,
       price: priceLighter,
       isAsk,
@@ -4566,7 +4565,6 @@ async function gridBotStop(isSL){
       const GroupingType = window.__LighterGroupingType;
       await signer.createGroupedOrders(GroupingType.OTO, [{
         marketIndex: GRID_BTC_MARKET,
-        clientOrderIndex: 0,
         baseAmount: 0,
         price: 0,
         isAsk: false,

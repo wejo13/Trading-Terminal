@@ -853,6 +853,14 @@ window.__lighterSignerReady = false;
 window.__lighterSignerClient = null;
 window.__lighterSignerError = null;
 
+// lighter-ts-sdk's browser bundle has a couple of unguarded `process.env.DEBUG`
+// reads (inconsistent with its own `typeof process !== 'undefined'` guards
+// elsewhere) that throw in a real browser since there's no global `process`.
+// Minimal polyfill so those lines read undefined instead of crashing.
+if(typeof window.process === 'undefined'){
+  window.process = { env: {} };
+}
+
 import { SignerClient, GroupingType } from './lighter-ts-sdk.browser.js';
 
 // Private key is read fresh from localStorage at signer-creation time (not

@@ -363,6 +363,31 @@
     background:rgba(240,180,41,0.08);border:1px solid rgba(240,180,41,0.25);border-radius:3px;
   }
 
+  .exec-modal-overlay{
+    position:fixed;top:0;left:0;width:100%;height:100%;
+    background:rgba(0,0,0,0.6);z-index:1000;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .exec-modal-card{
+    background:var(--bg);border:1px solid var(--red);border-radius:6px;
+    padding:20px 22px;max-width:380px;width:90%;
+    box-shadow:0 8px 30px rgba(0,0,0,0.5);
+  }
+  .exec-modal-title{
+    font-size:13px;font-weight:700;color:var(--red);margin-bottom:10px;
+  }
+  .exec-modal-body{
+    font-size:12px;color:#cfd8dc;line-height:1.5;margin-bottom:16px;
+  }
+  .exec-modal-dismiss{
+    background:none;border:1px solid var(--red);color:var(--red);
+    border-radius:3px;padding:6px 14px;font-size:11px;cursor:pointer;
+    font-family:inherit;float:right;
+  }
+  .exec-modal-dismiss:hover{
+    background:var(--red-dim);
+  }
+
   .exec-submit-note{
     font-size:9.5px;color:var(--dim);align-self:center;font-style:italic;
   }
@@ -638,6 +663,14 @@
           </div>
 
         </div>
+
+        <div id="exec-ticker-modal-overlay" class="exec-modal-overlay" style="display:none;">
+          <div class="exec-modal-card">
+            <div class="exec-modal-title">⚠ ticker not tradable on Lighter</div>
+            <div class="exec-modal-body" id="exec-ticker-modal-body"></div>
+            <button type="button" class="exec-modal-dismiss" onclick="closeExecTickerModal()">dismiss</button>
+          </div>
+        </div>
   
         <div class="jf-row">
           <label>notional size ($)<input type="number" id="jf-notional" step="any" placeholder="e.g. 1000"></label>
@@ -732,7 +765,7 @@
 
       <div class="legend-group">
         <h4>FUNDING column and open interest dot</h4>
-        <p>Where available (not every coin has a Binance futures contract), the FUNDING column shows that coin's current perpetual futures funding rate. Hovering the small dot next to it also shows the 24-hour open interest change. Negative funding means short positions are paying long positions — a sign of crowded short positioning, which can be a contrarian-bullish tell that pairs naturally with this system's liquidity-sweep logic. The dot is colored green-ish when that contrarian read leans bullish, red-ish when it leans cautionary, and grey when it's roughly neutral or there's no data for that coin. A dash means no futures contract was found for that coin on Binance.</p>
+        <p>Where available (not every coin has a Bybit perpetual contract), the FUNDING column shows that coin's current perpetual futures funding rate. Hovering the small dot next to it also shows the 24-hour open interest change. Negative funding means short positions are paying long positions — a sign of crowded short positioning, which can be a contrarian-bullish tell that pairs naturally with this system's liquidity-sweep logic. The dot is colored green-ish when that contrarian read leans bullish, red-ish when it leans cautionary, and grey when it's roughly neutral or there's no data for that coin. A dash means no perpetual contract was found for that coin on Bybit.</p>
       </div>
 
       <div class="legend-group">
@@ -747,7 +780,7 @@
 
       <div class="legend-group">
         <h4>The watchlist itself</h4>
-        <p>This list isn't a fixed 100 coins — it's rebuilt from Binance's USDT pairs, ranked by 7-day average trading volume (not just the last 24 hours, which can be skewed by a single spike day), then filtered to only coins with at least $450M in market cap via CoinGecko, with known stablecoins excluded entirely. The goal is to keep the list to genuinely liquid, real assets rather than thin or wash-traded pairs.</p>
+        <p>This list isn't a fixed 100 coins — it's rebuilt from Bybit's USDT perpetual pairs, ranked by 7-day average trading volume (not just the last 24 hours, which can be skewed by a single spike day), then filtered to only coins with at least $450M in market cap via CoinGecko, with known stablecoins excluded entirely. The goal is to keep the list to genuinely liquid, real assets rather than thin or wash-traded pairs.</p>
       </div>
 
       <div class="legend-group">
@@ -824,22 +857,22 @@ const FALLBACK_CRYPTO_SYMBOLS = [
   "HBARUSDT","UNIUSDT","AAVEUSDT","MKRUSDT","PEPEUSDT","WIFUSDT"
 ];
 
-const SYMBOL_LIST_CACHE_KEY = 'ema_watch_top100_symbols_v6_nostable';
+const SYMBOL_LIST_CACHE_KEY = 'ema_watch_top100_symbols_v7_bybit';
 const SYMBOL_LIST_CACHE_TTL = 24 * 60 * 60 * 1000; // re-rank once a day; otherwise reuse cached list
 
 let CRYPTO_SYMBOLS = FALLBACK_CRYPTO_SYMBOLS;
 
-// Pulls all USDT spot pairs from Binance's 24hr ticker, ranks by quote volume
-// (the actual USD-denominated volume, which is the correct way to rank "top by volume"
-// rather than raw base-asset volume), and keeps the top 100. Cached for a day so we
-// don't re-rank on every single page load.
+// Pulls all USDT linear perpetuals from Bybit's tickers endpoint (one call returns
+// price, 24h volume, funding rate, and open interest together - no separate calls
+// needed), ranks by quote-denominated volume (turnover24h), and keeps the top 100.
+// Cached for a day so we don't re-rank on every single page load.
 //
 // Ranking is based on 7-DAY average daily volume rather than raw 24h volume, because
 // 24h volume alone lets through "dogshit coins" that had one freak spike day - a 7-day
-// average is a much better proxy for genuinely liquid, tradeable pairs. We use the 24hr
-// ticker first to get a broad initial pool (top 300 by 24h volume, cheap, 1 API call),
-// then fetch 7 daily candles per symbol in that pool to compute the true 7-day average
-// and re-rank by that before keeping the top 100.
+// average is a much better proxy for genuinely liquid, tradeable pairs. We use the
+// tickers endpoint first to get a broad initial pool (top 300 by 24h turnover, cheap,
+// 1 API call), then fetch 7 daily candles per symbol in that pool to compute the true
+// 7-day average and re-rank by that before keeping the top 100.
 const INITIAL_POOL_SIZE = 300;
 
 // Market cap floor (USD) - anything below this gets excluded even if volume looks high,
@@ -857,13 +890,15 @@ const STABLECOIN_BLOCKLIST = new Set([
 ]);
 
 async function fetch7DayAvgVolume(symbol){
-  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1d&limit=7`;
+  const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${symbol}&interval=D&limit=7`;
   const res = await fetch(url);
   if(!res.ok) throw new Error('7d volume fetch failed '+symbol);
-  const raw = await res.json();
+  const data = await res.json();
+  const raw = data?.result?.list || [];
   if(!raw.length) return 0;
-  // kline[7] is quote asset volume (USDT-denominated), the correct basis for ranking liquidity
-  const totalQuoteVol = raw.reduce((sum,c) => sum + parseFloat(c[7]), 0);
+  // Bybit kline array: [start, open, high, low, close, volume, turnover] - turnover
+  // (index 6) is the quote-denominated (USDT) volume, the correct basis for ranking liquidity
+  const totalQuoteVol = raw.reduce((sum,c) => sum + parseFloat(c[6]), 0);
   return totalQuoteVol / raw.length;
 }
 
@@ -902,9 +937,10 @@ async function loadTop100SymbolsByVolume(){
     }
   } catch(e){ /* fall through to live fetch */ }
 
-  const res = await fetch('https://api.binance.com/api/v3/ticker/24hr');
+  const res = await fetch('https://api.bybit.com/v5/market/tickers?category=linear');
   if(!res.ok) throw new Error('ticker fetch failed');
-  const all = await res.json();
+  const data = await res.json();
+  const all = data?.result?.list || [];
 
   const usdtPairs = all.filter(t =>
     t.symbol.endsWith('USDT') &&
@@ -916,9 +952,10 @@ async function loadTop100SymbolsByVolume(){
     !t.symbol.includes('BULL') && !t.symbol.includes('BEAR') &&
     !STABLECOIN_BLOCKLIST.has(t.symbol.replace(/USDT$/, ''))
   );
-  // initial broad cut by 24h volume, just to keep the next step (7-day lookups) to a
-  // manageable number of API calls instead of querying every USDT pair on Binance
-  usdtPairs.sort((a,b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume));
+  // initial broad cut by 24h turnover (quote-denominated volume), just to keep the
+  // next step (7-day lookups) to a manageable number of API calls instead of querying
+  // every USDT linear perp on Bybit
+  usdtPairs.sort((a,b) => parseFloat(b.turnover24h) - parseFloat(a.turnover24h));
   const pool = usdtPairs.slice(0, INITIAL_POOL_SIZE).map(t => t.symbol);
 
   // now compute true 7-day average volume for everything in the pool, in chunks to
@@ -1090,43 +1127,47 @@ function detectFractalHighs(candles, side){
   return highs;
 }
 
-// Fetches funding rates for ALL USDM futures symbols in ONE call (premiumIndex with no
-// symbol param returns the full list, weight 10). Not every spot symbol has a matching
-// perpetual contract, so this returns a partial map - missing symbols just show no data,
-// which is expected, not a bug. Returns Map of symbol -> { fundingRate, nextFundingTime }.
+// Fetches funding rates for ALL USDT linear perpetual symbols in ONE call (Bybit's
+// tickers endpoint with no symbol param returns the full category list, including
+// fundingRate per symbol). Not every symbol the watchlist tracks is guaranteed to be
+// in this exact category list, so this returns a partial map - missing symbols just
+// show no data, which is expected, not a bug. Returns Map of symbol -> { fundingRate, nextFundingTime }.
 async function fetchAllFundingRates(){
-  const url = 'https://fapi.binance.com/fapi/v1/premiumIndex';
+  const url = 'https://api.bybit.com/v5/market/tickers?category=linear';
   const res = await fetch(url);
   if(!res.ok) throw new Error('funding rate fetch failed');
-  const list = await res.json();
+  const data = await res.json();
+  const list = data?.result?.list || [];
   const map = new Map();
   list.forEach(item => {
     map.set(item.symbol, {
-      fundingRate: parseFloat(item.lastFundingRate),
-      nextFundingTime: item.nextFundingTime
+      fundingRate: parseFloat(item.fundingRate),
+      nextFundingTime: item.nextFundingTime ? parseInt(item.nextFundingTime) : null
     });
   });
   return map;
 }
 
 // Fetches open interest delta for a single symbol: current OI value vs ~24h ago.
-// Uses the 1h-period historical OI endpoint and looks back 24 buckets. No bulk endpoint
-// exists for this on Binance, so it's one call per symbol - kept to symbols actually
-// being displayed, not run during the broader ranking/filtering step.
-// Returns null if the symbol has no futures contract or the data is unavailable.
+// Uses Bybit's 1h-period historical OI endpoint and looks back 24 buckets. No bulk
+// endpoint exists for this on Bybit either, so it's one call per symbol - kept to
+// symbols actually being displayed, not run during the broader ranking/filtering step.
+// Returns null if the symbol has no contract or the data is unavailable.
 async function fetchOIDelta(symbol){
   try{
-    const url = `https://fapi.binance.com/futures/data/openInterestHist?symbol=${symbol}&period=1h&limit=25`;
+    const url = `https://api.bybit.com/v5/market/open-interest?category=linear&symbol=${symbol}&intervalTime=1h&limit=25`;
     const res = await fetch(url);
     if(!res.ok) return null;
-    const list = await res.json();
+    const data = await res.json();
+    const list = data?.result?.list || [];
     if(!list || list.length < 2) return null;
-    const oldest = parseFloat(list[0].sumOpenInterestValue);
-    const newest = parseFloat(list[list.length-1].sumOpenInterestValue);
+    // Bybit returns most-recent-first, so reverse to get oldest -> newest for the delta calc
+    const oldest = parseFloat(list[list.length-1].openInterest);
+    const newest = parseFloat(list[0].openInterest);
     if(!oldest || isNaN(oldest) || isNaN(newest)) return null;
     return { deltaPct: ((newest - oldest) / oldest) * 100, current: newest };
   } catch(e){
-    return null; // missing futures contract or rate-limited - treated as "no data", not an error
+    return null; // missing contract or rate-limited - treated as "no data", not an error
   }
 }
 
@@ -1140,29 +1181,67 @@ function classifyEmaDistance(distPct){
   return 'very_extended';
 }
 
-async function fetchBinanceCandles(symbol, interval){
-  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=1000`;
+// Maps this app's own interval strings to Bybit's kline interval enum, which uses
+// raw minutes (or D/W/M) rather than Binance-style "4h"/"12h"/"3d" strings.
+const BYBIT_INTERVAL_MAP = { '4h': '240', '12h': '720', '1d': 'D', '1w': 'W' }; // 3d has
+// no native Bybit interval, so it's handled separately below via daily-candle aggregation
+// rather than silently substituting daily data under a misleading "3d" label.
+
+async function fetchBybitCandles(symbol, ourInterval){
+  if(ourInterval === '3d'){
+    // Bybit has no native 3-day interval - pull enough daily candles and aggregate
+    // them into 3-day buckets ourselves so the EMA still reflects real 3D bars,
+    // not a silent substitution of daily data under a misleading label.
+    const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${symbol}&interval=D&limit=1000`;
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('bybit fetch failed '+symbol);
+    const data = await res.json();
+    const raw = (data?.result?.list || []).slice().reverse(); // Bybit returns newest-first; we need oldest-first
+    const daily = raw.map(c => ({
+      t: parseInt(c[0]), o: parseFloat(c[1]), h: parseFloat(c[2]), l: parseFloat(c[3]), c: parseFloat(c[4]), v: parseFloat(c[5])
+    }));
+    const buckets = [];
+    for(let i=0; i<daily.length; i+=3){
+      const group = daily.slice(i, i+3);
+      if(!group.length) continue;
+      buckets.push({
+        t: group[0].t,
+        o: group[0].o,
+        h: Math.max(...group.map(g=>g.h)),
+        l: Math.min(...group.map(g=>g.l)),
+        c: group[group.length-1].c,
+        v: group.reduce((s,g)=>s+g.v, 0)
+      });
+    }
+    const closes = buckets.map(c=>c.c);
+    const emaSeries = emaSeriesFull(closes, 200);
+    return buckets.map((c,i)=>({ ...c, ema: emaSeries[i] }));
+  }
+
+  const bybitInterval = BYBIT_INTERVAL_MAP[ourInterval];
+  const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${symbol}&interval=${bybitInterval}&limit=1000`;
   const res = await fetch(url);
-  if(!res.ok) throw new Error('binance fetch failed '+symbol);
-  const raw = await res.json();
+  if(!res.ok) throw new Error('bybit fetch failed '+symbol);
+  const data = await res.json();
+  const raw = (data?.result?.list || []).slice().reverse(); // Bybit returns newest-first; we need oldest-first for EMA math
   const closes = raw.map(c => parseFloat(c[4]));
   const emaSeries = emaSeriesFull(closes, 200);
   const candles = raw.map((c,i)=>({
-    t: c[0], o: parseFloat(c[1]), h: parseFloat(c[2]), l: parseFloat(c[3]), c: parseFloat(c[4]),
+    t: parseInt(c[0]), o: parseFloat(c[1]), h: parseFloat(c[2]), l: parseFloat(c[3]), c: parseFloat(c[4]),
     v: parseFloat(c[5]), // base asset volume for this candle
     ema: emaSeries[i]
   }));
   return candles;
 }
 
-async function fetchBinance4h(symbol, fundingMap){
+async function fetchBybit4h(symbol, fundingMap){
   // fetch 4H (primary), 12H, 3D candles, plus OI delta - all in parallel since they're
   // independent requests and this keeps total wait time down rather than adding a 4th
   // sequential step on top of the existing three.
   const [candles, candles12h, candles3d, oiDelta] = await Promise.all([
-    fetchBinanceCandles(symbol, '4h'),
-    fetchBinanceCandles(symbol, '12h'),
-    fetchBinanceCandles(symbol, '3d'),
+    fetchBybitCandles(symbol, '4h'),
+    fetchBybitCandles(symbol, '12h'),
+    fetchBybitCandles(symbol, '3d'),
     fetchOIDelta(symbol)
   ]);
   const closes = candles.map(c=>c.c);
@@ -1185,9 +1264,9 @@ async function fetchBinance4h(symbol, fundingMap){
   const score = computeSetupScore(above, { '4h': candles, '12h': candles12h, '3d': candles3d }, distPct);
   const SCORE_RANK = { excellent_plus: 4, excellent: 3, good: 2, bad: 1 };
 
-  // funding rate isn't available for every spot symbol (not all have a perpetual
-  // contract on Binance futures) - fundingInfo is null in that case, which the UI
-  // treats as "no data" rather than an error
+  // funding rate isn't available for every symbol in the same category list (rare
+  // edge case e.g. symbol delisted mid-session) - fundingInfo is null in that case,
+  // which the UI treats as "no data" rather than an error
   const fundingInfo = fundingMap ? fundingMap.get(symbol) : null;
 
   return {
@@ -1239,10 +1318,10 @@ async function loadCrypto(){
 
   const results = [];
   const chunks = [];
-  const CHUNK_SIZE = 10; // 100 symbols / 10 per chunk = 10 sequential batches, keeps Binance happy
+  const CHUNK_SIZE = 10; // 100 symbols / 10 per chunk = 10 sequential batches, keeps Bybit happy
   for(let i=0;i<CRYPTO_SYMBOLS.length;i+=CHUNK_SIZE) chunks.push(CRYPTO_SYMBOLS.slice(i,i+CHUNK_SIZE));
   for(const chunk of chunks){
-    const settled = await Promise.allSettled(chunk.map(sym => fetchBinance4h(sym, fundingMap)));
+    const settled = await Promise.allSettled(chunk.map(sym => fetchBybit4h(sym, fundingMap)));
     settled.forEach(r => { if(r.status==='fulfilled') results.push(r.value); });
   }
   return results;
@@ -1321,17 +1400,17 @@ function fmtPrice(p){
   return p.toFixed(6);
 }
 
-// Builds a direct TradingView chart link for a given Binance spot symbol (e.g.
+// Builds a direct TradingView chart link for a given Bybit linear perp symbol (e.g.
 // "WLFIUSDT"), so the user can open a pair in TradingView for deeper analysis -
 // extra indicators, drawing tools, etc - that this app intentionally doesn't try to
-// replicate. Always uses the BINANCE exchange prefix since that's this app's own
-// data source, so the chart the user lands on matches what they were just looking
-// at here. No timeframe param is set - opens to TradingView's own default rather
-// than trying to map this app's 4H/12H/1D/3D/1W buttons onto TradingView's interval
-// scheme, since that mapping isn't always 1:1 (e.g. TradingView's interval params
-// are in raw minutes, not all of this app's timeframes translate cleanly).
+// replicate. Always uses the BYBIT exchange prefix since that's this app's own data
+// source, so the chart the user lands on matches what they were just looking at here.
+// No timeframe param is set - opens to TradingView's own default rather than trying
+// to map this app's 4H/12H/1D/3D/1W buttons onto TradingView's interval scheme, since
+// that mapping isn't always 1:1 (e.g. TradingView's interval params are in raw
+// minutes, not all of this app's timeframes translate cleanly).
 function tradingViewUrl(rawSymbol){
-  return `https://www.tradingview.com/chart/?symbol=BINANCE:${rawSymbol}`;
+  return `https://www.tradingview.com/chart/?symbol=BYBIT:${rawSymbol}.P`;
 }
 
 // Builds the <tr> HTML for a list of coins. Extracted out of render() so the same
@@ -1717,7 +1796,7 @@ async function switchTimeframe(tf){
   let candles = candleCache[cacheKey];
   if(!candles){
     try{
-      candles = await fetchBinanceCandles(currentChartSymbol, tf);
+      candles = await fetchBybitCandles(currentChartSymbol, tf);
       candleCache[cacheKey] = candles;
     } catch(e){
       document.getElementById('chartArea').innerHTML = '<div class="chart-loading">could not load this timeframe — try again</div>';
@@ -1977,7 +2056,7 @@ async function checkTouchAlerts(isManual){
   let touchesFound = 0;
   for(const symbol of CRYPTO_SYMBOLS){
     try{
-      const fresh = await fetchBinance4h(symbol);
+      const fresh = await fetchBybit4h(symbol);
       const lastCandle = fresh.candles[fresh.candles.length-1];
       const emaLevel = fresh.ema200;
       const state = classifyTouch(lastCandle, emaLevel);
@@ -2757,6 +2836,22 @@ function clearExecValidationMsg(){
   document.getElementById('exec-place-btn').disabled = false;
 }
 
+// Real dismiss-required popup for the "ticker not tradable on Lighter" case -
+// distinct from the inline amber messages used for ordinary fixable validation
+// errors (missing size, missing SL price, etc.), since this one means the trade
+// fundamentally can't be routed through Lighter at all, not just incomplete.
+function openExecTickerModal(ticker, stillLoading){
+  const body = document.getElementById('exec-ticker-modal-body');
+  body.textContent = stillLoading
+    ? `Lighter's market list is still loading — try again in a moment.`
+    : `"${ticker}" isn't a tradable pair on Lighter. Double-check the ticker, or this pair may simply not be listed there.`;
+  document.getElementById('exec-ticker-modal-overlay').style.display = 'flex';
+}
+
+function closeExecTickerModal(){
+  document.getElementById('exec-ticker-modal-overlay').style.display = 'none';
+}
+
 // Validates just enough to keep the stub from logging an obviously incomplete
 // order - ticker, size, and SL price are required regardless of order type;
 // limit orders additionally require a limit price. Returns true if valid.
@@ -2794,11 +2889,8 @@ function placeOnLighter(){
 
   const market = resolveLighterMarket(ticker);
   if(!market){
-    showExecValidationMsg(
-      lighterMarketMap
-        ? `"${ticker}" not found on Lighter - check ticker matches Lighter's symbol exactly`
-        : 'Lighter market list still loading - try again in a moment'
-    );
+    clearExecValidationMsg();
+    openExecTickerModal(ticker, !lighterMarketMap);
     return;
   }
 

@@ -1333,11 +1333,40 @@
 
     <!-- ===================== SETTINGS TAB ===================== -->
     <div class="tab-view" id="tab-settings" data-title="Settings">
-      <div class="placeholder-tab">
-        <i class="ti ti-settings"></i>
-        <div class="ph-title">Settings - coming soon</div>
-        <div class="ph-sub">Lighter API key, alert preferences, and other configuration will live here.</div>
+
+      <div class="card" style="max-width:480px;">
+        <div style="font-size:10px;color:var(--text-faint);letter-spacing:0.4px;margin-bottom:16px;">TELEGRAM ALERTS</div>
+
+        <div class="jf-row">
+          <div class="jf-field">
+            Bot token
+            <input type="password" id="settings-tg-token" placeholder="123456:ABC-DEF…" autocomplete="off">
+          </div>
+        </div>
+        <div class="jf-row">
+          <div class="jf-field">
+            Chat ID
+            <input type="text" id="settings-tg-chatid" placeholder="-100123456789" autocomplete="off">
+          </div>
+        </div>
+        <div style="font-size:10px;color:var(--text-faint);margin-bottom:14px;line-height:1.5;">
+          Stored in your browser only (localStorage) — never sent anywhere except directly to Telegram's API when an alert fires.
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="jf-submit-btn" type="button" onclick="saveSettingsTelegram()">Save</button>
+          <button class="jf-cancel-btn" type="button" onclick="testSettingsTelegram()">Send test message</button>
+          <span id="settings-tg-status" style="font-size:11px;color:var(--text-faint);"></span>
+        </div>
       </div>
+
+      <div class="card" style="max-width:480px;margin-top:14px;">
+        <div style="font-size:10px;color:var(--text-faint);letter-spacing:0.4px;margin-bottom:16px;">AUTO REFRESH</div>
+        <div style="font-size:12px;color:var(--text-dim);line-height:1.6;">
+          EMA Strategy watchlist refreshes automatically every hour while the page is open.<br>
+          <span style="color:var(--text-faint);font-size:11px;">Next refresh: <span id="settings-next-refresh">—</span></span>
+        </div>
+      </div>
+
     </div>
 
   </main>
@@ -2835,11 +2864,120 @@ async function toggleAlerts(){
 // a write-access credential in the browser. The export buttons exist specifically as
 // a manual backup path given that tradeoff.
 
-// ===================== BOOT (Dashboard tab only - journal/executor boot calls
-// are added in their own migration steps, not here) =====================
+// ===================== BOOT =====================
 loadAll();
 renderAlertLog();
 renderNotifPermissionNote();
+
+// ---- hourly auto-refresh ----
+// Fires loadAll() every hour so the EMA watchlist stays current without manual intervention.
+// Also triggers EXCELLENT+ Telegram alerts after each refresh.
+let _autoRefreshTimer = null;
+let _nextRefreshAt = null;
+
+function scheduleAutoRefresh(){
+  if(_autoRefreshTimer) clearInterval(_autoRefreshTimer);
+  _nextRefreshAt = Date.now() + 60 * 60 * 1000;
+  updateNextRefreshDisplay();
+  _autoRefreshTimer = setInterval(async () => {
+    console.log('[AutoRefresh] hourly refresh triggered');
+    await loadAll();
+    sendExcellentPlusTelegramAlerts();
+    _nextRefreshAt = Date.now() + 60 * 60 * 1000;
+    updateNextRefreshDisplay();
+  }, 60 * 60 * 1000);
+}
+
+function updateNextRefreshDisplay(){
+  const el = document.getElementById('settings-next-refresh');
+  if(!el || !_nextRefreshAt) return;
+  const mins = Math.round((_nextRefreshAt - Date.now()) / 60000);
+  el.textContent = mins <= 1 ? 'less than a minute' : `in ~${mins} minutes`;
+}
+
+scheduleAutoRefresh();
+// keep the countdown display live while on the Settings tab
+setInterval(updateNextRefreshDisplay, 30000);
+
+// ---- EXCELLENT+ Telegram alerts ----
+const TG_TOKEN_KEY = 'ema_watch_tg_token';
+const TG_CHATID_KEY = 'ema_watch_tg_chatid';
+// track which symbols have already been alerted this session so we don't spam
+const _tgAlertedThisSession = new Set();
+
+async function sendTelegramMessage(msg){
+  const token = localStorage.getItem(TG_TOKEN_KEY);
+  const chatId = localStorage.getItem(TG_CHATID_KEY);
+  if(!token || !chatId) return false;
+  try{
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'HTML' })
+    });
+    return res.ok;
+  } catch(e){
+    console.error('[Telegram] send failed', e);
+    return false;
+  }
+}
+
+function sendExcellentPlusTelegramAlerts(){
+  const all = [...cryptoData, ...stockData];
+  const hits = all.filter(d => d.score && d.score.tier === 'excellent_plus');
+  if(!hits.length) return;
+
+  const newHits = hits.filter(d => !_tgAlertedThisSession.has(d.symbol));
+  if(!newHits.length) return;
+
+  newHits.forEach(d => _tgAlertedThisSession.add(d.symbol));
+
+  const lines = newHits.map(d => {
+    const dist = d.distPct != null ? ` · ${d.distPct >= 0 ? '+' : ''}${d.distPct.toFixed(1)}% from EMA` : '';
+    return `• <b>${d.symbol}</b>${dist}`;
+  });
+
+  const msg = [
+    `🟢 <b>EXCELLENT+ setup${newHits.length > 1 ? 's' : ''} detected</b>`,
+    ...lines,
+    ``,
+    `<i>EMA Watch · ${new Date().toUTCString()}</i>`
+  ].join('\n');
+
+  sendTelegramMessage(msg);
+}
+
+// ---- Settings tab functions ----
+function saveSettingsTelegram(){
+  const token = document.getElementById('settings-tg-token').value.trim();
+  const chatId = document.getElementById('settings-tg-chatid').value.trim();
+  if(!token || !chatId){
+    document.getElementById('settings-tg-status').textContent = 'both fields required';
+    return;
+  }
+  localStorage.setItem(TG_TOKEN_KEY, token);
+  localStorage.setItem(TG_CHATID_KEY, chatId);
+  document.getElementById('settings-tg-status').textContent = 'saved ✓';
+  setTimeout(() => { document.getElementById('settings-tg-status').textContent = ''; }, 2500);
+}
+
+async function testSettingsTelegram(){
+  const statusEl = document.getElementById('settings-tg-status');
+  statusEl.textContent = 'sending…';
+  const ok = await sendTelegramMessage('✅ EMA Watch test message — Telegram alerts are working!');
+  statusEl.textContent = ok ? 'sent ✓' : 'failed — check token & chat ID';
+  setTimeout(() => { statusEl.textContent = ''; }, 3000);
+}
+
+// pre-fill settings fields from localStorage on page load
+(function loadSettingsFields(){
+  const token = localStorage.getItem(TG_TOKEN_KEY);
+  const chatId = localStorage.getItem(TG_CHATID_KEY);
+  const tEl = document.getElementById('settings-tg-token');
+  const cEl = document.getElementById('settings-tg-chatid');
+  if(tEl && token) tEl.value = token;
+  if(cEl && chatId) cEl.value = chatId;
+})();
 
 </script>
 

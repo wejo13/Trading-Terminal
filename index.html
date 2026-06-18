@@ -4403,7 +4403,10 @@ async function gridHandleFill(order, clientIdx){
 }
 
 // ---- Order placement ----
-async function gridPlaceSingleOrder(price, isAsk, notional, clientOrderIdx){
+// Mirrors submitOrderToLighter exactly — OTO with entry leg + SL leg,
+// since that is the only pattern confirmed working with this SDK build.
+// SL is placed far out of range so it won't trigger during normal grid operation.
+async function gridPlaceSingleOrder(price, isAsk, notional, _clientOrderIdx){
   try{
     const signer = await window.__getLighterSigner();
     const SC = signer.constructor;
@@ -4416,8 +4419,13 @@ async function gridPlaceSingleOrder(price, isAsk, notional, clientOrderIdx){
     const btcSize = notional / price;
     const priceLighter = toLighterInt(price, priceDecimals);
     const sizeLighter  = toLighterInt(btcSize, sizeDecimals);
+    const expiry = Date.now() + 28 * 24 * 60 * 60 * 1000;
 
-    const leg = {
+    // Dummy SL far from price: buy orders get SL at price*0.01, sell orders at price*100
+    const slPrice = isAsk ? price * 100 : price * 0.01;
+    const slPriceLighter = toLighterInt(slPrice, priceDecimals);
+
+    const entryLeg = {
       marketIndex: GRID_BTC_MARKET,
       clientOrderIndex: 0,
       baseAmount: sizeLighter,
@@ -4427,11 +4435,24 @@ async function gridPlaceSingleOrder(price, isAsk, notional, clientOrderIdx){
       timeInForce: SC.ORDER_TIME_IN_FORCE_GOOD_TILL_TIME,
       reduceOnly: false,
       triggerPrice: 0,
-      orderExpiry: Date.now() + 28 * 24 * 60 * 60 * 1000
+      orderExpiry: expiry
     };
 
-    console.log('[GridBot] placing order', { price, isAsk, btcSize, priceLighter, sizeLighter, clientOrderIdx });
-    const [tx, hash, error] = await signer.createGroupedOrders(GroupingType.OTO, [leg]);
+    const slLeg = {
+      marketIndex: GRID_BTC_MARKET,
+      clientOrderIndex: 0,
+      baseAmount: 0,
+      price: slPriceLighter,
+      isAsk: !isAsk,
+      orderType: SC.ORDER_TYPE_STOP_LOSS,
+      timeInForce: SC.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL,
+      reduceOnly: true,
+      triggerPrice: slPriceLighter,
+      orderExpiry: expiry
+    };
+
+    console.log('[GridBot] placing order', { price, isAsk, btcSize, priceLighter, sizeLighter });
+    const [tx, hash, error] = await signer.createGroupedOrders(GroupingType.OTO, [entryLeg, slLeg]);
     if(error){ console.error('[GridBot] order error', error); return false; }
     console.log('[GridBot] order placed', { tx, hash });
     return true;

@@ -4468,22 +4468,12 @@ async function gridPlaceSingleOrder(price, isAsk, notional, _unused){
 
 async function gridCancelAllOrders(){
   try{
-    // Fetch active orders directly from REST API
-    const res = await fetch(`${LIGHTER_BASE_URL}/api/v1/accountActiveOrders?account_index=${LIGHTER_ACCOUNT_INDEX}`);
-    const data = await res.json();
-    const orders = data.orders || [];
-    console.log('[GridBot] cancelling', orders.length, 'orders');
-
-    // Cancel each via WASM signer
     const signer = await window.__getLighterSigner();
-    for(const order of orders){
-      const orderIndex = order.order_index ?? order.orderIndex ?? order.index;
-      const marketIndex = order.market_index ?? order.marketIndex ?? order.market_id;
-      if(orderIndex === undefined || marketIndex === undefined){ console.warn('[GridBot] skip order missing index', order); continue; }
-      const [, , err] = await signer.cancelOrder({ marketIndex, orderIndex });
-      if(err) console.warn('[GridBot] cancel failed', orderIndex, err);
-      else console.log('[GridBot] cancelled', orderIndex);
-    }
+    const SC = signer.constructor;
+    // cancelAllOrders(timeInForce, time) — GOOD_TILL_TIME + time=0 cancels all resting orders
+    const [tx, hash, err] = await signer.cancelAllOrders(SC.ORDER_TIME_IN_FORCE_GOOD_TILL_TIME, 0);
+    if(err) console.warn('[GridBot] cancelAllOrders error:', err);
+    else console.log('[GridBot] all orders cancelled', hash);
   } catch(e){
     console.warn('[GridBot] gridCancelAllOrders error:', e.message || e);
   }

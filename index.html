@@ -1047,16 +1047,20 @@ async function loadTop100SymbolsByVolume(){
   return top100.length ? top100 : ranked.slice(0,100).map(r => r.symbol);
 }
 
-// Stocks: Twelve Data's free tier only includes daily-interval data for the 200EMA
-// trend read used here (not a native 4H feed), so we use daily closes vs a
-// daily-equivalent 200EMA as an approximation - same limitation as the prior
-// Stooq-based approach, just from a CORS-friendly source. Marked clearly as
-// approximate in the UI. Keep this list short (10-20 symbols) since the free tier
-// is rate-limited to 8 calls/minute, 800/day, and stock data is fetched manually
-// rather than auto-refreshed.
+// Stocks: now sourced from Lighter's RWA (Real World Asset) perp markets instead of
+// Twelve Data. Lighter has native 4H/12H/1D/1W candles for these (same as crypto),
+// so the daily-only approximation that used to apply here no longer does - stocks
+// get the exact same real sweep-detection scoring as crypto. Pulled from Lighter's
+// own RWA market specifications doc (equities + index/ETF categories), June 2026.
+// Excludes RWA's commodities/FX/pre-IPO categories by user request - equities and
+// index/ETF only.
 const STOCK_SYMBOLS = [
-  "AAPL","MSFT","NVDA","AMZN","GOOGL","META","TSLA","AMD","NFLX","AVGO",
-  "COIN","MSTR","SPY","QQQ","SMCI","PLTR","CRM","ORCL","JPM","XOM"
+  // equities
+  "SKHYNIXUSD","SAMSUNGUSD","HYUNDAIUSD","NVDA","TSLA","CRCL","GOOGL","MSTR","MSFT",
+  "AMZN","AAPL","COIN","META","INTC","HOOD","ASML","AMD","SNDK","MU","ORCL","MRVL",
+  "CBRS","BOT","NBIS","NOW","RKLB","DELL","IBM","SPCX",
+  // index / ETF
+  "SPY","QQQ","DIA","BOTZ","MAGS","IWM","EWY","DRAM","US500","US100","H100"
 ];
 
 const SCORE_LABELS = { excellent_plus: 'EXCELLENT+', excellent: 'EXCELLENT', good: 'GOOD', bad: 'BAD' };
@@ -1073,6 +1077,7 @@ let sortKey = 'distPct';
 let sortDir = -1;
 let candleCache = {}; // key: SYMBOL_interval -> candles array
 let currentChartSymbol = null;
+let currentChartMarket = 'crypto'; // tracks which source ('crypto' or 'stocks') the open chart belongs to, so switchTimeframe fetches from the right API
 let currentChartLabel = '';
 let currentChart4hEma = null; // the 4H 200EMA price level, shown as reference line on all timeframes
 
@@ -1352,6 +1357,147 @@ function pruneCandleCache(currentSymbols){
   });
 }
 
+// ===================== STOCKS (Lighter RWA markets) =====================
+// Stocks now pull real 4H/12H/1D/1W candles from Lighter's public, no-auth candles
+// endpoint - the same RWA equities/index markets visible under Lighter's RWA tab.
+// This replaced an earlier Twelve Data integration that only had daily-interval
+// data on the free tier (a real approximation, not just a label) - Lighter gives
+// genuine 4H bars, so stocks now run through the EXACT same sweep-detection scoring
+// engine as crypto (computeSetupScore, fractal lows, distance tiers), not a
+// stripped-down approximation. Reuses fetchLighterMarketMap (defined further down,
+// originally built for the trade executor) to resolve ticker -> market_id, since
+// that lookup is already exactly what's needed here.
+//
+// Lighter has no native 3-day interval either (same gap as Bybit), so 3D candles
+// are built the same way: pull 1d candles and aggregate into 3-day buckets.
+const LIGHTER_INTERVAL_MAP = { '4h': '4h', '12h': '12h', '1d': '1d', '1w': '1w' };
+
+async function fetchLighterCandles(marketId, ourInterval){
+  // Lighter's candles endpoint requires explicit start/end timestamps plus count_back -
+  // request a window comfortably larger than 1000 bars back from now so there's enough
+  // history for a real 200EMA, mirroring the same "200+ bars of lookback" intent as the
+  // Bybit path's limit=1000.
+  const now = Date.now();
+
+  if(ourInterval === '3d'){
+    // aggregate 1d candles into 3-day buckets, same approach as fetchBybitCandles
+    const start = now - 1000 * 24 * 60 * 60 * 1000;
+    const url = `https://mainnet.zklighter.elliot.ai/api/v1/candles?market_id=${marketId}&resolution=1d&start_timestamp=${start}&end_timestamp=${now}&count_back=1000`;
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('lighter candle fetch failed market_id='+marketId);
+    const data = await res.json();
+    const raw = data?.c || [];
+    const daily = raw.map(c => ({ t: c.t, o: c.o, h: c.h, l: c.l, c: c.c, v: c.v }));
+    const buckets = [];
+    for(let i=0; i<daily.length; i+=3){
+      const group = daily.slice(i, i+3);
+      if(!group.length) continue;
+      buckets.push({
+        t: group[0].t,
+        o: group[0].o,
+        h: Math.max(...group.map(g=>g.h)),
+        l: Math.min(...group.map(g=>g.l)),
+        c: group[group.length-1].c,
+        v: group.reduce((s,g)=>s+g.v, 0)
+      });
+    }
+    const closes = buckets.map(c=>c.c);
+    const emaSeries = emaSeriesFull(closes, 200);
+    return buckets.map((c,i)=>({ ...c, ema: emaSeries[i] }));
+  }
+
+  const resolution = LIGHTER_INTERVAL_MAP[ourInterval];
+  // window size scales with bar duration so ~1000 bars actually fit in the requested
+  // start/end range - a fixed lookback window would silently truncate history on
+  // coarser timeframes (e.g. 1w needs ~19 years back for 1000 bars, 4h only ~167 days)
+  const MS_PER_BAR = { '4h': 4*60*60*1000, '12h': 12*60*60*1000, '1d': 24*60*60*1000, '1w': 7*24*60*60*1000 };
+  const start = now - 1000 * MS_PER_BAR[ourInterval];
+  const url = `https://mainnet.zklighter.elliot.ai/api/v1/candles?market_id=${marketId}&resolution=${resolution}&start_timestamp=${start}&end_timestamp=${now}&count_back=1000`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error('lighter candle fetch failed market_id='+marketId);
+  const data = await res.json();
+  const raw = data?.c || []; // Lighter returns oldest-first already, unlike Bybit
+  const closes = raw.map(c => c.c);
+  const emaSeries = emaSeriesFull(closes, 200);
+  return raw.map((c,i) => ({
+    t: c.t, o: c.o, h: c.h, l: c.l, c: c.c, v: c.v,
+    ema: emaSeries[i]
+  }));
+}
+
+// Mirrors fetchBybit4h's shape/return object exactly, so buildRows/openChart/render
+// work on stock rows with zero special-casing. Funding/OI aren't wired up for RWA
+// markets yet (out of scope for this pass) - left null, which the UI already treats
+// as "no data" rather than an error, same as crypto symbols missing a Bybit contract.
+async function fetchLighterStock(symbol, marketId){
+  const [candles, candles12h, candles3d] = await Promise.all([
+    fetchLighterCandles(marketId, '4h'),
+    fetchLighterCandles(marketId, '12h'),
+    fetchLighterCandles(marketId, '3d')
+  ]);
+  const closes = candles.map(c=>c.c);
+  const lastClose = closes[closes.length-1];
+  const prevClose = closes[closes.length-2];
+  const e = ema(closes, 200);
+  candleCache[symbol+'_4h'] = candles;
+  candleCache[symbol+'_12h'] = candles12h;
+  candleCache[symbol+'_3d'] = candles3d;
+
+  const lastCandle = candles[candles.length-1];
+  const lookback = candles.slice(-21, -1);
+  const avgVol = lookback.length ? lookback.reduce((s,c)=>s+c.v,0)/lookback.length : null;
+  const relVol = (avgVol && avgVol > 0) ? (lastCandle.v / avgVol) : null;
+
+  const above = lastClose > e;
+  const distPct = ((lastClose - e)/e)*100;
+  const score = computeSetupScore(above, { '4h': candles, '12h': candles12h, '3d': candles3d }, distPct);
+  const SCORE_RANK = { excellent_plus: 4, excellent: 3, good: 2, bad: 1 };
+
+  return {
+    symbol,
+    rawSymbol: symbol,
+    price: lastClose,
+    ema200: e,
+    above,
+    distPct,
+    distTier: classifyEmaDistance(distPct),
+    chg4h: ((lastClose - prevClose)/prevClose)*100,
+    relVol,
+    score,
+    scoreRank: SCORE_RANK[score.tier],
+    fundingRate: null,
+    oiDeltaPct: null,
+    candles
+  };
+}
+
+// Loads all STOCK_SYMBOLS via Lighter. No rate-limit throttling needed (unlike the
+// old Twelve Data path) - Lighter's public candles endpoint has no documented
+// free-tier cap like that, so all symbols fetch in parallel chunks the same way
+// crypto does. Symbols Lighter doesn't have a market_id for (naming mismatch,
+// delisted, etc.) are skipped, not treated as a fatal error for the whole batch.
+async function loadStocksFromLighter(){
+  const marketMap = await fetchLighterMarketMap();
+  if(!marketMap) throw new Error('could not resolve Lighter market list');
+
+  const results = [];
+  const CHUNK_SIZE = 10;
+  const chunks = [];
+  for(let i=0;i<STOCK_SYMBOLS.length;i+=CHUNK_SIZE) chunks.push(STOCK_SYMBOLS.slice(i,i+CHUNK_SIZE));
+  for(const chunk of chunks){
+    const settled = await Promise.allSettled(chunk.map(sym => {
+      const market = marketMap[sym.toUpperCase()];
+      if(!market) return Promise.reject(new Error('no Lighter market for '+sym));
+      return fetchLighterStock(sym, market.marketIndex);
+    }));
+    settled.forEach(r => {
+      if(r.status==='fulfilled') results.push(r.value);
+      else console.error('stock fetch failed:', r.reason);
+    });
+  }
+  return results;
+}
+
 async function loadCrypto(){
   CRYPTO_SYMBOLS = await loadTop100SymbolsByVolume().catch(()=>FALLBACK_CRYPTO_SYMBOLS);
   pruneCandleCache(CRYPTO_SYMBOLS);
@@ -1375,89 +1521,30 @@ async function loadCrypto(){
   return results;
 }
 
-// Twelve Data free-tier API key. This is a client-side-only static page with no
-// backend, so this key is necessarily visible to anyone who views the page source -
-// that's an accepted tradeoff for the free tier (worst case if someone else grabs
-// it: they eat into the 8 calls/minute, 800/day quota, not anything financially
-// sensitive). If this key gets compromised/abused, regenerate it on the Twelve Data
-// dashboard and swap it in here.
-const TWELVE_DATA_API_KEY = 'd5a2509919904950b5e589d88b817252';
-
-// Twelve Data free tier: 8 API calls/minute, 800/day, 1 credit per symbol for
-// /time_series regardless of outputsize. We fetch outputsize=210 daily closes (just
-// over 200) so the existing ema() helper has enough history for a real EMA200 -
-// same approach as the old Stooq-based code, just from a CORS-friendly source.
-async function fetchTwelveDataDaily(symbol){
-  const url = `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=1day&outputsize=210&order=ASC&apikey=${TWELVE_DATA_API_KEY}`;
-  const res = await fetch(url);
-  if(!res.ok) throw new Error('twelvedata fetch failed '+symbol);
-  const data = await res.json();
-  // Twelve Data returns errors as HTTP 200 with a JSON body like
-  // {"code":429,"message":"...","status":"error"} rather than always using HTTP
-  // error status codes - so a successful fetch() doesn't necessarily mean valid data.
-  if(data.status === 'error' || !Array.isArray(data.values)){
-    throw new Error(`twelvedata error for ${symbol}: ${data.message || 'no values returned'}`);
-  }
-  const closes = data.values.map(v => parseFloat(v.close)).filter(n => !isNaN(n));
-  if(closes.length < 50) throw new Error('not enough data '+symbol);
-  const lastClose = closes[closes.length-1];
-  const prevClose = closes[closes.length-2];
-  const period = Math.min(200, closes.length-1);
-  const e = ema(closes, period);
-  return {
-    symbol,
-    price: lastClose,
-    ema200: e,
-    above: lastClose > e,
-    distPct: ((lastClose - e)/e)*100,
-    chg4h: ((lastClose - prevClose)/prevClose)*100,
-    approx: period < 200
-  };
-}
-
-// Fetches all STOCK_SYMBOLS while respecting Twelve Data's free-tier 8 calls/minute
-// limit: batches of 8, with a ~61s pause between batches (61s rather than exactly
-// 60s to safely clear the per-minute window boundary rather than racing it). Calls
-// onProgress(batchIndex, totalBatches, waitSeconds) before each wait so the UI can
-// show real status instead of looking frozen during a multi-minute refresh.
-async function loadStocksThrottled(onProgress){
-  const BATCH_SIZE = 8;
-  const BATCH_DELAY_MS = 61000;
-  const results = [];
-  const chunks = [];
-  for(let i=0;i<STOCK_SYMBOLS.length;i+=BATCH_SIZE) chunks.push(STOCK_SYMBOLS.slice(i,i+BATCH_SIZE));
-
-  for(let i=0;i<chunks.length;i++){
-    const settled = await Promise.allSettled(chunks[i].map(fetchTwelveDataDaily));
-    settled.forEach(r => {
-      if(r.status==='fulfilled') results.push(r.value);
-      else console.error('stock fetch failed:', r.reason);
-    });
-    const isLastChunk = i === chunks.length-1;
-    if(!isLastChunk){
-      if(onProgress) onProgress(i+1, chunks.length, BATCH_DELAY_MS/1000);
-      await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
-    }
-  }
-  return results;
-}
-
 function fmtPrice(p){
+
   if(p >= 1000) return p.toLocaleString(undefined,{maximumFractionDigits:2});
   if(p >= 1) return p.toFixed(2);
   return p.toFixed(6);
 }
 
-// Builds a direct TradingView chart link for a given Bybit linear perp symbol (e.g.
-// "WLFIUSDT"), so the user can open a pair in TradingView for deeper analysis -
-// extra indicators, drawing tools, etc - that this app intentionally doesn't try to
-// replicate. Always uses the BYBIT exchange prefix since that's this app's own data
-// source, so the chart the user lands on matches what they were just looking at here.
+// Builds a direct TradingView chart link so the user can open a symbol in TradingView
+// for deeper analysis - extra indicators, drawing tools, etc - that this app
+// intentionally doesn't try to replicate. For crypto, always uses the BYBIT exchange
+// prefix since that's this app's own crypto data source, so the chart the user lands
+// on matches what they were just looking at here. For stocks (Lighter RWA tickers),
+// no exchange prefix is used - TradingView's own symbol search resolves a bare ticker
+// to its best match, which avoids having to maintain a per-ticker exchange map (some
+// of these are NASDAQ, some NYSE, some Korea-listed ADRs that wouldn't map cleanly
+// to a single TradingView exchange prefix anyway).
 // No timeframe param is set - opens to TradingView's own default rather than trying
 // to map this app's 4H/12H/1D/3D/1W buttons onto TradingView's interval scheme, since
 // that mapping isn't always 1:1 (e.g. TradingView's interval params are in raw
 // minutes, not all of this app's timeframes translate cleanly).
-function tradingViewUrl(rawSymbol){
+function tradingViewUrl(rawSymbol, market){
+  if(market === 'stocks'){
+    return `https://www.tradingview.com/chart/?symbol=${rawSymbol}`;
+  }
   return `https://www.tradingview.com/chart/?symbol=BYBIT:${rawSymbol}.P`;
 }
 
@@ -1534,7 +1621,7 @@ function buildRows(list){
     <tr class="clickable ${tierRowClass}" onclick="openChart('${d.rawSymbol||d.symbol}')">
       <td class="sym">
         <span class="strip ${d.above?'above':'below'}"></span>${d.symbol}
-        <a href="${tradingViewUrl(d.rawSymbol||d.symbol)}" target="_blank" rel="noopener" class="tv-link" title="open in TradingView" onclick="event.stopPropagation()">TV↗</a>
+        <a href="${tradingViewUrl(d.rawSymbol||d.symbol, currentMarket)}" target="_blank" rel="noopener" class="tv-link" title="open in TradingView" onclick="event.stopPropagation()">TV↗</a>
       </td>
       <td class="num pct ${d.distPct>=0?'pos':'neg'}">${d.distPct>=0?'+':''}${d.distPct.toFixed(2)}%${distDot}</td>
       <td class="num rvol-cell">${rvolBadge}</td>
@@ -1561,15 +1648,15 @@ function render(){
   const data = currentMarket === 'crypto' ? cryptoData : stockData;
   const content = document.getElementById('content');
 
-  // Stocks get a dedicated empty/loading state instead of the generic crypto one,
-  // since stocks require an explicit manual fetch (Twelve Data free-tier rate
-  // limits) rather than being auto-loaded - the main refresh button no longer
-  // touches stocks at all.
+  // Stocks are fetched separately from crypto (own loadStocksManual call, not bundled
+  // into the main refresh button) since they're a fully distinct watchlist - but with
+  // Lighter as the data source there's no rate limit to manage anymore, so this is
+  // just a normal loading/empty state, not the old throttled-batch messaging.
   if(currentMarket === 'stocks' && !data.length){
     content.innerHTML = stocksLoading
-      ? `<div class="loading">fetching stock data…<div id="stocksRefreshStatus" style="margin-top:8px;font-size:11px;color:var(--dim);"></div></div>`
+      ? `<div class="loading">pulling 4H candles…</div>`
       : `<div class="err" style="display:flex;flex-direction:column;gap:10px;align-items:center;">
-           <div>no stock data loaded yet — stocks use a separate, rate-limited free data source and must be fetched manually.</div>
+           <div>no stock data loaded yet.</div>
            <button id="stocksFetchBtn" class="refresh-btn" onclick="loadStocksManual()">↻ fetch stock data</button>
          </div>`;
     return;
@@ -1603,12 +1690,9 @@ function render(){
   document.getElementById('aboveCount').textContent = aboveList.length;
   document.getElementById('totalCount').textContent = data.length;
 
-  const isApproxMarket = currentMarket === 'stocks';
-  const note = isApproxMarket
-    ? `<div style="font-size:10px;color:var(--dim);margin-bottom:10px;">stocks: no free intraday 4H feed available client-side — showing <b>daily</b> closes vs daily-equivalent 200EMA as a trend proxy. chart view not available for stocks yet.</div>
-       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+  const note = currentMarket === 'stocks'
+    ? `<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
          <button id="stocksFetchBtn" class="refresh-btn" onclick="loadStocksManual()" ${stocksLoading?'disabled':''}>${stocksLoading?'fetching…':'↻ refresh stock data'}</button>
-         <div id="stocksRefreshStatus" style="font-size:11px;color:var(--dim);">${stocksLoading?'fetching first batch…':''}</div>
        </div>`
     : '';
 
@@ -1776,11 +1860,9 @@ async function loadAll(){
   if(typeof populateJournalTickerList === 'function') populateJournalTickerList();
 }
 
-// Stocks are intentionally NOT fetched on page load or by the main refresh button -
-// Twelve Data's free tier (8 calls/minute, 800/day) makes an always-fetch approach
-// risky to burn through, so the user explicitly triggers this from the Stocks tab
-// instead, with visible progress since a full refresh can take 1-2+ minutes for
-// more than 8 symbols.
+// Stocks are still fetched separately from crypto, on their own button rather than
+// the main refresh - they're a distinct watchlist, not because of any rate limit
+// (Lighter's candles endpoint has none documented, unlike the old Twelve Data path).
 let stocksLoading = false;
 
 async function loadStocksManual(){
@@ -1789,12 +1871,7 @@ async function loadStocksManual(){
   render(); // immediately show the loading state in place of the prior empty/stale view
 
   try{
-    stockData = await loadStocksThrottled((batchesDone, totalBatches, waitSeconds) => {
-      const statusEl = document.getElementById('stocksRefreshStatus');
-      if(statusEl){
-        statusEl.textContent = `fetched batch ${batchesDone}/${totalBatches} — waiting ${waitSeconds}s before next batch (free-tier rate limit)…`;
-      }
-    });
+    stockData = await loadStocksFromLighter();
   } catch(e){
     console.error('stocks refresh failed', e);
     stockData = [];
@@ -1814,18 +1891,20 @@ const TF_LABELS = {'4h':'4H · last 120 candles','12h':'12H · last 120 candles'
 const TF_BAR_COUNTS = {'4h':120,'12h':120,'1d':120,'3d':100,'1w':100};
 
 function openChart(rawSymbol){
-  const item = cryptoData.find(d => d.rawSymbol === rawSymbol);
+  const sourceData = currentMarket === 'crypto' ? cryptoData : stockData;
+  const item = sourceData.find(d => d.rawSymbol === rawSymbol);
   if(!item){
-    return; // stocks have no chart data yet
+    return;
   }
   currentChartSymbol = rawSymbol;
-  currentChartLabel = item.symbol + ' / USDT';
+  currentChartMarket = currentMarket; // remember which source this chart belongs to, for timeframe switches
+  currentChartLabel = currentMarket === 'crypto' ? (item.symbol + ' / USDT') : item.symbol;
   currentChart4hEma = item.ema200;
   document.getElementById('modalSym').textContent = currentChartLabel;
   const distEl = document.getElementById('modalDist');
   distEl.textContent = (item.distPct>=0?'+':'') + item.distPct.toFixed(2) + '% from 200EMA (4H)';
   distEl.style.color = item.distPct>=0 ? 'var(--green)' : 'var(--red)';
-  document.getElementById('modalTvLink').href = tradingViewUrl(rawSymbol);
+  document.getElementById('modalTvLink').href = tradingViewUrl(rawSymbol, currentMarket);
   document.querySelectorAll('.tf-btn').forEach(b=>b.classList.toggle('active', b.dataset.tf==='4h'));
   document.getElementById('modalBg').classList.add('open');
   renderTimeframe('4h', item.candles);
@@ -1844,7 +1923,14 @@ async function switchTimeframe(tf){
   let candles = candleCache[cacheKey];
   if(!candles){
     try{
-      candles = await fetchBybitCandles(currentChartSymbol, tf);
+      if(currentChartMarket === 'crypto'){
+        candles = await fetchBybitCandles(currentChartSymbol, tf);
+      } else {
+        const marketMap = await fetchLighterMarketMap();
+        const market = marketMap ? marketMap[currentChartSymbol.toUpperCase()] : null;
+        if(!market) throw new Error('no Lighter market for '+currentChartSymbol);
+        candles = await fetchLighterCandles(market.marketIndex, tf);
+      }
       candleCache[cacheKey] = candles;
     } catch(e){
       document.getElementById('chartArea').innerHTML = '<div class="chart-loading">could not load this timeframe — try again</div>';

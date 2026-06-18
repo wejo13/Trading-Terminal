@@ -1093,10 +1093,10 @@
         <div class="exchange-card">
           <div class="ex-header">
             <div class="ex-name">Bybit</div>
-            <div class="ex-dot" title="connected"></div>
+            <div class="ex-dot" id="bybitDot" title="connecting…" style="background:var(--text-faint);"></div>
           </div>
           <div class="ex-amount" id="dashBybitBalance">—</div>
-          <div class="ex-sub">balance fetch coming soon</div>
+          <div class="ex-sub" id="dashBybitSub">loading…</div>
           <div class="ex-bar"><div class="ex-bar-fill" id="dashBybitBar" style="width:0%"></div></div>
         </div>
         <div class="exchange-card">
@@ -3506,22 +3506,102 @@ function updateLighterBalanceDisplay(data){
 
 function updateDashboardTotal(){
   const lighterText = document.getElementById('dashLighterBalance')?.textContent;
-  if(!lighterText || lighterText === '—') return;
-  const lighterVal = parseFloat(lighterText.replace(/[$,]/g,''));
-  if(isNaN(lighterVal)) return;
+  const bybitText   = document.getElementById('dashBybitBalance')?.textContent;
+  const lighterVal  = parseFloat((lighterText||'').replace(/[$,]/g,''));
+  const bybitVal    = parseFloat((bybitText||'').replace(/[$,]/g,''));
+  const hasLighter  = !isNaN(lighterVal) && lighterText !== '—';
+  const hasBybit    = !isNaN(bybitVal)   && bybitText   !== '—';
+  if(!hasLighter && !hasBybit) return;
 
+  const total = (hasLighter ? lighterVal : 0) + (hasBybit ? bybitVal : 0);
   const totalEl = document.getElementById('dashTotalBalance');
   const subEl   = document.querySelector('.total-sub');
-  if(totalEl) totalEl.textContent = '$' + lighterVal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-  if(subEl)   subEl.textContent = 'Lighter · Bybit coming soon';
+  if(totalEl) totalEl.textContent = '$' + total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const parts = [];
+  if(hasLighter) parts.push('Lighter');
+  if(hasBybit)   parts.push('Bybit');
+  if(subEl) subEl.textContent = parts.join(' + ') + ' combined';
 
-  const barEl = document.getElementById('dashLighterBar');
-  if(barEl) barEl.style.width = '100%';
+  // proportion bars
+  if(total > 0){
+    const lBar = document.getElementById('dashLighterBar');
+    const bBar = document.getElementById('dashBybitBar');
+    if(lBar) lBar.style.width = (hasLighter ? (lighterVal/total*100) : 0).toFixed(1) + '%';
+    if(bBar) bBar.style.width = (hasBybit   ? (bybitVal/total*100)   : 0).toFixed(1) + '%';
+  }
 }
 
 // fetch immediately, then every 60s
 fetchLighterBalance();
 _lighterBalanceTimer = setInterval(fetchLighterBalance, 60000);
+
+// ---- Bybit balance ----
+function setBybitDot(state){
+  const dot = document.getElementById('bybitDot');
+  if(!dot) return;
+  if(state === 'live')       { dot.style.background = 'var(--green)'; dot.title = 'live'; }
+  else if(state === 'error') { dot.style.background = 'var(--red)';   dot.title = 'error'; }
+  else                       { dot.style.background = 'var(--amber)'; dot.title = 'connecting…'; }
+}
+
+async function fetchBybitBalance(){
+  const key = localStorage.getItem('bybit_api_key');
+  const secret = localStorage.getItem('bybit_api_secret');
+  if(!key || !secret){
+    const subEl = document.getElementById('dashBybitSub');
+    if(subEl) subEl.textContent = 'set API keys in Settings';
+    setBybitDot('error');
+    return;
+  }
+  try{
+    // reuse bbHmac if already loaded, else define inline
+    const hmac = typeof bbHmac === 'function' ? bbHmac : async (secret, message) => {
+      const enc = new TextEncoder();
+      const k = await crypto.subtle.importKey('raw', enc.encode(secret), {name:'HMAC',hash:'SHA-256'}, false, ['sign']);
+      const sig = await crypto.subtle.sign('HMAC', k, enc.encode(message));
+      return Array.from(new Uint8Array(sig)).map(b=>b.toString(16).padStart(2,'0')).join('');
+    };
+    const ts = Date.now().toString(), recv = '5000';
+    const params = new URLSearchParams({accountType:'UNIFIED'}).toString();
+    const sig = await hmac(secret, ts + key + recv + params);
+    const res = await fetch(`https://api.bybit.com/v5/account/wallet-balance?${params}`, {
+      headers: {'X-BAPI-API-KEY':key,'X-BAPI-TIMESTAMP':ts,'X-BAPI-RECV-WINDOW':recv,'X-BAPI-SIGN':sig}
+    });
+    const data = await res.json();
+    if(data.retCode !== 0){ console.warn('[BybitBalance] API error', data.retMsg); setBybitDot('error'); return; }
+
+    const account = data.result?.list?.[0];
+    if(!account){ setBybitDot('error'); return; }
+
+    const totalWallet = parseFloat(account.totalWalletBalance || 0);
+    const totalAvail  = parseFloat(account.totalAvailableBalance || 0);
+    const totalEquity = parseFloat(account.totalEquity || totalWallet);
+
+    const balEl = document.getElementById('dashBybitBalance');
+    const subEl = document.getElementById('dashBybitSub');
+    if(balEl) balEl.textContent = '$' + totalEquity.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+    const subParts = [];
+    if(!isNaN(totalAvail)) subParts.push(`avail $${totalAvail.toLocaleString('en-US',{maximumFractionDigits:0})}`);
+
+    // show unrealised PnL if any
+    const unrealisedPnl = parseFloat(account.totalPerpUPL || 0);
+    if(!isNaN(unrealisedPnl) && Math.abs(unrealisedPnl) > 0.01){
+      subParts.push(`uPnL ${unrealisedPnl >= 0 ? '+' : ''}$${unrealisedPnl.toFixed(2)}`);
+    }
+    if(subEl) subEl.textContent = subParts.join(' · ') || 'live';
+    setBybitDot('live');
+    updateDashboardTotal();
+  } catch(e){
+    console.warn('[BybitBalance] fetch failed', e);
+    setBybitDot('error');
+    const subEl = document.getElementById('dashBybitSub');
+    if(subEl) subEl.textContent = 'fetch failed — retrying';
+  }
+}
+
+fetchBybitBalance();
+setInterval(fetchBybitBalance, 60000);
 
 
 

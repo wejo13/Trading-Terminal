@@ -2902,7 +2902,7 @@ function placeOnLighter(){
     ? (direction === 'short' ? slPrice * (1 + slippageFraction) : slPrice * (1 - slippageFraction))
     : slPrice;
 
-  const stubRequest = {
+  const orderRequest = {
     // --- human-readable fields ---
     ticker,
     direction,                               // 'long' | 'short' - maps to is_ask: false/true
@@ -2920,17 +2920,45 @@ function placeOnLighter(){
     slTriggerPrice: toLighterInt(slPrice, market.priceDecimals),
     slExecutionPrice: toLighterInt(slExecutionPrice, market.priceDecimals),
     is_ask: direction === 'short',
-
-    _stub: true,
-    _note: 'STUB ONLY - market_index/amounts resolved for real, but no signing or network call yet.'
   };
 
-  console.log('[Lighter executor stub] would place:', stubRequest);
+  submitOrderToLighter(orderRequest);
+}
 
+const LIGHTER_WORKER_URL = 'https://lighter-signer.wimneys.workers.dev';
+
+async function submitOrderToLighter(orderRequest){
   const btn = document.getElementById('exec-place-btn');
   const originalText = btn.textContent;
-  btn.textContent = 'logged to console ✓';
-  setTimeout(() => { btn.textContent = originalText; }, 1800);
+  btn.disabled = true;
+  btn.textContent = 'placing...';
+
+  try{
+    const res = await fetch(LIGHTER_WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(orderRequest)
+    });
+    const data = await res.json();
+
+    if(data.success){
+      btn.textContent = 'placed ✓';
+      console.log('[Lighter] order placed:', data);
+    } else {
+      btn.textContent = 'failed ✗';
+      showExecValidationMsg(data.error || 'order failed - see console');
+      console.error('[Lighter] order failed:', data);
+    }
+  } catch(err){
+    btn.textContent = 'failed ✗';
+    showExecValidationMsg('network error - see console');
+    console.error('[Lighter] request error:', err);
+  } finally {
+    setTimeout(() => {
+      btn.textContent = originalText;
+      btn.disabled = false;
+    }, 2200);
+  }
 }
 
 

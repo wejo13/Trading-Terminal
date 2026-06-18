@@ -4409,59 +4409,56 @@ async function gridPlaceSingleOrder(price, isAsk, notional, _unused){
   try{
     const signer = await window.__getLighterSigner();
     const SC = signer.constructor;
+    const GroupingType = window.__LighterGroupingType;
     const map = await fetchLighterMarketMap();
-    const btcMarket = map ? (Object.values(map).find(m => m.marketIndex === GRID_BTC_MARKET)) : null;
-    const priceDecimals = btcMarket ? btcMarket.priceDecimals : 2;
-    const sizeDecimals  = btcMarket ? btcMarket.sizeDecimals  : 4;
 
+    // Look up BTC by symbol — exactly as Trade tab does with resolveLighterMarket('BTC')
+    const market = map ? (map['BTC'] || map['BTCUSDC'] || map['BTC-USDC'] ||
+      Object.entries(map).find(([k]) => k.startsWith('BTC'))?.[1]) : null;
+    if(!market){ console.error('[GridBot] BTC market not found', map ? Object.keys(map) : 'no map'); return false; }
+
+    // base_amount = BTC size, same as Trade tab: toLighterInt(size, sizeDecimals)
     const btcSize = notional / price;
-    const priceLighter = toLighterInt(price, priceDecimals);
-    const sizeLighter  = toLighterInt(btcSize, sizeDecimals);
-    const expiry = Date.now() + 28 * 24 * 60 * 60 * 1000;
+    const base_amount = toLighterInt(btcSize, market.sizeDecimals);
+    const priceLighter = toLighterInt(price, market.priceDecimals);
 
-    // Get nonce
-    const nonceResult = await signer.transactionApi.getNextNonce(signer.config.accountIndex, signer.config.apiKeyIndex);
-    const nonce = nonceResult.nonce;
+    // SL: 2% beyond the order price (direction-aware), so it's real but won't trigger normally
+    const slPrice = isAsk ? price * 1.02 : price * 0.98;
+    const slTriggerPrice   = toLighterInt(slPrice, market.priceDecimals);
+    const slExecutionPrice = toLighterInt(slPrice, market.priceDecimals);
 
-    // Sign the order via WASM
-    const wasmParams = {
-      marketIndex: GRID_BTC_MARKET,
+    const entryExpiry = Date.now() + 28 * 24 * 60 * 60 * 1000;
+
+    const entryLeg = {
+      marketIndex: market.marketIndex,
       clientOrderIndex: 0,
-      baseAmount: sizeLighter,
+      baseAmount: base_amount,
       price: priceLighter,
-      isAsk: isAsk ? 1 : 0,
+      isAsk,
       orderType: SC.ORDER_TYPE_LIMIT,
       timeInForce: SC.ORDER_TIME_IN_FORCE_GOOD_TILL_TIME,
-      reduceOnly: 0,
+      reduceOnly: false,
       triggerPrice: 0,
-      orderExpiry: expiry,
-      integratorAccountIndex: 0,
-      integratorTakerFee: 0,
-      integratorMakerFee: 0,
-      skipNonce: 0,
-      nonce,
-      apiKeyIndex: signer.config.apiKeyIndex,
-      accountIndex: signer.config.accountIndex
+      orderExpiry: entryExpiry
     };
 
-    console.log('[GridBot] placing order', { price, isAsk, btcSize, priceLighter, sizeLighter });
-    const wasmResponse = await signer.wallet.signCreateOrder(wasmParams);
-    if(wasmResponse.error){ console.error('[GridBot] sign error', wasmResponse.error); return false; }
+    const slLeg = {
+      marketIndex: market.marketIndex,
+      clientOrderIndex: 0,
+      baseAmount: 0,
+      price: slExecutionPrice,
+      isAsk: !isAsk,
+      orderType: SC.ORDER_TYPE_STOP_LOSS,
+      timeInForce: SC.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL,
+      reduceOnly: true,
+      triggerPrice: slTriggerPrice,
+      orderExpiry: entryExpiry
+    };
 
-    // Send with priceProtection=false — allows limit orders far from mark price
-    const txHash = await signer.transactionApi.sendTxWithIndices(
-      wasmResponse.txType || SC.TX_TYPE_CREATE_ORDER,
-      wasmResponse.txInfo,
-      signer.config.accountIndex,
-      signer.config.apiKeyIndex,
-      false  // priceProtection = false
-    );
-
-    if(txHash.code && txHash.code !== 200){
-      console.error('[GridBot] send error', txHash.message);
-      return false;
-    }
-    console.log('[GridBot] order placed', txHash.tx_hash || txHash.hash);
+    console.log('[GridBot] placing', { price, isAsk, marketIndex: market.marketIndex, btcSize, base_amount, priceLighter });
+    const [tx, hash, error] = await signer.createGroupedOrders(GroupingType.OTO, [entryLeg, slLeg]);
+    if(error){ console.error('[GridBot] order error', error); return false; }
+    console.log('[GridBot] order placed', { tx, hash });
     return true;
   } catch(e){
     console.error('[GridBot] order exception', e.message || e);

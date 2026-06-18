@@ -4449,13 +4449,88 @@ async function gridCancelAllOrders(){
     const openLevels = levels.filter(lv => lv.status === 'open' && lv.clientOrderIdx !== undefined);
     console.log('[GridBot] cancelling', openLevels.length, 'orders by clientOrderIdx');
     for(const lv of openLevels){
-      // Per official Lighter docs: order_index = client_order_index used at placement
       const [,, err] = await signer.cancelOrder({ marketIndex: lv.marketIndex, orderIndex: lv.clientOrderIdx });
       if(err) console.warn('[GridBot] cancel error idx', lv.clientOrderIdx, err);
       else console.log('[GridBot] cancelled', lv.clientOrderIdx);
     }
+    // Also cancel bound SL orders
+    if(gridState?.slLowerIdx !== undefined){
+      const mkt = gridState.slMarketIndex;
+      const [,, e1] = await signer.cancelOrder({ marketIndex: mkt, orderIndex: gridState.slLowerIdx });
+      if(e1) console.warn('[GridBot] cancel lower SL error', e1);
+      else console.log('[GridBot] cancelled lower SL', gridState.slLowerIdx);
+    }
+    if(gridState?.slUpperIdx !== undefined){
+      const mkt = gridState.slMarketIndex;
+      const [,, e2] = await signer.cancelOrder({ marketIndex: mkt, orderIndex: gridState.slUpperIdx });
+      if(e2) console.warn('[GridBot] cancel upper SL error', e2);
+      else console.log('[GridBot] cancelled upper SL', gridState.slUpperIdx);
+    }
   } catch(e){
     console.warn('[GridBot] gridCancelAllOrders error:', e.message || e);
+  }
+}
+
+// Place two reduce-only stop-loss orders at the grid bounds.
+// Lower bound SL: triggers if price drops below lower*0.995 — closes longs.
+// Upper bound SL: triggers if price rises above upper*1.005 — closes shorts.
+// Size = max possible position = all levels × notional / midPrice (BTC amount).
+async function gridPlaceBoundSLs(){
+  try{
+    const signer = await window.__getLighterSigner();
+    const SC = signer.constructor;
+    const map = await fetchLighterMarketMap();
+    const market = map ? (map['BTC'] || Object.entries(map).find(([k]) => k.startsWith('BTC'))?.[1]) : null;
+    if(!market){ console.error('[GridBot] BTC market not found for SL'); return; }
+
+    const { lower, upper, nLevels, notional } = gridState;
+    const midPrice = (lower + upper) / 2;
+    // Max BTC position = all levels filled
+    const maxBtcSize = (nLevels * notional) / midPrice;
+    const slSize = toLighterInt(maxBtcSize, market.sizeDecimals);
+
+    const slLowerPrice  = lower * 0.995;
+    const slUpperPrice  = upper * 1.005;
+    const slLowerPriceLighter = toLighterInt(slLowerPrice, market.priceDecimals);
+    const slUpperPriceLighter = toLighterInt(slUpperPrice, market.priceDecimals);
+    const expiry = Date.now() + 28 * 24 * 60 * 60 * 1000;
+
+    // Lower SL — sell (isAsk=true) to close longs if price drops
+    const [, , errLow] = await signer.createOrderOptimized({
+      marketIndex: market.marketIndex,
+      clientOrderIndex: 90, // reserved index for lower SL
+      baseAmount: slSize,
+      price: slLowerPriceLighter,
+      isAsk: true,
+      orderType: SC.ORDER_TYPE_STOP_LOSS,
+      timeInForce: SC.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL,
+      reduceOnly: true,
+      triggerPrice: slLowerPriceLighter,
+      orderExpiry: expiry
+    });
+    if(errLow) console.warn('[GridBot] lower SL error', errLow);
+    else { gridState.slLowerIdx = 90; console.log('[GridBot] lower SL placed at', slLowerPrice.toFixed(0)); }
+
+    // Upper SL — buy (isAsk=false) to close shorts if price rises
+    const [, , errHigh] = await signer.createOrderOptimized({
+      marketIndex: market.marketIndex,
+      clientOrderIndex: 91, // reserved index for upper SL
+      baseAmount: slSize,
+      price: slUpperPriceLighter,
+      isAsk: false,
+      orderType: SC.ORDER_TYPE_STOP_LOSS,
+      timeInForce: SC.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL,
+      reduceOnly: true,
+      triggerPrice: slUpperPriceLighter,
+      orderExpiry: expiry
+    });
+    if(errHigh) console.warn('[GridBot] upper SL error', errHigh);
+    else { gridState.slUpperIdx = 91; console.log('[GridBot] upper SL placed at', slUpperPrice.toFixed(0)); }
+
+    gridState.slMarketIndex = market.marketIndex;
+    gridSave();
+  } catch(e){
+    console.warn('[GridBot] gridPlaceBoundSLs error:', e.message || e);
   }
 }
 
@@ -4538,6 +4613,8 @@ async function gridBotStart(){
 
   gridSave();
   gridUpdateStat('gstat-state', 'Running');
+  // Place bound stop-losses on Lighter at lower−0.5% and upper+0.5%
+  await gridPlaceBoundSLs();
   gridToast(`✓ Grid bot started — ${placed} orders placed across ${nLevels} levels`);
   console.log('[GridBot] started, placed', placed, '/', nLevels, 'orders');
 }

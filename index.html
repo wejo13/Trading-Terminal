@@ -191,6 +191,107 @@
   .tab-view{display:none;}
   .tab-view.active{display:block;}
 
+  /* ===== GRID BOT ===== */
+  .grid-bot-layout{display:grid;grid-template-columns:340px 1fr;gap:14px;align-items:start;}
+  @media(max-width:900px){.grid-bot-layout{grid-template-columns:1fr;}}
+  .grid-left-col,.grid-right-col{display:flex;flex-direction:column;gap:12px;}
+  .grid-card{
+    background:var(--card);border-radius:var(--radius-card);padding:18px;
+    border:0.5px solid var(--line-old);
+  }
+  .grid-viz-card{padding:18px 14px;}
+  .grid-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+  .grid-card-title{font-size:12px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.4px;display:flex;align-items:center;gap:6px;}
+  .grid-card-title i{font-size:14px;color:var(--teal);}
+  .grid-status-badge{
+    font-size:9px;font-weight:700;letter-spacing:0.5px;padding:3px 9px;
+    border-radius:4px;background:rgba(255,255,255,0.06);color:var(--text-faint);border:1px solid var(--line-old);
+  }
+  .grid-status-badge.running{background:var(--teal-dim);color:var(--teal);border-color:rgba(40,215,200,0.35);}
+  .grid-status-badge.paused{background:var(--amber-dim);color:var(--amber);border-color:rgba(217,169,63,0.35);}
+  .grid-status-badge.stopped{background:var(--red-dim);color:var(--red);border-color:rgba(226,100,95,0.35);}
+  .grid-market-pill{
+    font-size:12px;font-weight:600;color:var(--teal);
+    background:var(--teal-dim);border-radius:var(--radius-pill);
+    padding:5px 14px;display:inline-flex;align-items:center;gap:6px;
+    border:1px solid rgba(40,215,200,0.2);
+  }
+  .grid-field-row{margin-bottom:12px;}
+  .grid-inputs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}
+  .grid-field{display:flex;flex-direction:column;gap:4px;}
+  .grid-label{font-size:10px;color:var(--text-dim);font-weight:500;letter-spacing:0.3px;}
+  .grid-label-hint{color:var(--text-faint);}
+  .grid-input{
+    background:rgba(255,255,255,0.04);border:1px solid var(--line-old);
+    border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;
+    font-family:var(--font);outline:none;transition:border-color 0.15s;width:100%;
+  }
+  .grid-input:focus{border-color:var(--teal);}
+  .grid-input::placeholder{color:var(--text-faint);}
+  .grid-capital-check{
+    border-radius:8px;padding:10px 13px;font-size:12px;line-height:1.5;margin-bottom:12px;
+  }
+  .grid-capital-check.ok{background:var(--green-dim);color:var(--green);border:1px solid rgba(61,220,151,0.25);}
+  .grid-capital-check.warn{background:var(--red-dim);color:var(--red);border:1px solid rgba(226,100,95,0.25);}
+  .grid-controls{display:flex;gap:8px;flex-wrap:wrap;}
+  .grid-btn{
+    flex:1;padding:10px 14px;border:none;border-radius:10px;font-size:12px;
+    font-weight:600;cursor:pointer;font-family:var(--font);
+    display:flex;align-items:center;justify-content:center;gap:6px;transition:opacity 0.15s;
+  }
+  .grid-btn:disabled{opacity:0.4;cursor:not-allowed;}
+  .grid-btn-start{background:var(--teal);color:#07060c;}
+  .grid-btn-start:hover:not(:disabled){opacity:0.88;}
+  .grid-btn-pause{background:var(--amber-dim);color:var(--amber);border:1px solid rgba(217,169,63,0.3);}
+  .grid-btn-pause:hover:not(:disabled){opacity:0.8;}
+  .grid-btn-stop{background:var(--red-dim);color:var(--red);border:1px solid rgba(226,100,95,0.3);}
+  .grid-btn-stop:hover:not(:disabled){opacity:0.8;}
+  .grid-live-dot{width:7px;height:7px;border-radius:50%;background:var(--text-faint);}
+  .grid-live-dot.live{background:var(--green);}
+  .grid-live-dot.paused{background:var(--amber);}
+  .grid-live-dot.error{background:var(--red);}
+  .grid-stats-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
+  .grid-stat{background:rgba(255,255,255,0.03);border-radius:8px;padding:10px 12px;}
+  .grid-stat-label{font-size:10px;color:var(--text-faint);margin-bottom:4px;letter-spacing:0.2px;}
+  .grid-stat-val{font-size:16px;font-weight:600;color:var(--text);}
+  .grid-stat-val.up{color:var(--green);}
+  .grid-stat-val.down{color:var(--red);}
+  .grid-viz-wrap{position:relative;min-height:300px;}
+  .grid-viz-empty{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:12px;color:var(--text-faint);text-align:center;padding:20px;
+  }
+  .grid-viz-legend{display:flex;gap:12px;font-size:10px;font-weight:600;letter-spacing:0.3px;}
+  .legend-buy{color:var(--green);}
+  .legend-sell{color:var(--red);}
+  .legend-price{color:var(--amber);}
+  .grid-level-table-wrap{max-height:300px;overflow-y:auto;}
+  .grid-level-table{width:100%;border-collapse:collapse;font-size:12px;}
+  .grid-level-table th{
+    text-align:left;padding:7px 10px;font-size:10px;font-weight:600;
+    color:var(--text-faint);letter-spacing:0.3px;border-bottom:1px solid var(--line-old);
+    position:sticky;top:0;background:var(--card);
+  }
+  .grid-level-table td{padding:7px 10px;border-bottom:0.5px solid var(--line-old);color:var(--text);}
+  .grid-level-table tr:last-child td{border-bottom:none;}
+  .grid-table-empty{text-align:center;color:var(--text-faint);padding:24px!important;}
+  .gl-side-buy{color:var(--green);font-weight:600;}
+  .gl-side-sell{color:var(--red);font-weight:600;}
+  .gl-status-open{color:var(--teal);}
+  .gl-status-filled{color:var(--amber);}
+  .gl-status-idle{color:var(--text-faint);}
+  .gl-status-sl{color:var(--red);}
+  /* grid toast */
+  .grid-toast{
+    position:fixed;bottom:24px;right:24px;z-index:9999;
+    background:var(--card);border:1px solid var(--line-old);border-radius:10px;
+    padding:11px 18px;font-size:13px;color:var(--text);
+    box-shadow:0 4px 24px rgba(0,0,0,0.5);
+    transform:translateY(20px);opacity:0;pointer-events:none;
+    transition:all 0.22s ease;max-width:360px;
+  }
+  .grid-toast.show{transform:translateY(0);opacity:1;}
+
   /* ===== DASHBOARD BALANCE CARDS ===== */
   .balance-grid{display:grid;grid-template-columns:1.8fr 1fr 1fr;gap:12px;margin-bottom:18px;}
   .total-card{
@@ -846,7 +947,7 @@
       <span class="nav-sub-dot"></span>EMA Strategy
     </div>
     <div class="nav-sub-item" data-tab="grid" onclick="switchTab('grid')">
-      <span class="nav-sub-dot"></span>Grid Block
+      <span class="nav-sub-dot"></span>Grid Bot
     </div>
     <div class="nav-item" data-tab="trade" onclick="switchTab('trade')">
       <i class="ti ti-rocket"></i>Trade
@@ -993,14 +1094,143 @@
 
     </div>
 
-    <!-- ===================== GRID BLOCK TAB ===================== -->
-    <div class="tab-view" id="tab-grid" data-title="Grid Block">
-      <div class="placeholder-tab">
-        <i class="ti ti-grid-dots"></i>
-        <div class="ph-title">Grid Block</div>
-        <div class="ph-sub">Grid trading strategy tools will live here.</div>
-      </div>
-    </div>
+    <!-- ===================== GRID BOT TAB ===================== -->
+    <div class="tab-view" id="tab-grid" data-title="Grid Bot">
+
+      <div class="grid-bot-layout">
+
+        <!-- LEFT: Config + Status -->
+        <div class="grid-left-col">
+
+          <!-- Config card -->
+          <div class="grid-card" id="grid-config-card">
+            <div class="grid-card-header">
+              <span class="grid-card-title"><i class="ti ti-settings-2"></i> Configuration</span>
+              <span class="grid-status-badge" id="grid-status-badge">IDLE</span>
+            </div>
+
+            <div class="grid-field-row">
+              <label class="grid-label">Market</label>
+              <div class="grid-market-pill"><i class="ti ti-currency-bitcoin"></i> BTC-USDC · Neutral Grid</div>
+            </div>
+
+            <div class="grid-inputs">
+              <div class="grid-field">
+                <label class="grid-label">Lower bound <span class="grid-label-hint">$</span></label>
+                <input type="number" id="grid-lower" class="grid-input" placeholder="e.g. 90000" step="100">
+              </div>
+              <div class="grid-field">
+                <label class="grid-label">Upper bound <span class="grid-label-hint">$</span></label>
+                <input type="number" id="grid-upper" class="grid-input" placeholder="e.g. 110000" step="100">
+              </div>
+              <div class="grid-field">
+                <label class="grid-label">Grid levels</label>
+                <input type="number" id="grid-levels" class="grid-input" placeholder="e.g. 10" min="2" max="50" step="1">
+              </div>
+              <div class="grid-field">
+                <label class="grid-label">Notional per level <span class="grid-label-hint">$</span></label>
+                <input type="number" id="grid-notional" class="grid-input" placeholder="e.g. 200" step="10">
+              </div>
+            </div>
+
+            <!-- Capital check banner -->
+            <div class="grid-capital-check" id="grid-capital-check" style="display:none;"></div>
+
+            <!-- Controls -->
+            <div class="grid-controls">
+              <button class="grid-btn grid-btn-start" id="grid-start-btn" onclick="gridBotStart()">
+                <i class="ti ti-player-play"></i> Start Bot
+              </button>
+              <button class="grid-btn grid-btn-pause" id="grid-pause-btn" onclick="gridBotTogglePause()" style="display:none;">
+                <i class="ti ti-player-pause"></i> Pause
+              </button>
+              <button class="grid-btn grid-btn-stop" id="grid-stop-btn" onclick="gridBotStop(false)" style="display:none;">
+                <i class="ti ti-player-stop"></i> Stop &amp; Close
+              </button>
+            </div>
+
+          </div><!-- /grid-config-card -->
+
+          <!-- Live Stats card -->
+          <div class="grid-card" id="grid-stats-card">
+            <div class="grid-card-header">
+              <span class="grid-card-title"><i class="ti ti-chart-bar"></i> Live Stats</span>
+              <span class="grid-live-dot" id="grid-live-dot"></span>
+            </div>
+            <div class="grid-stats-grid">
+              <div class="grid-stat">
+                <div class="grid-stat-label">Current Price</div>
+                <div class="grid-stat-val" id="gstat-price">—</div>
+              </div>
+              <div class="grid-stat">
+                <div class="grid-stat-label">Running P&amp;L</div>
+                <div class="grid-stat-val" id="gstat-pnl">—</div>
+              </div>
+              <div class="grid-stat">
+                <div class="grid-stat-label">Fills (session)</div>
+                <div class="grid-stat-val" id="gstat-fills">0</div>
+              </div>
+              <div class="grid-stat">
+                <div class="grid-stat-label">Active Orders</div>
+                <div class="grid-stat-val" id="gstat-orders">0</div>
+              </div>
+              <div class="grid-stat">
+                <div class="grid-stat-label">Bot Uptime</div>
+                <div class="grid-stat-val" id="gstat-uptime">—</div>
+              </div>
+              <div class="grid-stat">
+                <div class="grid-stat-label">Bot State</div>
+                <div class="grid-stat-val" id="gstat-state">—</div>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /grid-left-col -->
+
+        <!-- RIGHT: Visualization -->
+        <div class="grid-right-col">
+          <div class="grid-card grid-viz-card">
+            <div class="grid-card-header">
+              <span class="grid-card-title"><i class="ti ti-ladder"></i> Price Ladder</span>
+              <span class="grid-viz-legend"><span class="legend-buy">▶ BUY</span> <span class="legend-sell">◀ SELL</span> <span class="legend-price">● PRICE</span></span>
+            </div>
+            <div class="grid-viz-wrap" id="grid-viz-wrap">
+              <div class="grid-viz-empty" id="grid-viz-empty">Configure and start the bot to see the price ladder.</div>
+              <canvas id="grid-viz-canvas" style="display:none;width:100%;"></canvas>
+            </div>
+          </div>
+
+          <!-- Level table -->
+          <div class="grid-card" style="margin-top:12px;">
+            <div class="grid-card-header">
+              <span class="grid-card-title"><i class="ti ti-list-details"></i> Level Status</span>
+            </div>
+            <div class="grid-level-table-wrap">
+              <table class="grid-level-table" id="grid-level-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Price</th>
+                    <th>Side</th>
+                    <th>Notional</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="grid-level-tbody">
+                  <tr><td colspan="5" class="grid-table-empty">No grid active</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div><!-- /grid-right-col -->
+
+      </div><!-- /grid-bot-layout -->
+
+      <!-- grid bot toast -->
+      <div class="grid-toast" id="gridToast"></div>
+
+    </div><!-- /tab-grid -->
 
     <!-- ===================== TRADE TAB ===================== -->
     <div class="tab-view" id="tab-trade" data-title="Trade">
@@ -3849,5 +4079,641 @@ function populateJournalTickerList(){
   });
 }
 </script>
-</body>
-</html>
+<script>
+// ===================== GRID BOT =====================
+// BTC-only, neutral grid. Places all limit orders upfront.
+// Price feed: WebSocket orderbook:0
+// Fill detection: WebSocket account_all_orders:21229
+// Counter-order on fill, SL at bounds ±0.5%, persists state in localStorage.
+
+const GRID_STORAGE_KEY = 'ema_watch_grid_v1';
+const GRID_WS_URL = 'wss://mainnet.zklighter.elliot.ai/stream';
+const GRID_BTC_MARKET = 0;
+
+let gridState = null; // persisted config + runtime data
+let gridPriceWs = null;
+let gridOrderWs = null;
+let gridCurrentPrice = null;
+let gridUptimeInterval = null;
+let gridVizRaf = null;
+let gridVizDirty = false;
+
+// ---- Persistence ----
+function gridSave(){
+  try{ localStorage.setItem(GRID_STORAGE_KEY, JSON.stringify(gridState)); } catch(e){}
+}
+function gridLoad(){
+  try{
+    const raw = localStorage.getItem(GRID_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch(e){ return null; }
+}
+
+// ---- Toast ----
+function gridToast(msg, durationMs = 3500){
+  const el = document.getElementById('gridToast');
+  if(!el) return;
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), durationMs);
+}
+
+// ---- UI helpers ----
+function gridSetBadge(state){ // 'idle'|'running'|'paused'|'stopped'
+  const el = document.getElementById('grid-status-badge');
+  if(!el) return;
+  el.className = 'grid-status-badge ' + (state !== 'idle' ? state : '');
+  el.textContent = state.toUpperCase();
+}
+function gridSetLiveDot(state){ // 'live'|'paused'|'error'|''
+  const el = document.getElementById('grid-live-dot');
+  if(!el) return;
+  el.className = 'grid-live-dot ' + state;
+}
+function gridShowControls(running, paused){
+  document.getElementById('grid-start-btn').style.display = running ? 'none' : 'flex';
+  document.getElementById('grid-pause-btn').style.display = running ? 'flex' : 'none';
+  document.getElementById('grid-stop-btn').style.display  = running ? 'flex' : 'none';
+  const pauseBtn = document.getElementById('grid-pause-btn');
+  if(pauseBtn){
+    pauseBtn.innerHTML = paused
+      ? '<i class="ti ti-player-play"></i> Resume'
+      : '<i class="ti ti-player-pause"></i> Pause';
+  }
+}
+function gridUpdateStat(id, val, cls){
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.textContent = val;
+  el.className = 'grid-stat-val' + (cls ? ' ' + cls : '');
+}
+
+// ---- Capital check ----
+function gridCheckCapital(){
+  const lower = parseFloat(document.getElementById('grid-lower').value);
+  const upper = parseFloat(document.getElementById('grid-upper').value);
+  const levels = parseInt(document.getElementById('grid-levels').value);
+  const notional = parseFloat(document.getElementById('grid-notional').value);
+  const el = document.getElementById('grid-capital-check');
+  if(!el) return true;
+  if(isNaN(lower)||isNaN(upper)||isNaN(levels)||isNaN(notional)||levels<2){
+    el.style.display = 'none'; return false;
+  }
+  if(upper<=lower){ el.style.display='block'; el.className='grid-capital-check warn'; el.textContent='Upper bound must be above lower bound.'; return false; }
+
+  // Get available balance from dashboard element if it exists
+  const dashSub = document.getElementById('dashLighterSub');
+  let available = null;
+  if(dashSub){
+    const m = dashSub.textContent.match(/avail \$([0-9,]+)/);
+    if(m) available = parseFloat(m[1].replace(/,/g,''));
+  }
+
+  const required = (levels * notional) * 1.05; // 5% buffer
+  el.style.display = 'block';
+
+  if(available === null){
+    el.className = 'grid-capital-check ok';
+    el.innerHTML = `Required capital: <strong>~$${required.toLocaleString('en-US',{maximumFractionDigits:0})}</strong> (${levels} levels × $${notional} + 5% buffer). Connect Lighter to validate against balance.`;
+    return true;
+  }
+
+  if(required > available){
+    const maxNotional = Math.floor((available * 0.95) / levels);
+    el.className = 'grid-capital-check warn';
+    el.innerHTML = `Not possible — requires <strong>$${required.toLocaleString('en-US',{maximumFractionDigits:0})}</strong> but only <strong>$${available.toLocaleString('en-US',{maximumFractionDigits:0})}</strong> available.<br>Max notional per level: <strong>$${maxNotional.toLocaleString('en-US',{maximumFractionDigits:0})}</strong>`;
+    return false;
+  }
+
+  el.className = 'grid-capital-check ok';
+  el.innerHTML = `✓ Capital OK — requires <strong>$${required.toLocaleString('en-US',{maximumFractionDigits:0})}</strong>, available <strong>$${available.toLocaleString('en-US',{maximumFractionDigits:0})}</strong>`;
+  return true;
+}
+
+// wire up input listeners for capital check
+['grid-lower','grid-upper','grid-levels','grid-notional'].forEach(id => {
+  const el = document.getElementById(id);
+  if(el) el.addEventListener('input', gridCheckCapital);
+});
+
+// ---- Price WebSocket (public orderbook:0) ----
+function gridStartPriceWs(){
+  if(gridPriceWs && gridPriceWs.readyState < 2) return;
+  gridPriceWs = new WebSocket(GRID_WS_URL);
+  gridPriceWs.onopen = () => {
+    gridPriceWs.send(JSON.stringify({type:'subscribe', channel:'orderbook:0'}));
+  };
+  gridPriceWs.onmessage = (ev) => {
+    try{
+      const msg = JSON.parse(ev.data);
+      if(msg.channel === 'orderbook:0' && msg.data){
+        const d = msg.data;
+        // best bid + best ask midpoint
+        const bids = d.bids || d.b;
+        const asks = d.asks || d.a;
+        let price = null;
+        if(bids && asks && bids.length && asks.length){
+          const bid = parseFloat(bids[0][0] ?? bids[0].p ?? bids[0]);
+          const ask = parseFloat(asks[0][0] ?? asks[0].p ?? asks[0]);
+          if(!isNaN(bid) && !isNaN(ask)) price = (bid + ask) / 2;
+        }
+        // fallback: last_price field
+        if(price === null && d.last_price) price = parseFloat(d.last_price);
+        if(price !== null && !isNaN(price)){
+          gridCurrentPrice = price;
+          gridUpdateStat('gstat-price', '$' + price.toLocaleString('en-US',{maximumFractionDigits:1}));
+          gridVizDirty = true;
+          // SL check
+          if(gridState && gridState.running && !gridState.paused){
+            const slLow  = gridState.lower * 0.995;
+            const slHigh = gridState.upper * 1.005;
+            if(price <= slLow || price >= slHigh){
+              console.warn('[GridBot] SL triggered — price', price, 'bounds', gridState.lower, gridState.upper);
+              gridToast('⚠️ Stop-loss triggered — cancelling orders and closing position', 5000);
+              gridBotStop(true);
+            }
+          }
+        }
+      }
+    } catch(e){}
+  };
+  gridPriceWs.onclose = () => {
+    if(gridState && gridState.running){
+      setTimeout(gridStartPriceWs, 3000);
+    }
+  };
+  gridPriceWs.onerror = () => { gridSetLiveDot('error'); };
+}
+
+function gridStopPriceWs(){
+  if(gridPriceWs){ try{ gridPriceWs.close(); }catch(e){} gridPriceWs=null; }
+}
+
+// ---- Order fill WebSocket (account_all_orders:21229) ----
+function gridStartOrderWs(){
+  if(gridOrderWs && gridOrderWs.readyState < 2) return;
+  gridOrderWs = new WebSocket(GRID_WS_URL);
+  gridOrderWs.onopen = () => {
+    gridOrderWs.send(JSON.stringify({type:'subscribe', channel:`account_all_orders:${LIGHTER_ACCOUNT_INDEX}`}));
+  };
+  gridOrderWs.onmessage = async (ev) => {
+    try{
+      const msg = JSON.parse(ev.data);
+      if((msg.channel || '').startsWith('account_all_orders') && msg.data){
+        const orders = Array.isArray(msg.data) ? msg.data : [msg.data];
+        for(const order of orders){
+          const status = order.status || order.order_status;
+          const clientIdx = order.client_order_index ?? order.clientOrderIndex;
+          if(status === 'filled' || status === 2){ // 2 = filled in some SDK versions
+            await gridHandleFill(order, clientIdx);
+          }
+        }
+      }
+    } catch(e){ console.warn('[GridBot] order WS parse error', e); }
+  };
+  gridOrderWs.onclose = () => {
+    if(gridState && gridState.running){
+      setTimeout(gridStartOrderWs, 3000);
+    }
+  };
+}
+
+function gridStopOrderWs(){
+  if(gridOrderWs){ try{ gridOrderWs.close(); }catch(e){} gridOrderWs=null; }
+}
+
+// ---- Level helpers ----
+// clientOrderIndex for grid levels: 100 + levelIndex (0-based)
+// counter-orders use 200 + levelIndex
+function levelIdxFromClientIdx(ci){ return ci - 100; }
+
+async function gridHandleFill(order, clientIdx){
+  if(!gridState || !gridState.running || gridState.paused) return;
+  const li = levelIdxFromClientIdx(clientIdx);
+  if(li < 0 || li >= gridState.levels.length) return;
+
+  const level = gridState.levels[li];
+  if(!level || level.status === 'filled') return; // already handled
+
+  level.status = 'filled';
+  gridState.fillCount = (gridState.fillCount || 0) + 1;
+  gridState.pnl = (gridState.pnl || 0); // updated below
+
+  // Realize grid profit: each fill earns (price_gap * btc_size) per round trip
+  const priceStep = (gridState.upper - gridState.lower) / (gridState.levels.length - 1);
+  const btcSize = gridState.notional / level.price;
+  gridState.pnl += priceStep * btcSize * 0.5; // half realized on fill, half on counter fill
+
+  gridSave();
+  gridUpdateStat('gstat-fills', gridState.fillCount);
+  gridUpdateStat('gstat-pnl', (gridState.pnl >= 0 ? '+' : '') + '$' + gridState.pnl.toFixed(2), gridState.pnl >= 0 ? 'up' : 'down');
+  gridRenderLevelTable();
+  gridVizDirty = true;
+
+  // Place counter-order one level up (if buy filled → place sell above) or down (if sell filled → place buy below)
+  const isBuy = !level.isAsk;
+  const counterLevelIdx = isBuy ? li + 1 : li - 1;
+  if(counterLevelIdx >= 0 && counterLevelIdx < gridState.levels.length){
+    const counterLevel = gridState.levels[counterLevelIdx];
+    await gridPlaceSingleOrder(counterLevel.price, !isBuy, gridState.notional, 200 + li);
+    console.log('[GridBot] counter-order placed at', counterLevel.price, !isBuy ? 'sell' : 'buy');
+  }
+}
+
+// ---- Order placement ----
+async function gridPlaceSingleOrder(price, isAsk, notional, clientOrderIdx){
+  try{
+    const signer = await window.__getLighterSigner();
+    const SC = signer.constructor;
+    const GroupingType = window.__LighterGroupingType;
+    const map = await fetchLighterMarketMap();
+    const btcMarket = map ? (Object.values(map).find(m => m.marketIndex === GRID_BTC_MARKET)) : null;
+    const priceDecimals = btcMarket ? btcMarket.priceDecimals : 2;
+    const sizeDecimals  = btcMarket ? btcMarket.sizeDecimals  : 4;
+
+    const btcSize = notional / price;
+    const priceLighter = toLighterInt(price, priceDecimals);
+    const sizeLighter  = toLighterInt(btcSize, sizeDecimals);
+
+    const leg = {
+      marketIndex: GRID_BTC_MARKET,
+      clientOrderIndex: clientOrderIdx,
+      baseAmount: sizeLighter,
+      price: priceLighter,
+      isAsk,
+      orderType: SC.ORDER_TYPE_LIMIT,
+      timeInForce: SC.ORDER_TIME_IN_FORCE_GOOD_TILL_TIME,
+      reduceOnly: false,
+      triggerPrice: 0,
+      orderExpiry: Date.now() + 28 * 24 * 60 * 60 * 1000
+    };
+
+    const [tx, hash, error] = await signer.createGroupedOrders(GroupingType.NONE, [leg]);
+    if(error){ console.error('[GridBot] place order error', error); return false; }
+    return true;
+  } catch(e){
+    console.error('[GridBot] place order exception', e);
+    return false;
+  }
+}
+
+async function gridCancelAllOrders(){
+  try{
+    const signer = await window.__getLighterSigner();
+    // Cancel all open orders for BTC market
+    await signer.cancelAllOrders(GRID_BTC_MARKET);
+    console.log('[GridBot] all orders cancelled');
+  } catch(e){
+    console.warn('[GridBot] cancel all orders failed (may not exist yet):', e);
+  }
+}
+
+// ---- Start ----
+async function gridBotStart(){
+  const lower   = parseFloat(document.getElementById('grid-lower').value);
+  const upper   = parseFloat(document.getElementById('grid-upper').value);
+  const nLevels = parseInt(document.getElementById('grid-levels').value);
+  const notional= parseFloat(document.getElementById('grid-notional').value);
+
+  if(isNaN(lower)||isNaN(upper)||isNaN(nLevels)||isNaN(notional)){
+    gridToast('Fill in all fields before starting.'); return;
+  }
+  if(upper<=lower){ gridToast('Upper bound must be above lower.'); return; }
+  if(nLevels<2){ gridToast('Need at least 2 levels.'); return; }
+  if(!gridCheckCapital()) return;
+
+  const privateKey = localStorage.getItem('lighterPrivateKey');
+  if(!privateKey){ gridToast('No Lighter private key — set it in Settings.'); return; }
+
+  // Build levels
+  const step = (upper - lower) / (nLevels - 1);
+  const price = gridCurrentPrice || (lower + upper) / 2;
+  const levels = [];
+  for(let i = 0; i < nLevels; i++){
+    const lp = lower + i * step;
+    const isAsk = lp > price; // above price → sell, below → buy
+    levels.push({ price: lp, isAsk, notional, status: 'pending', clientOrderIndex: 100 + i });
+  }
+
+  gridState = {
+    lower, upper, nLevels, notional,
+    levels, running: true, paused: false,
+    startTime: Date.now(), fillCount: 0, pnl: 0
+  };
+  gridSave();
+
+  gridSetBadge('running');
+  gridSetLiveDot('live');
+  gridShowControls(true, false);
+  gridUpdateStat('gstat-state', 'Placing orders…');
+  gridUpdateStat('gstat-orders', '0');
+
+  // Start WebSockets
+  gridStartPriceWs();
+  gridStartOrderWs();
+
+  // Start uptime ticker
+  clearInterval(gridUptimeInterval);
+  gridUptimeInterval = setInterval(gridTickUptime, 1000);
+
+  // Start viz loop
+  gridStartVizLoop();
+
+  // Place all orders upfront
+  let placed = 0;
+  const startBtn = document.getElementById('grid-start-btn');
+  if(startBtn){ startBtn.disabled = true; }
+
+  for(let i = 0; i < levels.length; i++){
+    const lv = levels[i];
+    // Skip the level that is exactly at current price (no point in placing)
+    if(Math.abs(lv.price - price) < step * 0.1){ lv.status = 'skip'; continue; }
+    const ok = await gridPlaceSingleOrder(lv.price, lv.isAsk, lv.notional, lv.clientOrderIndex);
+    if(ok){ lv.status = 'open'; placed++; }
+    else   { lv.status = 'error'; }
+    gridState.levels[i] = lv;
+    gridUpdateStat('gstat-orders', placed);
+    gridRenderLevelTable();
+    gridVizDirty = true;
+    await new Promise(r => setTimeout(r, 120)); // small delay between orders
+  }
+
+  gridSave();
+  gridUpdateStat('gstat-state', 'Running');
+  gridToast(`✓ Grid bot started — ${placed} orders placed across ${nLevels} levels`);
+  console.log('[GridBot] started, placed', placed, '/', nLevels, 'orders');
+}
+
+// ---- Pause / Resume ----
+function gridBotTogglePause(){
+  if(!gridState) return;
+  gridState.paused = !gridState.paused;
+  gridSave();
+  const paused = gridState.paused;
+  gridSetBadge(paused ? 'paused' : 'running');
+  gridSetLiveDot(paused ? 'paused' : 'live');
+  gridShowControls(true, paused);
+  gridUpdateStat('gstat-state', paused ? 'Paused' : 'Running');
+  gridToast(paused ? '⏸ Bot paused — no new counter-orders will be placed' : '▶ Bot resumed');
+}
+
+// ---- Stop ----
+async function gridBotStop(isSL){
+  if(!gridState) return;
+  gridState.running = false;
+  gridState.paused  = false;
+  gridSave();
+
+  gridSetBadge('stopped');
+  gridSetLiveDot('error');
+  gridShowControls(false, false);
+  gridUpdateStat('gstat-state', isSL ? 'SL Triggered' : 'Stopped');
+  clearInterval(gridUptimeInterval);
+  gridStopPriceWs();
+  gridStopOrderWs();
+
+  // Cancel all grid orders on Lighter + market close
+  await gridCancelAllOrders();
+  if(isSL){
+    // Market close position
+    try{
+      const signer = await window.__getLighterSigner();
+      const SC = signer.constructor;
+      const GroupingType = window.__LighterGroupingType;
+      const closeLeg = {
+        marketIndex: GRID_BTC_MARKET,
+        clientOrderIndex: 0,
+        baseAmount: 0,
+        price: 0,
+        isAsk: false, // doesn't matter for market reduce-only
+        orderType: SC.ORDER_TYPE_MARKET,
+        timeInForce: SC.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL,
+        reduceOnly: true,
+        triggerPrice: 0,
+        orderExpiry: 0
+      };
+      await signer.createGroupedOrders(GroupingType.NONE, [closeLeg]);
+      console.log('[GridBot] market close sent');
+    } catch(e){ console.warn('[GridBot] market close failed', e); }
+  }
+
+  gridRenderLevelTable();
+  gridVizDirty = true;
+  if(!isSL) gridToast('Bot stopped. All orders cancelled.');
+}
+
+// ---- Uptime ----
+function gridTickUptime(){
+  if(!gridState || !gridState.startTime) return;
+  const secs = Math.floor((Date.now() - gridState.startTime) / 1000);
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  const str = h > 0
+    ? `${h}h ${m.toString().padStart(2,'0')}m`
+    : `${m}m ${s.toString().padStart(2,'0')}s`;
+  gridUpdateStat('gstat-uptime', str);
+}
+
+// ---- Level Table ----
+function gridRenderLevelTable(){
+  const tbody = document.getElementById('grid-level-tbody');
+  if(!tbody) return;
+  if(!gridState || !gridState.levels || !gridState.levels.length){
+    tbody.innerHTML = '<tr><td colspan="5" class="grid-table-empty">No grid active</td></tr>';
+    return;
+  }
+  const rows = [...gridState.levels].reverse().map((lv, ri) => {
+    const i = gridState.levels.length - 1 - ri;
+    const side = lv.isAsk
+      ? '<span class="gl-side-sell">SELL</span>'
+      : '<span class="gl-side-buy">BUY</span>';
+    const statusMap = {
+      pending:'<span class="gl-status-idle">pending</span>',
+      open:   '<span class="gl-status-open">open</span>',
+      filled: '<span class="gl-status-filled">filled</span>',
+      error:  '<span class="gl-status-sl">error</span>',
+      skip:   '<span class="gl-status-idle">—</span>',
+    };
+    const status = statusMap[lv.status] || lv.status;
+    return `<tr>
+      <td>${i+1}</td>
+      <td>$${lv.price.toLocaleString('en-US',{maximumFractionDigits:0})}</td>
+      <td>${side}</td>
+      <td>$${lv.notional.toLocaleString('en-US',{maximumFractionDigits:0})}</td>
+      <td>${status}</td>
+    </tr>`;
+  });
+  tbody.innerHTML = rows.join('');
+}
+
+// ---- Visualization ----
+function gridStartVizLoop(){
+  if(gridVizRaf) cancelAnimationFrame(gridVizRaf);
+  function loop(){
+    if(gridVizDirty){ gridDrawViz(); gridVizDirty = false; }
+    gridVizRaf = requestAnimationFrame(loop);
+  }
+  gridVizRaf = requestAnimationFrame(loop);
+}
+
+function gridDrawViz(){
+  const canvas = document.getElementById('grid-viz-canvas');
+  const empty  = document.getElementById('grid-viz-empty');
+  if(!canvas) return;
+
+  if(!gridState || !gridState.levels || !gridState.levels.length){
+    canvas.style.display = 'none';
+    if(empty) empty.style.display = 'flex';
+    return;
+  }
+
+  canvas.style.display = 'block';
+  if(empty) empty.style.display = 'none';
+
+  const wrap = document.getElementById('grid-viz-wrap');
+  const W = wrap ? wrap.clientWidth - 28 : 500;
+  const nLevels = gridState.levels.length;
+  const rowH = Math.max(22, Math.min(40, Math.floor(440 / nLevels)));
+  const H = nLevels * rowH + 40;
+  canvas.width  = W;
+  canvas.height = H;
+  canvas.style.height = H + 'px';
+
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+
+  const lower = gridState.lower;
+  const upper = gridState.upper;
+  const priceRange = upper - lower || 1;
+  const padLeft = 90;
+  const padRight = 20;
+  const barW = W - padLeft - padRight;
+
+  const priceToY = (p) => {
+    // top = upper, bottom = lower
+    return 20 + ((upper - p) / priceRange) * (H - 40);
+  };
+
+  // background stripe for grid zone
+  ctx.fillStyle = 'rgba(40,215,200,0.04)';
+  ctx.fillRect(padLeft, priceToY(upper), barW, priceToY(lower) - priceToY(upper));
+
+  // draw levels
+  gridState.levels.forEach((lv, i) => {
+    const y = priceToY(lv.price);
+    const isBuy = !lv.isAsk;
+    const color = lv.status === 'filled' ? '#d9a93f'
+                : lv.status === 'open'   ? (isBuy ? '#3ddc97' : '#e2645f')
+                : lv.status === 'error'  ? '#e2645f'
+                : '#3d3c44';
+
+    // horizontal line
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lv.status === 'open' ? 1.2 : 0.7;
+    ctx.setLineDash(lv.status === 'open' ? [] : [4,4]);
+    ctx.moveTo(padLeft, y);
+    ctx.lineTo(W - padRight, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // price label
+    ctx.fillStyle = color;
+    ctx.font = '10px Inter,sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('$' + lv.price.toLocaleString('en-US',{maximumFractionDigits:0}), padLeft - 5, y + 3.5);
+
+    // side arrow indicator
+    if(lv.status === 'open'){
+      ctx.fillStyle = color;
+      ctx.font = 'bold 9px Inter,sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(isBuy ? '▶' : '◀', W - padRight + 3, y + 3.5);
+    }
+  });
+
+  // current price line
+  if(gridCurrentPrice !== null && gridCurrentPrice >= lower * 0.9 && gridCurrentPrice <= upper * 1.1){
+    const py = priceToY(gridCurrentPrice);
+    ctx.beginPath();
+    ctx.strokeStyle = '#d9a93f';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6,3]);
+    ctx.moveTo(padLeft, py);
+    ctx.lineTo(W - padRight, py);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // price label
+    ctx.fillStyle = '#d9a93f';
+    ctx.font = 'bold 11px Inter,sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('$' + gridCurrentPrice.toLocaleString('en-US',{maximumFractionDigits:0}), padLeft - 5, py - 4);
+
+    // dot
+    ctx.beginPath();
+    ctx.arc(padLeft + 4, py, 4, 0, Math.PI*2);
+    ctx.fillStyle = '#d9a93f';
+    ctx.fill();
+  }
+
+  // SL markers
+  const slLow  = lower * 0.995;
+  const slHigh = upper * 1.005;
+  [slLow, slHigh].forEach(sl => {
+    if(sl < lower*0.85 || sl > upper*1.15) return;
+    const sy = priceToY(sl);
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(226,100,95,0.5)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2,4]);
+    ctx.moveTo(padLeft, sy);
+    ctx.lineTo(W - padRight, sy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(226,100,95,0.7)';
+    ctx.font = '9px Inter,sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('SL', padLeft - 5, sy + 3);
+  });
+}
+
+// ---- Restore state on load ----
+(function gridRestoreOnLoad(){
+  const saved = gridLoad();
+  if(!saved) return;
+  gridState = saved;
+  // Restore UI values
+  document.getElementById('grid-lower').value    = saved.lower || '';
+  document.getElementById('grid-upper').value    = saved.upper || '';
+  document.getElementById('grid-levels').value   = saved.nLevels || '';
+  document.getElementById('grid-notional').value = saved.notional || '';
+
+  if(saved.running){
+    gridSetBadge(saved.paused ? 'paused' : 'running');
+    gridSetLiveDot(saved.paused ? 'paused' : 'live');
+    gridShowControls(true, saved.paused);
+    gridUpdateStat('gstat-fills', saved.fillCount || 0);
+    const pnl = saved.pnl || 0;
+    gridUpdateStat('gstat-pnl', (pnl>=0?'+':'')+'$'+pnl.toFixed(2), pnl>=0?'up':'down');
+    gridUpdateStat('gstat-orders', (saved.levels||[]).filter(l=>l.status==='open').length);
+    gridUpdateStat('gstat-state', saved.paused ? 'Paused (restored)' : 'Running (restored)');
+    // Reconnect WebSockets
+    gridStartPriceWs();
+    if(!saved.paused) gridStartOrderWs();
+    clearInterval(gridUptimeInterval);
+    gridUptimeInterval = setInterval(gridTickUptime, 1000);
+    gridStartVizLoop();
+  } else {
+    gridSetBadge('stopped');
+    gridUpdateStat('gstat-state', 'Stopped');
+    const pnl = saved.pnl || 0;
+    gridUpdateStat('gstat-pnl', (pnl>=0?'+':'')+'$'+pnl.toFixed(2), pnl>=0?'up':'down');
+    gridUpdateStat('gstat-fills', saved.fillCount || 0);
+    gridStartVizLoop();
+  }
+  gridRenderLevelTable();
+  gridCheckCapital();
+})();
+</script>

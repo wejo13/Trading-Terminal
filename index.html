@@ -4472,8 +4472,8 @@ async function gridCancelAllOrders(){
 }
 
 // Place two reduce-only stop-loss orders at the grid bounds.
-// Lower bound SL: triggers if price drops below lower*0.995 — closes longs.
-// Upper bound SL: triggers if price rises above upper*1.005 — closes shorts.
+// Lower bound SL: triggers if price drops to lower*0.995 — closes longs.
+// Upper bound SL: triggers if price rises to upper*1.005 — closes shorts.
 // Size = max possible position = all levels × notional / midPrice (BTC amount).
 async function gridPlaceBoundSLs(){
   try{
@@ -4485,47 +4485,57 @@ async function gridPlaceBoundSLs(){
 
     const { lower, upper, nLevels, notional } = gridState;
     const midPrice = (lower + upper) / 2;
-    // Max BTC position = all levels filled
     const maxBtcSize = (nLevels * notional) / midPrice;
     const slSize = toLighterInt(maxBtcSize, market.sizeDecimals);
-
-    const slLowerPrice  = lower * 0.995;
-    const slUpperPrice  = upper * 1.005;
-    const slLowerPriceLighter = toLighterInt(slLowerPrice, market.priceDecimals);
-    const slUpperPriceLighter = toLighterInt(slUpperPrice, market.priceDecimals);
     const expiry = Date.now() + 28 * 24 * 60 * 60 * 1000;
 
-    // Lower SL — sell (isAsk=true) to close longs if price drops
-    const [, , errLow] = await signer.createOrderOptimized({
-      marketIndex: market.marketIndex,
-      clientOrderIndex: 90, // reserved index for lower SL
-      baseAmount: slSize,
-      price: slLowerPriceLighter,
-      isAsk: true,
-      orderType: SC.ORDER_TYPE_STOP_LOSS,
-      timeInForce: SC.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL,
-      reduceOnly: true,
-      triggerPrice: slLowerPriceLighter,
-      orderExpiry: expiry
-    });
-    if(errLow) console.warn('[GridBot] lower SL error', errLow);
-    else { gridState.slLowerIdx = 90; console.log('[GridBot] lower SL placed at', slLowerPrice.toFixed(0)); }
+    const slLowerPrice = lower * 0.995;
+    const slUpperPrice = upper * 1.005;
+    const slLowerPriceLighter = toLighterInt(slLowerPrice, market.priceDecimals);
+    const slUpperPriceLighter = toLighterInt(slUpperPrice, market.priceDecimals);
 
-    // Upper SL — buy (isAsk=false) to close shorts if price rises
-    const [, , errHigh] = await signer.createOrderOptimized({
-      marketIndex: market.marketIndex,
-      clientOrderIndex: 91, // reserved index for upper SL
-      baseAmount: slSize,
-      price: slUpperPriceLighter,
-      isAsk: false,
-      orderType: SC.ORDER_TYPE_STOP_LOSS,
-      timeInForce: SC.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL,
-      reduceOnly: true,
-      triggerPrice: slUpperPriceLighter,
-      orderExpiry: expiry
-    });
-    if(errHigh) console.warn('[GridBot] upper SL error', errHigh);
-    else { gridState.slUpperIdx = 91; console.log('[GridBot] upper SL placed at', slUpperPrice.toFixed(0)); }
+    async function placeSL(clientOrderIndex, price, isAsk, label){
+      const nonceResult = await signer.transactionApi.getNextNonce(signer.config.accountIndex, signer.config.apiKeyIndex);
+      const wasmParams = {
+        marketIndex: market.marketIndex,
+        clientOrderIndex,
+        baseAmount: slSize,
+        price,
+        isAsk: isAsk ? 1 : 0,
+        orderType: SC.ORDER_TYPE_STOP_LOSS,
+        timeInForce: SC.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL,
+        reduceOnly: 1,
+        triggerPrice: price,
+        orderExpiry: expiry,
+        integratorAccountIndex: 0,
+        integratorTakerFee: 0,
+        integratorMakerFee: 0,
+        skipNonce: 0,
+        nonce: nonceResult.nonce,
+        apiKeyIndex: signer.config.apiKeyIndex,
+        accountIndex: signer.config.accountIndex
+      };
+      const wasmResponse = await signer.wallet.signCreateOrder(wasmParams);
+      if(wasmResponse.error){ console.warn(`[GridBot] ${label} SL sign error`, wasmResponse.error); return false; }
+      const txHash = await signer.transactionApi.sendTxWithIndices(
+        wasmResponse.txType || SC.TX_TYPE_CREATE_ORDER,
+        wasmResponse.txInfo,
+        signer.config.accountIndex,
+        signer.config.apiKeyIndex,
+        false // priceProtection=false
+      );
+      if(txHash.code && txHash.code !== 200){ console.warn(`[GridBot] ${label} SL send error`, txHash.message); return false; }
+      console.log(`[GridBot] ${label} SL placed`, txHash.tx_hash || txHash.hash);
+      return true;
+    }
+
+    // Lower SL — sell to close longs
+    const okLow = await placeSL(90, slLowerPriceLighter, true, 'lower');
+    if(okLow){ gridState.slLowerIdx = 90; }
+
+    // Upper SL — buy to close shorts
+    const okHigh = await placeSL(91, slUpperPriceLighter, false, 'upper');
+    if(okHigh){ gridState.slUpperIdx = 91; }
 
     gridState.slMarketIndex = market.marketIndex;
     gridSave();

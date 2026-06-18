@@ -300,6 +300,76 @@
   .gl-status-filled{color:var(--amber);}
   .gl-status-idle{color:var(--text-faint);}
   .gl-status-sl{color:var(--red);}
+  /* ---- grid bot docs accordion ---- */
+  .grid-docs{
+    margin-top:18px;
+    border:0.5px solid var(--line-old);
+    border-radius:var(--radius-card);
+    background:var(--card);
+    overflow:hidden;
+  }
+  .grid-docs-trigger{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:16px 20px;cursor:pointer;user-select:none;
+    gap:10px;
+  }
+  .grid-docs-trigger:hover{background:rgba(255,255,255,0.025);}
+  .grid-docs-trigger-left{display:flex;align-items:center;gap:10px;}
+  .grid-docs-trigger-left i{font-size:16px;color:var(--teal);flex-shrink:0;}
+  .grid-docs-title{font-size:13px;font-weight:600;color:var(--text);}
+  .grid-docs-chevron{
+    font-size:16px;color:var(--text-faint);flex-shrink:0;
+    transition:transform 0.22s ease;
+  }
+  .grid-docs.open .grid-docs-chevron{transform:rotate(180deg);}
+  .grid-docs-body{
+    display:none;
+    padding:0 24px 24px;
+    border-top:0.5px solid var(--line-old);
+  }
+  .grid-docs.open .grid-docs-body{display:block;}
+  .grid-docs-body h3{
+    font-size:11px;font-weight:700;color:var(--teal);
+    text-transform:uppercase;letter-spacing:0.5px;
+    margin:22px 0 8px;
+  }
+  .grid-docs-body h3:first-child{margin-top:20px;}
+  .grid-docs-body p{
+    font-size:12px;color:var(--text-dim);line-height:1.65;margin:0 0 10px;
+  }
+  .grid-docs-body ul{
+    margin:0 0 10px;padding-left:18px;
+  }
+  .grid-docs-body ul li{
+    font-size:12px;color:var(--text-dim);line-height:1.65;margin-bottom:4px;
+  }
+  .grid-docs-body ul li strong,.grid-docs-body p strong{color:var(--text);}
+  .grid-docs-table{
+    width:100%;border-collapse:collapse;margin-bottom:10px;font-size:12px;
+  }
+  .grid-docs-table th{
+    text-align:left;padding:7px 10px;font-size:10px;font-weight:600;
+    color:var(--text-faint);letter-spacing:0.3px;
+    border-bottom:1px solid var(--line-old);
+  }
+  .grid-docs-table td{
+    padding:8px 10px;border-bottom:0.5px solid var(--line-old);
+    color:var(--text-dim);vertical-align:top;line-height:1.5;
+  }
+  .grid-docs-table td:first-child{color:var(--text);font-weight:500;white-space:nowrap;}
+  .grid-docs-table tr:last-child td{border-bottom:none;}
+  .grid-docs-formula{
+    background:rgba(255,255,255,0.04);border:0.5px solid var(--line-old);
+    border-radius:8px;padding:10px 14px;font-size:12px;
+    color:var(--teal);font-family:monospace;margin:8px 0 12px;
+    letter-spacing:0.2px;
+  }
+  .grid-docs-note{
+    background:var(--amber-dim);border:0.5px solid rgba(217,169,63,0.25);
+    border-radius:8px;padding:10px 14px;font-size:11px;color:var(--amber);
+    line-height:1.6;margin-top:16px;
+  }
+
   /* grid toast */
   .grid-toast{
     position:fixed;bottom:24px;right:24px;z-index:9999;
@@ -1256,6 +1326,83 @@
         </div><!-- /grid-right-col -->
 
       </div><!-- /grid-bot-layout -->
+
+      <!-- grid bot documentation accordion -->
+      <div class="grid-docs" id="grid-docs-accordion">
+        <div class="grid-docs-trigger" onclick="document.getElementById('grid-docs-accordion').classList.toggle('open')">
+          <div class="grid-docs-trigger-left">
+            <i class="ti ti-info-circle"></i>
+            <span class="grid-docs-title">How does this grid bot work?</span>
+          </div>
+          <i class="ti ti-chevron-down grid-docs-chevron"></i>
+        </div>
+        <div class="grid-docs-body">
+
+          <h3>What it does</h3>
+          <p>The grid bot places a series of limit orders across a defined price range, alternating between buy orders below the current BTC price and sell orders above it. When a buy fills, a sell is placed one level higher. When a sell fills, a buy is placed one level lower. The bot collects the spread between levels repeatedly as long as price oscillates within the range.</p>
+
+          <h3>Prerequisites</h3>
+          <ul>
+            <li>Your <strong>Lighter private key</strong> must be saved in Settings before starting.</li>
+            <li>Your account must have enough available margin — the bot shows you exactly how much is needed before you can start.</li>
+          </ul>
+
+          <h3>Configuration</h3>
+          <table class="grid-docs-table">
+            <tr><th>Field</th><th>What it means</th></tr>
+            <tr><td>Lower bound</td><td>The lowest price level. Buy orders are placed down to this price.</td></tr>
+            <tr><td>Upper bound</td><td>The highest price level. Sell orders are placed up to this price.</td></tr>
+            <tr><td>Grid levels</td><td>Number of orders spread evenly between bounds. More levels = tighter spacing = smaller profit per fill, but more fills. Minimum 2.</td></tr>
+            <tr><td>Notional per level</td><td>USD size of each order. $500 = each order controls $500 of BTC at that level's price.</td></tr>
+            <tr><td>Leverage</td><td>Margin multiplier. Default 50×. Lower leverage requires more capital but is safer.</td></tr>
+          </table>
+
+          <h3>Capital requirement</h3>
+          <p>Required margin is calculated as:</p>
+          <div class="grid-docs-formula">Required margin = (levels × notional) × IMR × 1.05</div>
+          <p><strong>IMR</strong> = 1 ÷ leverage (minimum 2% at 50×). The 1.05 adds a 5% safety buffer. If you don't have enough, the bot shows the maximum notional per level you can use.</p>
+
+          <h3>How orders are placed</h3>
+          <p>When you click Start, the bot calculates evenly spaced price levels between your bounds. Every level gets a limit order — sells above current price, buys below. Levels too close to current price are skipped to avoid instant fills. Orders are sent one by one to Lighter with a 120ms gap between each, with a unique ID per level so they can be individually cancelled.</p>
+          <p>After all grid orders are placed, two bound stop-loss orders are added at the edges of the range (see Stop-Loss below).</p>
+
+          <h3>How fills work</h3>
+          <p>The bot listens to Lighter's WebSocket for your account's order updates. When a fill is detected, the filled level is marked and a counter-order is placed one level in the opposite direction — buy filled → sell placed one level above; sell filled → buy placed one level below. Fill count and estimated P&L update in the stats panel.</p>
+
+          <h3>Stop-loss</h3>
+          <p>Two independent stop-loss mechanisms run in parallel:</p>
+          <ul>
+            <li><strong>Exchange-side SLs:</strong> Two reduce-only stop-loss orders are placed directly on Lighter at lower −0.5% and upper +0.5% when the bot starts. These trigger even if your browser is closed.</li>
+            <li><strong>Client-side SL:</strong> The bot also watches live price in the browser. If price crosses either SL level, it immediately cancels all grid orders, cancels both SL orders, and sends a market close order — then stops the bot with status "SL Triggered".</li>
+          </ul>
+
+          <h3>Controls</h3>
+          <table class="grid-docs-table">
+            <tr><th>Button</th><th>What it does</th></tr>
+            <tr><td>Start</td><td>Validates inputs, checks capital, places all orders, starts fill detection.</td></tr>
+            <tr><td>Pause</td><td>Stops counter-orders from being placed on new fills. Existing orders on Lighter stay open.</td></tr>
+            <tr><td>Resume</td><td>Re-enables counter-order placement after a pause.</td></tr>
+            <tr><td>Stop</td><td>Cancels all open grid orders and both SL orders on Lighter. Does not automatically close any open position.</td></tr>
+          </table>
+
+          <h3>Price ladder visualization</h3>
+          <ul>
+            <li><strong style="color:var(--green)">Green lines</strong> — open buy orders</li>
+            <li><strong style="color:var(--red)">Red lines</strong> — open sell orders</li>
+            <li><strong style="color:var(--amber)">Amber dashed line</strong> — current BTC price (live)</li>
+            <li><strong style="color:var(--text-faint)">Grey dashed lines</strong> — pending or filled levels</li>
+            <li><strong style="color:rgba(226,100,95,0.7)">Red dotted lines</strong> — SL boundaries (±0.5% from bounds)</li>
+          </ul>
+
+          <h3>State persistence</h3>
+          <p>The bot saves its full state to your browser's local storage. If you close and reopen the page while the bot was running, it restores automatically, reconnects both WebSockets, and resumes monitoring. Orders already placed on Lighter remain active.</p>
+
+          <div class="grid-docs-note">
+            ⚠️ <strong>Note:</strong> The P&L shown is an estimate based on price step × BTC size per fill — not realized P&L from Lighter. Fill detection and counter-order logic are functional but not yet extensively battle-tested in live conditions. Always monitor your first sessions manually.
+          </div>
+
+        </div>
+      </div>
 
       <!-- grid bot toast -->
       <div class="grid-toast" id="gridToast"></div>

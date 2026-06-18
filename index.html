@@ -4457,23 +4457,37 @@ async function gridPlaceSingleOrder(price, isAsk, notional, _unused){
 
     console.log('[GridBot] placing', { price, isAsk, marketIndex: market.marketIndex, btcSize, base_amount, priceLighter });
     const [tx, hash, error] = await signer.createGroupedOrders(GroupingType.OTO, [entryLeg, slLeg]);
-    if(error){ console.error('[GridBot] order error', error); return false; }
+    if(error){ console.error('[GridBot] order error', error); return null; }
     console.log('[GridBot] order placed', { tx, hash });
-    return true;
+    return tx; // return full tx so caller can extract order indices
   } catch(e){
     console.error('[GridBot] order exception', e.message || e);
-    return false;
+    return null;
   }
 }
 
 async function gridCancelAllOrders(){
   try{
     const signer = await window.__getLighterSigner();
-    const SC = signer.constructor;
-    const time = Date.now() + 28 * 24 * 60 * 60 * 1000; // same format as order expiry
-    const [tx, hash, err] = await signer.cancelAllOrders(SC.ORDER_TIME_IN_FORCE_GOOD_TILL_TIME, time);
-    if(err) console.warn('[GridBot] cancelAllOrders error:', err);
-    else console.log('[GridBot] all orders cancelled', hash);
+    const levels = gridState ? gridState.levels || [] : [];
+    const openLevels = levels.filter(lv => lv.status === 'open' && lv.tx);
+
+    console.log('[GridBot] cancelling', openLevels.length, 'orders');
+
+    for(const lv of openLevels){
+      const orders = lv.tx?.Orders || lv.tx?.orders || [];
+      for(const o of orders){
+        const orderIndex = o.OrderIndex ?? o.order_index ?? o.orderIndex ?? o.Index ?? o.index;
+        const marketIndex = o.MarketIndex ?? o.market_index ?? o.marketIndex;
+        if(orderIndex === undefined || marketIndex === undefined){
+          console.warn('[GridBot] missing index in order', o);
+          continue;
+        }
+        const [,, err] = await signer.cancelOrder({ marketIndex, orderIndex });
+        if(err) console.warn('[GridBot] cancel error', orderIndex, err);
+        else console.log('[GridBot] cancelled orderIndex', orderIndex);
+      }
+    }
   } catch(e){
     console.warn('[GridBot] gridCancelAllOrders error:', e.message || e);
   }
@@ -4538,16 +4552,20 @@ async function gridBotStart(){
 
   for(let i = 0; i < levels.length; i++){
     const lv = levels[i];
-    // Skip the level that is exactly at current price (no point in placing)
     if(Math.abs(lv.price - price) < step * 0.1){ lv.status = 'skip'; continue; }
-    const ok = await gridPlaceSingleOrder(lv.price, lv.isAsk, lv.notional, lv.clientOrderIndex);
-    if(ok){ lv.status = 'open'; placed++; }
-    else   { lv.status = 'error'; }
+    const tx = await gridPlaceSingleOrder(lv.price, lv.isAsk, lv.notional, lv.clientOrderIndex);
+    if(tx !== null){
+      lv.status = 'open';
+      lv.tx = tx; // store full tx response for cancellation
+      placed++;
+    } else {
+      lv.status = 'error';
+    }
     gridState.levels[i] = lv;
     gridUpdateStat('gstat-orders', placed);
     gridRenderLevelTable();
     gridVizDirty = true;
-    await new Promise(r => setTimeout(r, 120)); // small delay between orders
+    await new Promise(r => setTimeout(r, 120));
   }
 
   gridSave();

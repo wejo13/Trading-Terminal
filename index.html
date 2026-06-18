@@ -912,7 +912,7 @@
             <div class="ex-dot" id="lighterDot" title="connecting…" style="background:var(--text-faint);"></div>
           </div>
           <div class="ex-amount" id="dashLighterBalance">—</div>
-          <div class="ex-sub" id="dashLighterSub">connecting…</div>
+          <div class="ex-sub" id="dashLighterSub">loading…</div>
           <div class="ex-bar"><div class="ex-bar-fill" id="dashLighterBar" style="width:0%"></div></div>
         </div>
       </div>
@@ -2878,7 +2878,9 @@ async function fetchLighterBalance(){
     const res = await fetch(`${LIGHTER_BASE_URL}/api/v1/account?by=index&value=${LIGHTER_ACCOUNT_INDEX}`);
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    updateLighterBalanceDisplay(data);
+    // API returns { accounts: [ { collateral, available_balance, ... } ] }
+    const account = (data.accounts && data.accounts[0]) || data;
+    updateLighterBalanceDisplay(account);
     setLighterDot('live');
   } catch(e){
     console.warn('[LighterBalance] fetch failed', e);

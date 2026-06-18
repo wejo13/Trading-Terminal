@@ -4405,33 +4405,27 @@ async function gridHandleFill(order, clientIdx){
 // ---- Order placement ----
 // Signs via WASM then sends with priceProtection=false to avoid "accidental price" rejection
 // for limit orders placed away from current price (normal for grid bots).
-async function gridPlaceSingleOrder(price, isAsk, notional, _unused){
+async function gridPlaceSingleOrder(price, isAsk, notional, clientOrderIdx){
   try{
     const signer = await window.__getLighterSigner();
     const SC = signer.constructor;
     const GroupingType = window.__LighterGroupingType;
     const map = await fetchLighterMarketMap();
 
-    // Look up BTC by symbol — exactly as Trade tab does with resolveLighterMarket('BTC')
-    const market = map ? (map['BTC'] || map['BTCUSDC'] || map['BTC-USDC'] ||
-      Object.entries(map).find(([k]) => k.startsWith('BTC'))?.[1]) : null;
-    if(!market){ console.error('[GridBot] BTC market not found', map ? Object.keys(map) : 'no map'); return false; }
+    const market = map ? (map['BTC'] || Object.entries(map).find(([k]) => k.startsWith('BTC'))?.[1]) : null;
+    if(!market){ console.error('[GridBot] BTC market not found'); return null; }
 
-    // base_amount = BTC size, same as Trade tab: toLighterInt(size, sizeDecimals)
     const btcSize = notional / price;
     const base_amount = toLighterInt(btcSize, market.sizeDecimals);
     const priceLighter = toLighterInt(price, market.priceDecimals);
-
-    // SL: 2% beyond the order price (direction-aware), so it's real but won't trigger normally
     const slPrice = isAsk ? price * 1.02 : price * 0.98;
     const slTriggerPrice   = toLighterInt(slPrice, market.priceDecimals);
     const slExecutionPrice = toLighterInt(slPrice, market.priceDecimals);
-
     const entryExpiry = Date.now() + 28 * 24 * 60 * 60 * 1000;
 
     const entryLeg = {
       marketIndex: market.marketIndex,
-      clientOrderIndex: 0,
+      clientOrderIndex: clientOrderIdx, // unique per level — used as order_index to cancel
       baseAmount: base_amount,
       price: priceLighter,
       isAsk,
@@ -4455,11 +4449,11 @@ async function gridPlaceSingleOrder(price, isAsk, notional, _unused){
       orderExpiry: entryExpiry
     };
 
-    console.log('[GridBot] placing', { price, isAsk, marketIndex: market.marketIndex, btcSize, base_amount, priceLighter });
+    console.log('[GridBot] placing', { price, isAsk, clientOrderIdx, marketIndex: market.marketIndex });
     const [tx, hash, error] = await signer.createGroupedOrders(GroupingType.OTO, [entryLeg, slLeg]);
     if(error){ console.error('[GridBot] order error', error); return null; }
-    console.log('[GridBot] order placed', { tx, hash });
-    return tx; // return full tx so caller can extract order indices
+    console.log('[GridBot] order placed', hash);
+    return { marketIndex: market.marketIndex, clientOrderIdx };
   } catch(e){
     console.error('[GridBot] order exception', e.message || e);
     return null;
@@ -4469,22 +4463,15 @@ async function gridPlaceSingleOrder(price, isAsk, notional, _unused){
 async function gridCancelAllOrders(){
   try{
     const signer = await window.__getLighterSigner();
-    const map = await fetchLighterMarketMap();
-    const market = map ? (map['BTC'] || Object.entries(map).find(([k]) => k.startsWith('BTC'))?.[1]) : null;
-    const marketId = market ? market.marketIndex : GRID_BTC_MARKET;
+    const levels = gridState ? gridState.levels || [] : [];
+    const openLevels = levels.filter(lv => lv.status === 'open' && lv.clientOrderIdx !== undefined);
 
-    // Fetch active orders from REST — market_id is required
-    const res = await fetch(`${LIGHTER_BASE_URL}/api/v1/accountActiveOrders?account_index=${LIGHTER_ACCOUNT_INDEX}&market_id=${marketId}`);
-    const data = await res.json();
-    const orders = data.orders || [];
-    console.log('[GridBot] cancelling', orders.length, 'orders:', orders);
-
-    for(const o of orders){
-      const orderIndex = o.order_index ?? o.orderIndex ?? o.index;
-      if(orderIndex === undefined){ console.warn('[GridBot] no orderIndex', o); continue; }
-      const [,, err] = await signer.cancelOrder({ marketIndex: marketId, orderIndex });
-      if(err) console.warn('[GridBot] cancel error', orderIndex, err);
-      else console.log('[GridBot] cancelled', orderIndex);
+    console.log('[GridBot] cancelling', openLevels.length, 'orders');
+    for(const lv of openLevels){
+      // Per Lighter docs: cancel_order(market_index, order_index) where order_index = client_order_index used at placement
+      const [,, err] = await signer.cancelOrder({ marketIndex: lv.marketIndex, orderIndex: lv.clientOrderIdx });
+      if(err) console.warn('[GridBot] cancel error idx', lv.clientOrderIdx, err);
+      else console.log('[GridBot] cancelled idx', lv.clientOrderIdx);
     }
   } catch(e){
     console.warn('[GridBot] gridCancelAllOrders error:', e.message || e);
@@ -4551,10 +4538,12 @@ async function gridBotStart(){
   for(let i = 0; i < levels.length; i++){
     const lv = levels[i];
     if(Math.abs(lv.price - price) < step * 0.1){ lv.status = 'skip'; continue; }
-    const tx = await gridPlaceSingleOrder(lv.price, lv.isAsk, lv.notional, lv.clientOrderIndex);
-    if(tx !== null){
+    const clientOrderIdx = 100 + i; // unique per level, stored for cancellation
+    const result = await gridPlaceSingleOrder(lv.price, lv.isAsk, lv.notional, clientOrderIdx);
+    if(result !== null){
       lv.status = 'open';
-      lv.tx = tx; // store full tx response for cancellation
+      lv.marketIndex = result.marketIndex;
+      lv.clientOrderIdx = result.clientOrderIdx;
       placed++;
     } else {
       lv.status = 'error';

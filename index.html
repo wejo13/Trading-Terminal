@@ -1902,6 +1902,9 @@ async function loadStocksManual(){
 
   stocksLoading = false;
   render();
+  // same as loadAll's crypto path - keep the journal's ticker autocomplete in sync
+  // once stockData is populated, so stock tickers show up too, not just crypto.
+  if(typeof populateJournalTickerList === 'function') populateJournalTickerList();
 }
 
 function setMarket(mkt){
@@ -2360,25 +2363,28 @@ function setJournalDatetimeToNow(){
   el.value = formatted;
 }
 
-// Populates the ticker datalist from whatever's currently loaded in cryptoData, so
-// typing a ticker that's actively on the watchlist offers autocomplete - and, more
-// importantly, lets us look up that coin's live data for the checklist auto-prefill.
+// Populates the ticker datalist from whatever's currently loaded in cryptoData and
+// stockData combined, so typing a ticker that's actively on either watchlist offers
+// autocomplete - and, more importantly, lets us look up that symbol's live data for
+// the checklist auto-prefill regardless of which market it came from.
 function populateJournalTickerList(){
   const list = document.getElementById('jf-ticker-list');
   if(!list) return;
-  list.innerHTML = cryptoData.map(d => `<option value="${d.symbol}">`).join('');
+  const all = [...cryptoData, ...stockData];
+  list.innerHTML = all.map(d => `<option value="${d.symbol}">`).join('');
 }
 
-// When the user types/selects a ticker that matches a coin currently in cryptoData,
-// auto-prefill checks 1-3 (above EMA, not too far, swept liquidity) from that coin's
-// live computed data. The user can still override any of these manually afterward -
-// this only runs once per ticker change, it doesn't lock the checkboxes.
+// When the user types/selects a ticker that matches a symbol currently in cryptoData
+// or stockData, auto-prefill checks 1-3 (above EMA, not too far, swept liquidity)
+// from that symbol's live computed data, regardless of which market it came from.
+// The user can still override any of these manually afterward - this only runs
+// once per ticker change, it doesn't lock the checkboxes.
 function autofillJournalChecksFromTicker(){
   const tickerInput = document.getElementById('jf-ticker');
   const note = document.getElementById('jf-autofill-note');
   if(!tickerInput || !note) return;
   const ticker = tickerInput.value.trim().toUpperCase();
-  const match = cryptoData.find(d => d.symbol === ticker);
+  const match = cryptoData.find(d => d.symbol === ticker) || stockData.find(d => d.symbol === ticker);
 
   if(!match){
     note.textContent = ticker ? 'ticker not found in current watchlist - fill checklist manually' : '';

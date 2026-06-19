@@ -1465,6 +1465,9 @@
             <!-- Capital check banner -->
             <div class="grid-capital-check" id="bb-capital-check" style="display:none;"></div>
 
+            <!-- Static max loss -->
+            <div id="bb-max-loss-static" style="display:none;font-size:11px;color:var(--red);background:var(--red-dim);border:0.5px solid rgba(226,100,95,0.25);border-radius:6px;padding:7px 11px;line-height:1.5;margin-bottom:10px;"></div>
+
             <!-- Controls -->
             <div class="grid-controls">
               <button class="grid-btn grid-btn-start" id="bb-start-btn" onclick="bbBotStart()">
@@ -1492,8 +1495,16 @@
                 <div class="grid-stat-val" id="bbstat-price">—</div>
               </div>
               <div class="grid-stat">
-                <div class="grid-stat-label">Running P&amp;L</div>
+                <div class="grid-stat-label">Closed P&amp;L</div>
                 <div class="grid-stat-val" id="bbstat-pnl">—</div>
+              </div>
+              <div class="grid-stat">
+                <div class="grid-stat-label">Open P&amp;L</div>
+                <div class="grid-stat-val" id="bbstat-opnl">—</div>
+              </div>
+              <div class="grid-stat">
+                <div class="grid-stat-label">Max loss (live)</div>
+                <div class="grid-stat-val" id="bbstat-maxloss">—</div>
               </div>
               <div class="grid-stat">
                 <div class="grid-stat-label">Fills (session)</div>
@@ -5328,23 +5339,118 @@ function bbSetBadge(s){const el=document.getElementById('bb-status-badge');if(!e
 function bbSetLiveDot(s){const el=document.getElementById('bb-live-dot');if(!el)return;el.className='grid-live-dot '+s;}
 function bbShowControls(running,paused){document.getElementById('bb-start-btn').style.display=running?'none':'flex';document.getElementById('bb-pause-btn').style.display=running?'flex':'none';document.getElementById('bb-stop-btn').style.display=running?'flex':'none';const pb=document.getElementById('bb-pause-btn');if(pb)pb.innerHTML=paused?'<i class="ti ti-player-play"></i> Resume':'<i class="ti ti-player-pause"></i> Pause';}
 function bbUpdateStat(id,val,cls){const el=document.getElementById(id);if(!el)return;el.textContent=val;el.className='grid-stat-val'+(cls?' '+cls:'');}
-function bbCheckCapital(){const lower=parseFloat(document.getElementById('bb-lower').value),upper=parseFloat(document.getElementById('bb-upper').value),levels=parseInt(document.getElementById('bb-levels').value),notional=parseFloat(document.getElementById('bb-notional').value),leverage=parseFloat(document.getElementById('bb-leverage').value)||10,el=document.getElementById('bb-capital-check'),imr=1/leverage,imrEl=document.getElementById('bb-imr-display');if(imrEl)imrEl.textContent=(imr*100).toFixed(1)+'%';if(!el)return true;if(isNaN(lower)||isNaN(upper)||isNaN(levels)||isNaN(notional)||levels<2){el.style.display='none';return false;}if(upper<=lower){el.style.display='block';el.className='grid-capital-check warn';el.textContent='Upper bound must be above lower bound.';return false;}const totalNotional=levels*notional,required=totalNotional*imr*1.05;el.style.display='block';el.className='grid-capital-check ok';el.innerHTML=`Required margin: <strong>~$${required.toLocaleString('en-US',{maximumFractionDigits:2})}</strong> ($${totalNotional.toLocaleString()} notional x ${(imr*100).toFixed(1)}% IMR + 5% buffer)`;return true;}
+function bbCheckCapital(){const lower=parseFloat(document.getElementById('bb-lower').value),upper=parseFloat(document.getElementById('bb-upper').value),levels=parseInt(document.getElementById('bb-levels').value),notional=parseFloat(document.getElementById('bb-notional').value),leverage=parseFloat(document.getElementById('bb-leverage').value)||10,el=document.getElementById('bb-capital-check'),imr=1/leverage,imrEl=document.getElementById('bb-imr-display');if(imrEl)imrEl.textContent=(imr*100).toFixed(1)+'%';if(!el)return true;if(isNaN(lower)||isNaN(upper)||isNaN(levels)||isNaN(notional)||levels<2){el.style.display='none';return false;}if(upper<=lower){el.style.display='block';el.className='grid-capital-check warn';el.textContent='Upper bound must be above lower bound.';return false;}const totalNotional=levels*notional,required=totalNotional*imr*1.05;el.style.display='block';el.className='grid-capital-check ok';el.innerHTML=`Required margin: <strong>~$${required.toLocaleString('en-US',{maximumFractionDigits:2})}</strong> ($${totalNotional.toLocaleString()} notional x ${(imr*100).toFixed(1)}% IMR + 5% buffer)`;
+
+  // Static max loss: worst case if ALL levels fill and price hits SL boundary
+  // Lower SL at lower*0.995 — all buy levels would be losing
+  // Upper SL at upper*1.005 — all sell levels would be losing
+  // Worst case = all levels on the wrong side of the move
+  const slLow = lower * 0.995;
+  const slHigh = upper * 1.005;
+  const step = (upper - lower) / (levels - 1);
+  let worstLoss = 0;
+  for(let i = 0; i < levels; i++){
+    const lp = lower + i * step;
+    const isBuy = true; // assume all buy levels fill (downside scenario)
+    const btcQty = notional / lp;
+    worstLoss += (slLow - lp) * btcQty; // negative number
+  }
+  // also check upside scenario (all sells fill, price hits upper SL)
+  let worstLossUp = 0;
+  for(let i = 0; i < levels; i++){
+    const lp = lower + i * step;
+    const btcQty = notional / lp;
+    worstLossUp += (lp - slHigh) * btcQty; // negative number
+  }
+  const worstCase = Math.min(worstLoss, worstLossUp);
+  const mlEl = document.getElementById('bb-max-loss-static');
+  if(mlEl){
+    mlEl.style.display = 'block';
+    mlEl.innerHTML = `Worst-case loss at SL: <strong>~$${Math.abs(worstCase).toFixed(2)}</strong> <span style="opacity:0.7">(all levels fill, price hits bound ±0.5%)</span>`;
+  }
+  return true;}
 ['bb-lower','bb-upper','bb-levels','bb-notional','bb-leverage'].forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener('input',()=>{if(id==='bb-leverage'){const d=document.getElementById('bb-leverage-display');if(d)d.textContent=el.value+'x';}bbCheckCapital();});});
 async function bbSetLeverage(leverage){try{const r=await bbSignedPost('/v5/position/set-leverage',{category:BB_CATEGORY,symbol:BB_SYMBOL,buyLeverage:String(leverage),sellLeverage:String(leverage)});if(r.retCode!==0&&r.retCode!==110043)console.warn('[BBGrid] leverage error',r.retMsg);else console.log('[BBGrid] leverage set',leverage);}catch(e){console.warn('[BBGrid] leverage failed',e.message);}}
 async function bbPlaceOrder(price,isBuy,notional,clientOrderId){try{const qty=(notional/price).toFixed(3),body={category:BB_CATEGORY,symbol:BB_SYMBOL,side:isBuy?'Buy':'Sell',orderType:'Limit',qty,price:price.toFixed(2),timeInForce:'GTC',positionIdx:0,reduceOnly:false,closeOnTrigger:false,orderLinkId:clientOrderId};console.log('[BBGrid] placing',body);const r=await bbSignedPost('/v5/order/create',body);if(r.retCode!==0){console.error('[BBGrid] order error',r.retMsg);return null;}console.log('[BBGrid] order placed',r.result?.orderId);return r.result?.orderId||null;}catch(e){console.error('[BBGrid] order exception',e.message);return null;}}
 async function bbCancelOrder(orderId){try{const r=await bbSignedPost('/v5/order/cancel',{category:BB_CATEGORY,symbol:BB_SYMBOL,orderId});if(r.retCode!==0)console.warn('[BBGrid] cancel error',r.retMsg,orderId);return r.retCode===0;}catch(e){console.warn('[BBGrid] cancel exception',e.message);return false;}}
-async function bbCancelAllOrders(){try{const levels=bbState?bbState.levels||[]:[];for(const lv of levels){if(lv.status==='open'&&lv.orderId)await bbCancelOrder(lv.orderId);}if(bbState?.slLowerOrderId)await bbCancelOrder(bbState.slLowerOrderId);if(bbState?.slUpperOrderId)await bbCancelOrder(bbState.slUpperOrderId);}catch(e){console.warn('[BBGrid] cancelAll error',e.message);}}
+async function bbCancelAllOrders(){
+  try{
+    // Cancel all open orders on BTCUSDT in one call — catches everything including next-orders
+    const r=await bbSignedPost('/v5/order/cancel-all',{category:BB_CATEGORY,symbol:BB_SYMBOL});
+    console.log('[BBGrid] cancel-all result',r.retCode,r.retMsg);
+    // Also explicitly cancel SL stop orders (separate orderFilter)
+    const rSL=await bbSignedPost('/v5/order/cancel-all',{category:BB_CATEGORY,symbol:BB_SYMBOL,orderFilter:'StopOrder'});
+    console.log('[BBGrid] cancel-all StopOrders',rSL.retCode,rSL.retMsg);
+  }catch(e){console.warn('[BBGrid] cancelAll error',e.message);}
+}
 async function bbPlaceBoundSLs(){try{const{lower,upper,nLevels,notional}=bbState,midPrice=(lower+upper)/2,totalQty=((nLevels*notional)/midPrice).toFixed(3),slLow=(lower*0.995).toFixed(2),slHigh=(upper*1.005).toFixed(2);const rLow=await bbSignedPost('/v5/order/create',{category:BB_CATEGORY,symbol:BB_SYMBOL,side:'Sell',orderType:'Market',qty:totalQty,reduceOnly:true,positionIdx:0,triggerPrice:slLow,triggerDirection:2,orderFilter:'StopOrder',orderLinkId:'bbgrid_sl_lower'});if(rLow.retCode===0){bbState.slLowerOrderId=rLow.result?.orderId;console.log('[BBGrid] lower SL placed',bbState.slLowerOrderId);}else console.warn('[BBGrid] lower SL error',rLow.retMsg);const rHigh=await bbSignedPost('/v5/order/create',{category:BB_CATEGORY,symbol:BB_SYMBOL,side:'Buy',orderType:'Market',qty:totalQty,reduceOnly:true,positionIdx:0,triggerPrice:slHigh,triggerDirection:1,orderFilter:'StopOrder',orderLinkId:'bbgrid_sl_upper'});if(rHigh.retCode===0){bbState.slUpperOrderId=rHigh.result?.orderId;console.log('[BBGrid] upper SL placed',bbState.slUpperOrderId);}else console.warn('[BBGrid] upper SL error',rHigh.retMsg);bbSave();}catch(e){console.warn('[BBGrid] placeBoundSLs error',e.message);}}
-async function bbMarketClose(){try{const r=await bbSignedPost('/v5/order/create',{category:BB_CATEGORY,symbol:BB_SYMBOL,side:'Sell',orderType:'Market',qty:'0',reduceOnly:true,closeOnTrigger:true,orderLinkId:'bbgrid_close_'+Date.now()});console.log('[BBGrid] market close',r.retCode===0?'sent':r.retMsg);}catch(e){console.warn('[BBGrid] market close failed',e.message);}}
-async function bbHandleFill(ex){if(!bbState||!bbState.running||bbState.paused)return;const clientOrderId=ex.orderLinkId||'',fillPrice=parseFloat(ex.execPrice),fillQty=parseFloat(ex.execQty),fee=parseFloat(ex.execFee||0),isBuy=ex.side==='Buy';console.log('[BBGrid] fill — orderLinkId:',clientOrderId,'price:',fillPrice,'side:',ex.side,'fee:',fee);const ci=bbState.levels.findIndex(lv=>lv.counterClientOrderId===clientOrderId);if(ci!==-1){const lv=bbState.levels[ci];if(lv.fillPrice&&fillPrice){const grossPnl=lv.isBuy?(fillPrice-lv.fillPrice)*fillQty:(lv.fillPrice-fillPrice)*fillQty,netPnl=grossPnl-fee-(lv.fillFee||0);bbState.pnl=(bbState.pnl||0)+netPnl;console.log('[BBGrid] round trip PnL:',netPnl.toFixed(4));}lv.counterStatus='filled';bbState.fillCount=(bbState.fillCount||0)+1;bbSave();bbUpdateStat('bbstat-fills',bbState.fillCount);const pnl=bbState.pnl||0;bbUpdateStat('bbstat-pnl',(pnl>=0?'+':'')+'$'+pnl.toFixed(2),pnl>=0?'up':'down');bbRenderLevelTable();bbVizDirty=true;return;}const li=bbState.levels.findIndex(lv=>lv.clientOrderId===clientOrderId);if(li===-1){console.log('[BBGrid] fill unmatched',clientOrderId);return;}const level=bbState.levels[li];if(level.status==='filled')return;level.status='filled';level.fillPrice=fillPrice;level.fillFee=fee;level.isBuy=isBuy;bbSave();bbRenderLevelTable();bbVizDirty=true;const counterLi=isBuy?li+1:li-1;if(counterLi>=0&&counterLi<bbState.levels.length){const cLv=bbState.levels[counterLi],counterClientId=`bbgrid_counter_${li}_${Date.now()}`;level.counterClientOrderId=counterClientId;const orderId=await bbPlaceOrder(cLv.price,!isBuy,bbState.notional,counterClientId);if(orderId)console.log('[BBGrid] counter-order placed at',cLv.price,!isBuy?'buy':'sell');bbSave();bbUpdateStat('bbstat-orders',bbState.levels.filter(l=>l.status==='open').length);}}
-function bbStartPriceWs(){if(bbPriceWs&&bbPriceWs.readyState<2)return;bbPriceWs=new WebSocket(BB_WS_PUBLIC);bbPriceWs.onopen=()=>{bbPriceWs.send(JSON.stringify({op:'subscribe',args:['tickers.BTCUSDT']}));};bbPriceWs.onmessage=(ev)=>{try{const msg=JSON.parse(ev.data),d=msg.data;if(!d)return;const p=parseFloat(d.lastPrice||d.markPrice||0);if(p>1000){bbCurrentPrice=p;bbUpdateStat('bbstat-price','$'+p.toLocaleString('en-US',{maximumFractionDigits:1}));bbVizDirty=true;if(bbState&&bbState.running&&!bbState.paused){const slLow=bbState.lower*0.995,slHigh=bbState.upper*1.005;if(p<=slLow||p>=slHigh){console.warn('[BBGrid] SL triggered',p);bbToast('Stop-loss triggered',5000);bbBotStop(true);}}}}catch(e){};};bbPriceWs.onclose=()=>setTimeout(bbStartPriceWs,3000);bbPriceWs.onerror=()=>bbSetLiveDot('error');}
+async function bbMarketClose(){
+  try{
+    // Fetch actual position to get real size
+    const pos=await bbSignedGet('/v5/position/list',{category:BB_CATEGORY,symbol:BB_SYMBOL});
+    const positions=(pos.result?.list||[]).filter(p=>parseFloat(p.size)>0);
+    if(!positions.length){console.log('[BBGrid] no open position to close');return;}
+    for(const p of positions){
+      const side=p.side==='Buy'?'Sell':'Buy'; // close opposite
+      const r=await bbSignedPost('/v5/order/create',{
+        category:BB_CATEGORY,symbol:BB_SYMBOL,
+        side,orderType:'Market',qty:p.size,
+        reduceOnly:true,positionIdx:0,
+        orderLinkId:'bbgrid_close_'+Date.now()
+      });
+      console.log('[BBGrid] market close',side,p.size,r.retCode===0?'ok':r.retMsg);
+    }
+  }catch(e){console.warn('[BBGrid] market close failed',e.message);}
+}
+async function bbHandleFill(ex){if(!bbState||!bbState.running||bbState.paused)return;const clientOrderId=ex.orderLinkId||'',fillPrice=parseFloat(ex.execPrice),fillQty=parseFloat(ex.execQty),fee=parseFloat(ex.execFee||0),isBuy=ex.side==='Buy';console.log('[BBGrid] fill — orderLinkId:',clientOrderId,'price:',fillPrice,'side:',ex.side,'fee:',fee);const ci=bbState.levels.findIndex(lv=>lv.counterClientOrderId===clientOrderId);if(ci!==-1){const lv=bbState.levels[ci];if(lv.fillPrice&&fillPrice){const grossPnl=lv.isBuy?(fillPrice-lv.fillPrice)*fillQty:(lv.fillPrice-fillPrice)*fillQty,netPnl=grossPnl-fee-(lv.fillFee||0);bbState.pnl=(bbState.pnl||0)+netPnl;console.log('[BBGrid] round trip PnL:',netPnl.toFixed(4));}lv.counterStatus='filled';lv.counterFillPrice=fillPrice;lv.counterFillFee=fee;bbState.fillCount=(bbState.fillCount||0)+1;bbSave();bbUpdateStat('bbstat-fills',bbState.fillCount);const pnl=bbState.pnl||0;bbUpdateStat('bbstat-pnl',(pnl>=0?'+':'')+'$'+pnl.toFixed(2),pnl>=0?'up':'down');bbRenderLevelTable();bbVizDirty=true;
+    // Place next counter: the counter just filled, so now place the opposite back one level
+    // e.g. sell at level 4 filled → place buy back at level 3 (one level below)
+    // e.g. buy counter at level 2 filled → place sell back at level 3 (one level above)
+    const nextLi=isBuy?ci-1:ci+1; // opposite direction from the counter
+    if(nextLi>=0&&nextLi<bbState.levels.length){
+      const nLv=bbState.levels[nextLi];
+      const nextClientId=`bbgrid_next_${ci}_${Date.now()}`;
+      // reset the original level so it can be filled again
+      lv.status='open';lv.fillPrice=null;lv.fillFee=null;lv.counterClientOrderId=null;lv.counterStatus=null;lv.isBuy=isBuy; // this counter was !lv.isBuy, so next is isBuy
+      lv.clientOrderId=nextClientId;
+      const orderId=await bbPlaceOrder(nLv.price,isBuy,bbState.notional,nextClientId);
+      if(orderId){lv.orderId=orderId;console.log('[BBGrid] next order placed at',nLv.price,isBuy?'buy':'sell');}
+      bbSave();bbUpdateStat('bbstat-orders',bbState.levels.filter(l=>l.status==='open').length);
+    }
+    return;}const li=bbState.levels.findIndex(lv=>lv.clientOrderId===clientOrderId);if(li===-1){console.log('[BBGrid] fill unmatched',clientOrderId);return;}const level=bbState.levels[li];if(level.status==='filled')return;level.status='filled';level.fillPrice=fillPrice;level.fillFee=fee;level.isBuy=isBuy;bbSave();bbRenderLevelTable();bbVizDirty=true;const counterLi=isBuy?li+1:li-1;if(counterLi>=0&&counterLi<bbState.levels.length){const cLv=bbState.levels[counterLi],counterClientId=`bbgrid_counter_${li}_${Date.now()}`;level.counterClientOrderId=counterClientId;const orderId=await bbPlaceOrder(cLv.price,!isBuy,bbState.notional,counterClientId);if(orderId)console.log('[BBGrid] counter-order placed at',cLv.price,!isBuy?'buy':'sell');bbSave();bbUpdateStat('bbstat-orders',bbState.levels.filter(l=>l.status==='open').length);}}
+function bbStartPriceWs(){if(bbPriceWs&&bbPriceWs.readyState<2)return;bbPriceWs=new WebSocket(BB_WS_PUBLIC);bbPriceWs.onopen=()=>{bbPriceWs.send(JSON.stringify({op:'subscribe',args:['tickers.BTCUSDT']}));};bbPriceWs.onmessage=(ev)=>{try{const msg=JSON.parse(ev.data),d=msg.data;if(!d)return;const p=parseFloat(d.lastPrice||d.markPrice||0);if(p>1000){bbCurrentPrice=p;bbUpdateStat('bbstat-price','$'+p.toLocaleString('en-US',{maximumFractionDigits:1}));bbVizDirty=true;bbCalcOpenPnl();if(bbState&&bbState.running&&!bbState.paused){const slLow=bbState.lower*0.995,slHigh=bbState.upper*1.005;if(p<=slLow||p>=slHigh){console.warn('[BBGrid] SL triggered',p);bbToast('Stop-loss triggered',5000);bbBotStop(true);}}}}catch(e){};};bbPriceWs.onclose=()=>setTimeout(bbStartPriceWs,3000);bbPriceWs.onerror=()=>bbSetLiveDot('error');}
 function bbStopPriceWs(){if(bbPriceWs){try{bbPriceWs.close();}catch(e){}bbPriceWs=null;}}
 async function bbStartPrivateWs(){if(bbPrivateWs&&bbPrivateWs.readyState<2)return;const key=bbGetKey(),secret=bbGetSecret();if(!key||!secret)return;bbPrivateWs=new WebSocket(BB_WS_PRIVATE);bbPrivateWs.onopen=async()=>{const expires=Date.now()+10000,sig=await bbHmac(secret,'GET/realtime'+expires);bbPrivateWs.send(JSON.stringify({op:'auth',args:[key,expires,sig]}));};bbPrivateWs.onmessage=async(ev)=>{try{const msg=JSON.parse(ev.data);if(msg.op==='auth'&&msg.success){console.log('[BBGrid] private WS authenticated');bbPrivateWs.send(JSON.stringify({op:'subscribe',args:['execution']}));}if(msg.topic==='execution'&&msg.data){const execs=Array.isArray(msg.data)?msg.data:[msg.data];for(const ex of execs){console.log('[BBGrid] execution raw:',JSON.stringify(ex).slice(0,300));if(ex.symbol===BB_SYMBOL&&ex.execType==='Trade')await bbHandleFill(ex);}}}catch(e){console.warn('[BBGrid] private WS error',e);};};bbPrivateWs.onclose=()=>{if(bbState&&bbState.running)setTimeout(bbStartPrivateWs,3000);};bbPrivateWs.onerror=()=>bbSetLiveDot('error');}
 function bbStopPrivateWs(){if(bbPrivateWs){try{bbPrivateWs.close();}catch(e){}bbPrivateWs=null;}}
 async function bbBotStart(){const lower=parseFloat(document.getElementById('bb-lower').value),upper=parseFloat(document.getElementById('bb-upper').value),nLevels=parseInt(document.getElementById('bb-levels').value),notional=parseFloat(document.getElementById('bb-notional').value),leverage=parseFloat(document.getElementById('bb-leverage').value)||10;if(isNaN(lower)||isNaN(upper)||isNaN(nLevels)||isNaN(notional)){bbToast('Fill in all fields.');return;}if(upper<=lower){bbToast('Upper must be above lower.');return;}if(nLevels<2){bbToast('Need at least 2 levels.');return;}if(!bbGetKey()||!bbGetSecret()){bbToast('No Bybit API keys — set them in Settings.');return;}if(!bbCheckCapital())return;const price=bbCurrentPrice||(lower+upper)/2,step=(upper-lower)/(nLevels-1),levels=[];for(let i=0;i<nLevels;i++){const lp=lower+i*step,isBuy=lp<price,clientOrderId=`bbgrid_${Date.now()}_${i}`;levels.push({price:lp,isBuy,notional,status:'pending',clientOrderId});}bbState={lower,upper,nLevels,notional,leverage,levels,running:true,paused:false,startTime:Date.now(),fillCount:0,pnl:0};bbSave();bbSetBadge('running');bbSetLiveDot('live');bbShowControls(true,false);bbUpdateStat('bbstat-state','Setting leverage...');await bbSetLeverage(leverage);bbUpdateStat('bbstat-state','Placing orders...');bbUpdateStat('bbstat-orders','0');bbStartPriceWs();await bbStartPrivateWs();clearInterval(bbUptimeInterval);bbUptimeInterval=setInterval(bbTickUptime,1000);bbStartVizLoop();document.getElementById('bb-start-btn').disabled=true;let placed=0;for(let i=0;i<levels.length;i++){const lv=levels[i];if(Math.abs(lv.price-price)<step*0.1){lv.status='skip';continue;}const orderId=await bbPlaceOrder(lv.price,lv.isBuy,lv.notional,lv.clientOrderId);if(orderId){lv.status='open';lv.orderId=orderId;placed++;}else lv.status='error';bbState.levels[i]=lv;bbUpdateStat('bbstat-orders',placed);bbRenderLevelTable();bbVizDirty=true;await new Promise(r=>setTimeout(r,120));}bbSave();bbUpdateStat('bbstat-state','Running');document.getElementById('bb-start-btn').disabled=false;await bbPlaceBoundSLs();bbToast(`Grid bot started - ${placed} orders placed across ${nLevels} levels`);}
 function bbBotTogglePause(){if(!bbState)return;bbState.paused=!bbState.paused;bbSave();const paused=bbState.paused;bbSetBadge(paused?'paused':'running');bbSetLiveDot(paused?'paused':'live');bbShowControls(true,paused);bbUpdateStat('bbstat-state',paused?'Paused':'Running');bbToast(paused?'Bot paused':'Bot resumed');}
 async function bbBotStop(isSL){if(!bbState)return;bbState.running=false;bbState.paused=false;bbSave();bbSetBadge('stopped');bbSetLiveDot('error');bbShowControls(false,false);bbUpdateStat('bbstat-state',isSL?'SL Triggered':'Stopped');clearInterval(bbUptimeInterval);bbStopPriceWs();bbStopPrivateWs();await bbCancelAllOrders();await bbMarketClose();bbRenderLevelTable();bbVizDirty=true;bbToast(isSL?'SL triggered - orders cancelled & position closed.':'Bot stopped. Orders cancelled & position closed.');}
-function bbTickUptime(){if(!bbState||!bbState.startTime)return;const secs=Math.floor((Date.now()-bbState.startTime)/1000),h=Math.floor(secs/3600),m=Math.floor((secs%3600)/60),s=secs%60;bbUpdateStat('bbstat-uptime',h>0?`${h}h ${String(m).padStart(2,'0')}m`:`${m}m ${String(s).padStart(2,'0')}s`);}
+function bbTickUptime(){if(!bbState||!bbState.startTime)return;const secs=Math.floor((Date.now()-bbState.startTime)/1000),h=Math.floor(secs/3600),m=Math.floor((secs%3600)/60),s=secs%60;bbUpdateStat('bbstat-uptime',h>0?`${h}h ${String(m).padStart(2,'0')}m`:`${m}m ${String(s).padStart(2,'0')}s`);bbCalcOpenPnl();}
+
+function bbCalcOpenPnl(){
+  if(!bbCurrentPrice||!bbState||!bbState.levels)return;
+  let openPnl=0, maxLoss=0;
+  const slLow  = bbState.lower * 0.995;
+  const slHigh = bbState.upper * 1.005;
+  for(const lv of bbState.levels){
+    if(lv.status!=='filled'||!lv.fillPrice)continue;
+    if(lv.counterStatus==='filled')continue;
+    const btcQty=lv.notional/lv.fillPrice;
+    // Open P&L vs current price
+    const pnl=lv.isBuy?(bbCurrentPrice-lv.fillPrice)*btcQty:(lv.fillPrice-bbCurrentPrice)*btcQty;
+    openPnl+=pnl;
+    // Max loss: what this position would lose if price hits the relevant SL
+    const slPrice = lv.isBuy ? slLow : slHigh;
+    const lossPnl = lv.isBuy?(slPrice-lv.fillPrice)*btcQty:(lv.fillPrice-slPrice)*btcQty;
+    maxLoss+=lossPnl;
+  }
+  bbUpdateStat('bbstat-opnl',(openPnl>=0?'+':'')+'$'+openPnl.toFixed(2),openPnl>=0?'up':'down');
+  if(maxLoss<0){
+    bbUpdateStat('bbstat-maxloss','-$'+Math.abs(maxLoss).toFixed(2),'down');
+  } else {
+    bbUpdateStat('bbstat-maxloss','$'+maxLoss.toFixed(2));
+  }
+}
 function bbRenderLevelTable(){const tbody=document.getElementById('bb-level-tbody');if(!tbody)return;if(!bbState||!bbState.levels||!bbState.levels.length){tbody.innerHTML='<tr><td colspan="6" class="grid-table-empty">No grid active</td></tr>';return;}const rows=[...bbState.levels].reverse().map((lv,ri)=>{const i=bbState.levels.length-1-ri,side=lv.isBuy?'<span class="gl-side-buy">BUY</span>':'<span class="gl-side-sell">SELL</span>',statusMap={pending:'<span class="gl-status-idle">pending</span>',open:'<span class="gl-status-open">open</span>',filled:'<span class="gl-status-filled">filled</span>',error:'<span class="gl-status-sl">error</span>',skip:'<span class="gl-status-idle">-</span>'},fp=lv.fillPrice?'$'+lv.fillPrice.toLocaleString('en-US',{maximumFractionDigits:2}):'--';return `<tr><td>${i+1}</td><td>$${lv.price.toLocaleString('en-US',{maximumFractionDigits:0})}</td><td>${side}</td><td>$${lv.notional.toLocaleString('en-US',{maximumFractionDigits:0})}</td><td>${fp}</td><td>${statusMap[lv.status]||lv.status}</td></tr>`;});tbody.innerHTML=rows.join('');}
 function bbStartVizLoop(){if(bbVizRaf)cancelAnimationFrame(bbVizRaf);function loop(){if(bbVizDirty){bbDrawViz();bbVizDirty=false;}bbVizRaf=requestAnimationFrame(loop);}bbVizRaf=requestAnimationFrame(loop);}
 function bbDrawViz(){const canvas=document.getElementById('bb-viz-canvas'),empty=document.getElementById('bb-viz-empty');if(!canvas)return;if(!bbState||!bbState.levels||!bbState.levels.length){canvas.style.display='none';if(empty)empty.style.display='flex';return;}canvas.style.display='block';if(empty)empty.style.display='none';const wrap=document.getElementById('bb-viz-wrap'),W=wrap?wrap.clientWidth-28:500,nL=bbState.levels.length,rowH=Math.max(22,Math.min(40,Math.floor(440/nL))),H=nL*rowH+40;canvas.width=W;canvas.height=H;canvas.style.height=H+'px';const ctx=canvas.getContext('2d');ctx.clearRect(0,0,W,H);const lower=bbState.lower,upper=bbState.upper,range=upper-lower||1,padL=90,padR=20,barW=W-padL-padR,pY=p=>20+((upper-p)/range)*(H-40);ctx.fillStyle='rgba(40,215,200,0.04)';ctx.fillRect(padL,pY(upper),barW,pY(lower)-pY(upper));bbState.levels.forEach(lv=>{const y=pY(lv.price),color=lv.status==='filled'?'#d9a93f':lv.status==='open'?(lv.isBuy?'#3ddc97':'#e2645f'):lv.status==='error'?'#e2645f':'#3d3c44';ctx.beginPath();ctx.strokeStyle=color;ctx.lineWidth=lv.status==='open'?1.2:0.7;ctx.setLineDash(lv.status==='open'?[]:[4,4]);ctx.moveTo(padL,y);ctx.lineTo(W-padR,y);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=color;ctx.font='10px Inter,sans-serif';ctx.textAlign='right';ctx.fillText('$'+lv.price.toLocaleString('en-US',{maximumFractionDigits:0}),padL-5,y+3.5);if(lv.status==='open'){ctx.fillStyle=color;ctx.font='bold 9px Inter,sans-serif';ctx.textAlign='left';ctx.fillText(lv.isBuy?'▶':'◀',W-padR+3,y+3.5);}});if(bbCurrentPrice!==null&&bbCurrentPrice>=lower*0.9&&bbCurrentPrice<=upper*1.1){const y=pY(bbCurrentPrice);ctx.beginPath();ctx.strokeStyle='#d9a93f';ctx.lineWidth=2;ctx.setLineDash([6,3]);ctx.moveTo(padL,y);ctx.lineTo(W-padR,y);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#d9a93f';ctx.font='bold 11px Inter,sans-serif';ctx.textAlign='right';ctx.fillText('$'+bbCurrentPrice.toLocaleString('en-US',{maximumFractionDigits:0}),padL-5,y-4);ctx.beginPath();ctx.arc(padL+4,y,4,0,Math.PI*2);ctx.fillStyle='#d9a93f';ctx.fill();}[lower*0.995,upper*1.005].forEach(sl=>{const y=pY(sl);ctx.beginPath();ctx.strokeStyle='rgba(226,100,95,0.5)';ctx.lineWidth=1;ctx.setLineDash([2,4]);ctx.moveTo(padL,y);ctx.lineTo(W-padR,y);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='rgba(226,100,95,0.7)';ctx.font='9px Inter,sans-serif';ctx.textAlign='right';ctx.fillText('SL',padL-5,y+3);});}

@@ -6223,7 +6223,7 @@ async function aiAskOpinion(){
     var r=await fetch('https://royal-darkness-0ac6.wimneys.workers.dev/v1/messages',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:400,messages:[{role:'user',content:prompt}]})
+      body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:400,messages:[{role:'user',content:prompt}]})
     });
     var data=await r.json();
     txt.textContent=(data.content||[]).map(function(b){return b.text||'';}).join('')||'No response.';

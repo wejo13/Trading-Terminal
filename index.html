@@ -51,6 +51,16 @@
     --line-old:#2f2e35;
     --dim: var(--text-dim);
     --mono: var(--font);
+
+    /* ----- bg/border aliases used in new tabs -----
+       --bg1 = slightly lighter than bg (card surface)
+       --bg2 = input/field background (slightly lighter than card)
+       --border = standard hairline border colour
+       --border-bright = highlighted border for active states */
+    --bg1: var(--card);
+    --bg2: #2a2830;
+    --border: #2f2e35;
+    --border-bright: #4a4855;
   }
   *{box-sizing:border-box;}
   body{
@@ -1049,9 +1059,15 @@
     </div>
 
     <div class="sidebar-section-label">Research</div>
-    <div class="nav-item" data-tab="seasonality" onclick="switchTab('seasonality')">
-      <i class="ti ti-calendar-stats"></i>BTC seasonality
+    <div class="nav-item" data-tab="sea-news" onclick="switchTab('sea-news')">
+      <i class="ti ti-calendar-stats"></i>BTC Price Events Research
     </div>
+      <div class="nav-sub-item" data-tab="sea-news" onclick="switchTab('sea-news')">
+        <i class="ti ti-circle"></i>News Driven Events
+      </div>
+      <div class="nav-sub-item" data-tab="sea-fomc" onclick="switchTab('sea-fomc')">
+        <i class="ti ti-circle"></i>FOMC Analysis
+      </div>
 
     <div class="sidebar-footer">
       <div class="nav-item" data-tab="settings" onclick="switchTab('settings')">
@@ -1582,14 +1598,6 @@
 
       <div class="grid-toast" id="bbToast"></div>
 
-      <!-- BOT CONSOLE -->
-      <div style="margin:16px 0 0 0;padding:0 16px 16px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-          <span style="font-size:11px;font-weight:700;color:var(--text-faint);letter-spacing:.08em;text-transform:uppercase;">Bot Console</span>
-          <button onclick="bbConsoleClear()" style="font-size:10px;padding:2px 8px;background:var(--bg2);border:0.5px solid var(--border);border-radius:4px;color:var(--text-faint);cursor:pointer;">Clear</button>
-        </div>
-        <div id="bb-console" style="background:var(--bg1);border:0.5px solid var(--border);border-radius:8px;padding:8px 10px;height:220px;overflow-y:auto;font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.6;"></div>
-      </div>
     </div><!-- /tab-grid-bybit -->
 
     <!-- ===================== TRADE TAB ===================== -->
@@ -1913,11 +1921,102 @@
     </div>
 
     <!-- ===================== SEASONALITY TAB ===================== -->
-    <div class="tab-view" id="tab-seasonality" data-title="BTC Seasonality">
-      <div class="placeholder-tab">
-        <i class="ti ti-calendar-stats"></i>
-        <div class="ph-title">BTC seasonality - coming soon</div>
-        <div class="ph-sub">Per-day historical up/down probability across BTC's full price history.</div>
+    <div class="tab-view" id="tab-sea-news" data-title="News Driven Events">
+      <div style="padding:16px">
+
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center;" id="seaFilters">
+          <span style="font-size:11px;color:var(--text-faint)">Filter:</span>
+          <button class="sea-fb active" data-cat="all">All</button>
+          <button class="sea-fb" data-cat="geo">Geopolitical</button>
+          <button class="sea-fb" data-cat="macro">Macro / Fed</button>
+          <button class="sea-fb" data-cat="crypto">Crypto</button>
+          <button class="sea-fb" data-cat="pol">Political</button>
+        </div>
+
+        <div style="display:flex;flex-wrap:wrap;gap:14px;font-size:11px;color:var(--text-faint);margin-bottom:10px;">
+          <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#378ADD;margin-right:4px;vertical-align:middle;"></span>Geopolitical</span>
+          <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#BA7517;margin-right:4px;vertical-align:middle;"></span>Macro / Fed</span>
+          <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#3ddc97;margin-right:4px;vertical-align:middle;"></span>Crypto</span>
+          <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#9b8fef;margin-right:4px;vertical-align:middle;"></span>Political</span>
+          <span style="margin-left:auto;font-size:10px;">Hover dots for details</span>
+        </div>
+
+        <div style="position:relative;border-radius:6px;overflow:hidden;background:#0d0f10;margin-bottom:16px;" id="seaWrap">
+          <canvas id="seaC" style="display:block;width:100%;"></canvas>
+          <div id="seaTip" style="position:absolute;display:none;background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;padding:10px 12px;font-size:12px;max-width:220px;z-index:10;pointer-events:none;line-height:1.6;"></div>
+        </div>
+
+        <div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px;">Event breakdown</div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead><tr style="border-bottom:0.5px solid var(--border);">
+            <th style="text-align:left;padding:5px 6px;font-weight:500;color:var(--text-faint);font-size:11px;width:96px;">Date</th>
+            <th style="text-align:left;padding:5px 6px;font-weight:500;color:var(--text-faint);font-size:11px;">Event</th>
+            <th style="text-align:left;padding:5px 6px;font-weight:500;color:var(--text-faint);font-size:11px;width:52px;">Type</th>
+            <th style="text-align:left;padding:5px 6px;font-weight:500;color:var(--text-faint);font-size:11px;width:52px;">Pre</th>
+            <th style="text-align:left;padding:5px 6px;font-weight:500;color:var(--text-faint);font-size:11px;width:52px;">Post</th>
+            <th style="text-align:left;padding:5px 6px;font-weight:500;color:var(--text-faint);font-size:11px;width:110px;">Pattern</th>
+          </tr></thead>
+          <tbody id="seaTbody"></tbody>
+        </table>
+
+        <div style="margin-top:24px;padding:16px;background:var(--bg1);border-radius:8px;border:0.5px solid var(--border);">
+          <div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:14px;">Ask AI — Event Analysis</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px;">
+            <div>
+              <div style="font-size:11px;color:var(--text-faint);margin-bottom:5px;">Type of event</div>
+              <select id="aiEventType" style="width:100%;font-size:12px;padding:7px 10px;background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;color:var(--text);">
+                <option value="surprise_bearish">Surprise shock (bearish) — war, crash, ban</option>
+                <option value="surprise_bullish">Surprise shock (bullish) — unexpected deal</option>
+                <option value="known_bearish">Known event (bearish) — hike, tightening</option>
+                <option value="known_bullish">Known event (bullish) — cut, approval</option>
+                <option value="geopolitical">Geopolitical escalation</option>
+                <option value="geopolitical_de">Geopolitical de-escalation</option>
+                <option value="crypto_specific">Crypto-specific event</option>
+              </select>
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--text-faint);margin-bottom:5px;">Current price reaction</div>
+              <input id="aiPriceReaction" type="text" placeholder="e.g. -8% in 24h, price at $62K" style="width:100%;font-size:12px;padding:7px 10px;background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;color:var(--text);box-sizing:border-box;">
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--text-faint);margin-bottom:5px;">Event description</div>
+              <input id="aiEventDesc" type="text" placeholder="e.g. US sanctions on Iran" style="width:100%;font-size:12px;padding:7px 10px;background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;color:var(--text);box-sizing:border-box;">
+            </div>
+          </div>
+          <button onclick="aiAskOpinion()" style="font-size:12px;padding:8px 18px;background:var(--teal);color:#000;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Ask AI for opinion</button>
+          <div id="aiResult" style="margin-top:14px;display:none;">
+            <div style="font-size:11px;color:var(--text-faint);margin-bottom:6px;">AI OPINION</div>
+            <div id="aiResultText" style="font-size:13px;color:var(--text);line-height:1.7;white-space:pre-wrap;background:var(--bg2);padding:12px 14px;border-radius:6px;border:0.5px solid var(--border);"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="tab-view" id="tab-sea-fomc" data-title="FOMC Analysis">
+      <div style="padding:16px">
+        <div style="font-size:12px;color:var(--text-faint);line-height:1.7;margin-bottom:16px;max-width:640px;">
+          The Fed meets 8× per year. BTC dropped after <b>8 of 9</b> FOMC meetings in 2025 with an avg decline of ~11% in the following week — regardless of whether the Fed cut, held, or hiked. The pattern: leveraged longs build pre-meeting, open interest peaks, then the decision triggers a deleveraging cascade.
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;" id="fomcStats"></div>
+        <div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px;">Per-meeting breakdown (2022–2026)</div>
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:12px;" id="fomcTable">
+            <thead><tr style="border-bottom:0.5px solid var(--border);">
+              <th style="text-align:left;padding:5px 8px;font-weight:500;color:var(--text-faint);font-size:11px;white-space:nowrap;">Date</th>
+              <th style="text-align:left;padding:5px 8px;font-weight:500;color:var(--text-faint);font-size:11px;">Decision</th>
+              <th style="text-align:right;padding:5px 8px;font-weight:500;color:var(--text-faint);font-size:11px;">BTC</th>
+              <th style="text-align:right;padding:5px 8px;font-weight:500;color:var(--text-faint);font-size:11px;white-space:nowrap;">10d pre</th>
+              <th style="text-align:right;padding:5px 8px;font-weight:500;color:var(--text-faint);font-size:11px;white-space:nowrap;">3d post</th>
+              <th style="text-align:left;padding:5px 8px;font-weight:500;color:var(--text-faint);font-size:11px;">Note</th>
+            </tr></thead>
+            <tbody id="fomcTbody"></tbody>
+          </table>
+        </div>
+        <div style="margin-top:20px;padding:14px;background:var(--bg1);border-radius:8px;border:0.5px solid var(--border);">
+          <div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px;">Pattern Analysis</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:12px;" id="fomcPatterns"></div>
+        </div>
       </div>
     </div>
 
@@ -4521,36 +4620,6 @@ const _origSwitchTab = window.switchTab;
 journalRender();
 
 // ===================== END JOURNAL ENGINE =====================
-
-// Autofill Trade tab checklist from live watchlist data when ticker is typed.
-// Checks 1 (above EMA) and 2 (not too far) are derived from distPct + side.
-// Check 3 (swept liquidity) fires if any timeframe has a recent sweep.
-// Checks 4-6 require manual assessment — left untouched.
-function autofillJournalChecksFromTicker(){
-  const ticker = document.getElementById('jf-ticker').value.trim().toUpperCase();
-  const noteEl = document.getElementById('jf-autofill-note');
-  if(!ticker){ if(noteEl) noteEl.style.display='none'; return; }
-  const match = (typeof cryptoData!=='undefined'?cryptoData:[]).concat(typeof stockData!=='undefined'?stockData:[])
-    .find(d => d.symbol === ticker);
-  if(!match){ if(noteEl) noteEl.style.display='none'; return; }
-
-  const aboveEma = match.distPct != null && match.distPct >= 0;
-  const notTooFar = match.distPct != null && Math.abs(match.distPct) <= 5;
-  const swept = match.swept && match.swept.length > 0;
-
-  const c1 = document.getElementById('jf-check-1');
-  const c2 = document.getElementById('jf-check-2');
-  const c3 = document.getElementById('jf-check-3');
-  if(c1) c1.checked = aboveEma;
-  if(c2) c2.checked = notTooFar;
-  if(c3) c3.checked = swept;
-
-  if(noteEl){
-    noteEl.textContent = `Auto-filled from watchlist: ${ticker} ${aboveEma?'above':'below'} EMA · dist ${match.distPct!=null?(match.distPct>=0?'+':'')+match.distPct.toFixed(1)+'%':'?'} · swept: ${swept?'yes':'no'}`;
-    noteEl.style.display = 'block';
-  }
-}
-
 // wire ticker autocomplete and direction tag on page load
 const _tickerInput = document.getElementById('jf-ticker');
 if(_tickerInput) _tickerInput.addEventListener('input', autofillJournalChecksFromTicker);
@@ -5467,178 +5536,165 @@ async function bbHandleFill(ex){
   const fillQty=parseFloat(ex.execQty);
   const fee=parseFloat(ex.execFee||0);
   const isBuy=ex.side==='Buy';
-  console.log('[BBGrid] fill — orderLinkId:',clientOrderId,'price:',fillPrice,'side:',ex.side,'fee:',fee);
+  console.log('[BBGrid] fill — orderLinkId:',clientOrderId,'price:',fillPrice,'side:',ex.side,'qty:',fillQty,'fee:',fee);
 
-  // Find the level that owns this clientOrderId
-  // A level tracks: clientOrderId (current open order), prevFillPrice/prevFillFee (last fill on this level)
-  const li=bbState.levels.findIndex(lv=>lv.clientOrderId===clientOrderId);
-  if(li===-1){console.log('[BBGrid] fill unmatched — ignoring',clientOrderId);return;}
+  // Init net position tracker if missing
+  if(!bbState.netPos) bbState.netPos={qty:0,side:null,totalCost:0,totalFees:0,counterOrderId:null,counterClientId:null};
+  const np=bbState.netPos;
 
-  const level=bbState.levels[li];
-
-  // If this level has a previous fill, this is the closing leg — book P&L
-  if(level.prevFillPrice!=null){
-    const grossPnl=level.prevIsBuy
-      ?(fillPrice-level.prevFillPrice)*fillQty
-      :(level.prevFillPrice-fillPrice)*fillQty;
-    const netPnl=grossPnl-fee-(level.prevFillFee||0);
+  // ── COUNTER ORDER FILL (cycle complete) ───────────────────────────────────
+  if(clientOrderId===np.counterClientId){
+    console.log('[BBGrid] counter fill — cycle complete. qty:',fillQty,'price:',fillPrice);
+    // Book P&L: net position was long/short, counter closed it
+    const grossPnl=np.side==='Buy'
+      ?(fillPrice-np.totalCost/np.qty)*np.qty
+      :(np.totalCost/np.qty-fillPrice)*np.qty;
+    const netPnl=grossPnl-fee-np.totalFees;
     bbState.pnl=(bbState.pnl||0)+netPnl;
     bbState.fillCount=(bbState.fillCount||0)+1;
     console.log('[BBGrid] round trip PnL:',netPnl.toFixed(4),'cumul:',bbState.pnl.toFixed(4));
-    bbSave();
+    bbLifetimeAddTrade(netPnl);
     bbUpdateStat('bbstat-fills',bbState.fillCount);
     const pnl=bbState.pnl||0;
     bbUpdateStat('bbstat-pnl',(pnl>=0?'+':'')+'$'+pnl.toFixed(2),pnl>=0?'up':'down');
-    // Clear prev fill — ready for next cycle
-    level.prevFillPrice=null;level.prevFillFee=null;level.prevIsBuy=null;
-    level.status='open';level.fillPrice=fillPrice; // show last fill price in table
-    bbRenderLevelTable();bbVizDirty=true;
-    // Place fresh order back on THIS level using the fixed original side (set at bot start)
-    const nextClientId=`bbgrid_r_${li}_${Date.now()}`;
-    level.clientOrderId=nextClientId;
-    const origIsBuy=level.origIsBuy;
-    const orderId=await bbPlaceOrder(level.price,origIsBuy,bbState.notional,nextClientId);
-    if(orderId){level.orderId=orderId;console.log('[BBGrid] cycle restart — fresh order at',level.price,origIsBuy?'buy':'sell');}
-    // Also restore the adjacent level's order if it was left orderless by the counter placement
-    const adjLi=origIsBuy?li+1:li-1;
-    if(adjLi>=0&&adjLi<bbState.levels.length){
-      const adjLv=bbState.levels[adjLi];
-      if(!adjLv.orderId&&adjLv.status!=='waiting'&&adjLv.status!=='filled'){
-        const adjClientId=`bbgrid_r_${adjLi}_${Date.now()}`;
-        adjLv.clientOrderId=adjClientId;
-        const adjOrderId=await bbPlaceOrder(adjLv.price,adjLv.origIsBuy,bbState.notional,adjClientId);
-        if(adjOrderId){adjLv.orderId=adjOrderId;adjLv.status='open';console.log('[BBGrid] restored adjacent level',adjLi,'at',adjLv.price);}
+    // Clear net position
+    bbState.netPos={qty:0,side:null,totalCost:0,totalFees:0,counterOrderId:null,counterClientId:null};
+    // Mark all levels as open (reset filled/waiting states)
+    bbState.levels.forEach(lv=>{if(lv.status==='filled'||lv.status==='waiting')lv.status='open';});
+    bbSave();bbRenderLevelTable();bbVizDirty=true;
+    // ── CYCLE RESTART: wait 10s, fetch price, redeploy grid ──────────────────
+    console.log('[BBGrid] cycle complete — waiting 10s before redeploying grid...');
+    bbUpdateStat('bbstat-state','Cycle reset — waiting 10s...');
+    await new Promise(r=>setTimeout(r,10000));
+    if(!bbState||!bbState.running)return; // bot was stopped during wait
+    // Fetch fresh price
+    let currentPrice=bbCurrentPrice;
+    try{
+      const ticker=await bbSignedGet('/v5/market/tickers',{category:BB_CATEGORY,symbol:BB_SYMBOL});
+      const tp=parseFloat(ticker?.result?.list?.[0]?.lastPrice||0);
+      if(tp>1000)currentPrice=tp;
+    }catch(e){console.warn('[BBGrid] price fetch failed, using WS price');}
+    console.log('[BBGrid] redeploying grid at price',currentPrice);
+    bbUpdateStat('bbstat-state','Redeploying grid...');
+    const THRESHOLD=50; // $50 buffer — skip levels too close to current price
+    let placed=0;
+    for(let i=0;i<bbState.levels.length;i++){
+      const lv=bbState.levels[i];
+      const diff=currentPrice-lv.price;
+      const shouldBeBuy=diff>0; // level is below price → buy
+      const shouldBeSell=diff<0; // level is above price → sell
+      if(Math.abs(diff)<THRESHOLD){
+        lv.status='skip';
+        console.log('[BBGrid] skipping level',i,'at',lv.price,'— within $'+THRESHOLD+' of price');
+        continue;
       }
+      const clientId=`bbgrid_${shouldBeBuy?'b':'s'}_${i}_${Date.now()}`;
+      lv.isBuy=shouldBeBuy;
+      lv.clientOrderId=clientId;
+      lv.status='pending';
+      const orderId=await bbPlaceOrder(lv.price,shouldBeBuy,bbState.notional,clientId);
+      if(orderId){lv.orderId=orderId;lv.status='open';placed++;}
+      else lv.status='error';
+      bbState.levels[i]=lv;
+      bbRenderLevelTable();bbVizDirty=true;
+      await new Promise(r=>setTimeout(r,120));
     }
-    bbSave();bbUpdateStat('bbstat-orders',bbState.levels.filter(l=>l.status==='open').length);
+    bbSave();
+    bbUpdateStat('bbstat-orders',placed);
+    bbUpdateStat('bbstat-state','Running');
+    console.log('[BBGrid] grid redeployed —',placed,'orders placed');
     return;
   }
 
-  // First fill on this level — mark it and place counter on adjacent level
+  // ── GRID LEVEL FILL (opening leg) ─────────────────────────────────────────
+  const li=bbState.levels.findIndex(lv=>lv.clientOrderId===clientOrderId);
+  if(li===-1){console.log('[BBGrid] fill unmatched — ignoring',clientOrderId);return;}
+  const level=bbState.levels[li];
   level.status='filled';
   level.fillPrice=fillPrice;
-  level.prevFillPrice=fillPrice;
-  level.prevFillFee=fee;
-  level.prevIsBuy=isBuy;
   level.isBuy=isBuy;
-  bbSave();bbRenderLevelTable();bbVizDirty=true;
+  bbRenderLevelTable();bbVizDirty=true;
 
-  // Counter-order on the adjacent level
-  const counterLi=isBuy?li+1:li-1;
-  if(counterLi>=0&&counterLi<bbState.levels.length){
-    const cLv=bbState.levels[counterLi];
-    // Cancel the existing order on the adjacent level before placing the counter there,
-    // otherwise two orders sit at the same price and the second fill goes unmatched.
-    if(cLv.orderId){
-      console.log('[BBGrid] cancelling adjacent level order before counter',cLv.orderId);
-      await bbCancelOrder(cLv.orderId);
-      cLv.orderId=null;
-      cLv.status='idle';
-    }
-    const counterClientId=`bbgrid_c_${li}_${Date.now()}`;
-    // Register the counter on THIS level so when it fills we know which level to book P&L on
-    level.clientOrderId=counterClientId;
-    level.status='waiting'; // waiting for counter
-    const orderId=await bbPlaceOrder(cLv.price,!isBuy,bbState.notional,counterClientId);
-    if(orderId){level.orderId=orderId;console.log('[BBGrid] counter-order placed at',cLv.price,!isBuy?'buy':'sell');}
-    bbSave();bbUpdateStat('bbstat-orders',bbState.levels.filter(l=>l.status==='open'||l.status==='waiting').length);
+  // Update net position
+  if(np.side===null||np.side===(isBuy?'Buy':'Sell')){
+    // Accumulate in same direction
+    np.side=isBuy?'Buy':'Sell';
+    np.qty+=fillQty;
+    np.totalCost+=fillPrice*fillQty;
+    np.totalFees+=fee;
+  } else {
+    // Opposite fill (shouldn't happen in normal grid flow but handle it)
+    np.qty-=fillQty;
+    np.totalCost-=fillPrice*fillQty;
+    np.totalFees+=fee;
+    if(np.qty<=0){np.qty=0;np.side=null;np.totalCost=0;np.totalFees=0;}
   }
+  const avgEntry=np.qty>0?np.totalCost/np.qty:0;
+  console.log('[BBGrid] net position — side:',np.side,'qty:',np.qty.toFixed(3),'avg entry:',avgEntry.toFixed(2));
+
+  // Cancel existing counter order if any
+  if(np.counterOrderId){
+    console.log('[BBGrid] cancelling previous counter order',np.counterOrderId);
+    await bbCancelOrder(np.counterOrderId);
+    np.counterOrderId=null;np.counterClientId=null;
+  }
+
+  // Place single counter order for full net qty
+  const counterSide=np.side==='Buy'?'Sell':'Buy';
+  // Counter price: next level beyond the outermost filled level
+  const filledLevels=bbState.levels.filter(lv=>lv.status==='filled'||lv.status==='waiting');
+  let counterPrice;
+  if(np.side==='Buy'){
+    // Long position — counter sell goes one level above highest filled buy
+    const maxFilledIdx=Math.max(...filledLevels.map(lv=>bbState.levels.indexOf(lv)));
+    const counterIdx=Math.min(maxFilledIdx+1,bbState.levels.length-1);
+    counterPrice=bbState.levels[counterIdx].price;
+  } else {
+    // Short position — counter buy goes one level below lowest filled sell
+    const minFilledIdx=Math.min(...filledLevels.map(lv=>bbState.levels.indexOf(lv)));
+    const counterIdx=Math.max(minFilledIdx-1,0);
+    counterPrice=bbState.levels[counterIdx].price;
+  }
+  const counterQty=np.qty.toFixed(3);
+  const counterClientId=`bbgrid_counter_${Date.now()}`;
+  np.counterClientId=counterClientId;
+  // Place counter as reduceOnly to close net position
+  const counterBody={category:BB_CATEGORY,symbol:BB_SYMBOL,side:counterSide,orderType:'Limit',qty:counterQty,price:counterPrice.toFixed(2),timeInForce:'GTC',positionIdx:0,reduceOnly:true,closeOnTrigger:false,orderLinkId:counterClientId};
+  console.log('[BBGrid] placing counter order',counterBody);
+  try{
+    const r=await bbSignedPost('/v5/order/create',counterBody);
+    if(r.retCode!==0){console.error('[BBGrid] counter order error',r.retMsg);np.counterClientId=null;}
+    else{np.counterOrderId=r.result?.orderId||null;console.log('[BBGrid] counter order placed',np.counterOrderId,'qty:',counterQty,'price:',counterPrice,'side:',counterSide);}
+  }catch(e){console.error('[BBGrid] counter order exception',e.message);np.counterClientId=null;}
+  bbSave();bbUpdateStat('bbstat-orders',bbState.levels.filter(l=>l.status==='open').length);
 }
 function bbStartPriceWs(){if(bbPriceWs&&bbPriceWs.readyState<2)return;bbPriceWs=new WebSocket(BB_WS_PUBLIC);bbPriceWs.onopen=()=>{bbPriceWs.send(JSON.stringify({op:'subscribe',args:['tickers.BTCUSDT']}));};bbPriceWs.onmessage=(ev)=>{try{const msg=JSON.parse(ev.data),d=msg.data;if(!d)return;const p=parseFloat(d.lastPrice||d.markPrice||0);if(p>1000){bbCurrentPrice=p;bbUpdateStat('bbstat-price','$'+p.toLocaleString('en-US',{maximumFractionDigits:1}));bbVizDirty=true;bbCalcOpenPnl();if(bbState&&bbState.running&&!bbState.paused){const slLow=bbState.lower*0.995,slHigh=bbState.upper*1.005;if(p<=slLow||p>=slHigh){console.warn('[BBGrid] SL triggered',p);bbToast('Stop-loss triggered',5000);bbBotStop(true);}}}}catch(e){};};bbPriceWs.onclose=()=>setTimeout(bbStartPriceWs,3000);bbPriceWs.onerror=()=>bbSetLiveDot('error');}
 function bbStopPriceWs(){if(bbPriceWs){try{bbPriceWs.close();}catch(e){}bbPriceWs=null;}}
 async function bbStartPrivateWs(){if(bbPrivateWs&&bbPrivateWs.readyState<2)return;const key=bbGetKey(),secret=bbGetSecret();if(!key||!secret)return;bbPrivateWs=new WebSocket(BB_WS_PRIVATE);bbPrivateWs.onopen=async()=>{const expires=Date.now()+10000,sig=await bbHmac(secret,'GET/realtime'+expires);bbPrivateWs.send(JSON.stringify({op:'auth',args:[key,expires,sig]}));};bbPrivateWs.onmessage=async(ev)=>{try{const msg=JSON.parse(ev.data);if(msg.op==='auth'&&msg.success){console.log('[BBGrid] private WS authenticated');bbPrivateWs.send(JSON.stringify({op:'subscribe',args:['execution']}));}if(msg.topic==='execution'&&msg.data){const execs=Array.isArray(msg.data)?msg.data:[msg.data];for(const ex of execs){console.log('[BBGrid] execution raw:',JSON.stringify(ex).slice(0,300));if(ex.symbol===BB_SYMBOL&&ex.execType==='Trade')await bbHandleFill(ex);}}}catch(e){console.warn('[BBGrid] private WS error',e);};};bbPrivateWs.onclose=()=>{if(bbState&&bbState.running)setTimeout(bbStartPrivateWs,3000);};bbPrivateWs.onerror=()=>bbSetLiveDot('error');}
 function bbStopPrivateWs(){if(bbPrivateWs){try{bbPrivateWs.close();}catch(e){}bbPrivateWs=null;}}
-async function bbBotStart(){const lower=parseFloat(document.getElementById('bb-lower').value),upper=parseFloat(document.getElementById('bb-upper').value),nLevels=parseInt(document.getElementById('bb-levels').value),notional=parseFloat(document.getElementById('bb-notional').value),leverage=parseFloat(document.getElementById('bb-leverage').value)||10;if(isNaN(lower)||isNaN(upper)||isNaN(nLevels)||isNaN(notional)){bbToast('Fill in all fields.');return;}if(upper<=lower){bbToast('Upper must be above lower.');return;}if(nLevels<2){bbToast('Need at least 2 levels.');return;}if(!bbGetKey()||!bbGetSecret()){bbToast('No Bybit API keys — set them in Settings.');return;}bbCheckCapital();const price=bbCurrentPrice||(lower+upper)/2,step=(upper-lower)/(nLevels-1),levels=[];for(let i=0;i<nLevels;i++){const lp=lower+i*step,isBuy=lp<price,clientOrderId=`bbgrid_${Date.now()}_${i}`;levels.push({price:lp,isBuy,origIsBuy:isBuy,notional,status:'pending',clientOrderId});}bbState={lower,upper,nLevels,notional,leverage,levels,running:true,paused:false,startTime:Date.now(),fillCount:0,pnl:0};bbSave();bbSetBadge('running');bbSetLiveDot('live');bbShowControls(true,false);bbUpdateStat('bbstat-state','Setting leverage...');await bbSetLeverage(leverage);bbUpdateStat('bbstat-state','Placing orders...');bbUpdateStat('bbstat-orders','0');bbStartPriceWs();await bbStartPrivateWs();clearInterval(bbUptimeInterval);bbUptimeInterval=setInterval(bbTickUptime,1000);bbStartVizLoop();document.getElementById('bb-start-btn').disabled=true;let placed=0;for(let i=0;i<levels.length;i++){const lv=levels[i];if(Math.abs(lv.price-price)<step*0.1){lv.status='skip';continue;}const orderId=await bbPlaceOrder(lv.price,lv.isBuy,lv.notional,lv.clientOrderId);if(orderId){lv.status='open';lv.orderId=orderId;placed++;}else lv.status='error';bbState.levels[i]=lv;bbUpdateStat('bbstat-orders',placed);bbRenderLevelTable();bbVizDirty=true;await new Promise(r=>setTimeout(r,120));}bbClosedPnlBaseline=null;bbSave();bbUpdateStat('bbstat-state','Running');document.getElementById('bb-start-btn').disabled=false;bbStartPnlPoller();await bbPlaceBoundSLs();bbToast(`Grid bot started - ${placed} orders placed across ${nLevels} levels`);}
+async function bbBotStart(){const lower=parseFloat(document.getElementById('bb-lower').value),upper=parseFloat(document.getElementById('bb-upper').value),nLevels=parseInt(document.getElementById('bb-levels').value),notional=parseFloat(document.getElementById('bb-notional').value),leverage=parseFloat(document.getElementById('bb-leverage').value)||10;if(isNaN(lower)||isNaN(upper)||isNaN(nLevels)||isNaN(notional)){bbToast('Fill in all fields.');return;}if(upper<=lower){bbToast('Upper must be above lower.');return;}if(nLevels<2){bbToast('Need at least 2 levels.');return;}if(!bbGetKey()||!bbGetSecret()){bbToast('No Bybit API keys — set them in Settings.');return;}bbCheckCapital();const price=bbCurrentPrice||(lower+upper)/2,step=(upper-lower)/(nLevels-1),levels=[];for(let i=0;i<nLevels;i++){const lp=lower+i*step,isBuy=lp<price,clientOrderId=`bbgrid_${Date.now()}_${i}`;levels.push({price:lp,isBuy,notional,status:'pending',clientOrderId});}bbState={lower,upper,nLevels,notional,leverage,levels,running:true,paused:false,startTime:Date.now(),fillCount:0,pnl:0,netPos:{qty:0,side:null,totalCost:0,totalFees:0,counterOrderId:null,counterClientId:null}};bbSave();bbSetBadge('running');bbSetLiveDot('live');bbShowControls(true,false);bbUpdateStat('bbstat-state','Setting leverage...');await bbSetLeverage(leverage);bbUpdateStat('bbstat-state','Placing orders...');bbUpdateStat('bbstat-orders','0');bbStartPriceWs();await bbStartPrivateWs();clearInterval(bbUptimeInterval);bbUptimeInterval=setInterval(bbTickUptime,1000);bbStartVizLoop();document.getElementById('bb-start-btn').disabled=true;let placed=0;for(let i=0;i<levels.length;i++){const lv=levels[i];if(Math.abs(lv.price-price)<step*0.1){lv.status='skip';continue;}const orderId=await bbPlaceOrder(lv.price,lv.isBuy,lv.notional,lv.clientOrderId);if(orderId){lv.status='open';lv.orderId=orderId;placed++;}else lv.status='error';bbState.levels[i]=lv;bbUpdateStat('bbstat-orders',placed);bbRenderLevelTable();bbVizDirty=true;await new Promise(r=>setTimeout(r,120));}bbSave();bbUpdateStat('bbstat-state','Running');document.getElementById('bb-start-btn').disabled=false;await bbPlaceBoundSLs();bbToast(`Grid bot started - ${placed} orders placed across ${nLevels} levels`);}
 function bbBotTogglePause(){if(!bbState)return;bbState.paused=!bbState.paused;bbSave();const paused=bbState.paused;bbSetBadge(paused?'paused':'running');bbSetLiveDot(paused?'paused':'live');bbShowControls(true,paused);bbUpdateStat('bbstat-state',paused?'Paused':'Running');bbToast(paused?'Bot paused':'Bot resumed');}
-async function bbBotStop(isSL){if(!bbState)return;bbState.running=false;bbState.paused=false;bbSave();bbSetBadge('stopped');bbSetLiveDot('error');bbShowControls(false,false);bbUpdateStat('bbstat-state',isSL?'SL Triggered':'Stopped');clearInterval(bbUptimeInterval);bbStopPriceWs();bbStopPrivateWs();bbStopPnlPoller();await bbCancelAllOrders();await bbMarketClose();bbRenderLevelTable();bbVizDirty=true;bbToast(isSL?'SL triggered - orders cancelled & position closed.':'Bot stopped. Orders cancelled & position closed.');}
+async function bbBotStop(isSL){if(!bbState)return;bbState.running=false;bbState.paused=false;bbSave();bbSetBadge('stopped');bbSetLiveDot('error');bbShowControls(false,false);bbUpdateStat('bbstat-state',isSL?'SL Triggered':'Stopped');clearInterval(bbUptimeInterval);bbStopPriceWs();bbStopPrivateWs();await bbCancelAllOrders();await bbMarketClose();bbRenderLevelTable();bbVizDirty=true;bbToast(isSL?'SL triggered - orders cancelled & position closed.':'Bot stopped. Orders cancelled & position closed.');}
 function bbTickUptime(){if(!bbState||!bbState.startTime)return;const secs=Math.floor((Date.now()-bbState.startTime)/1000),h=Math.floor(secs/3600),m=Math.floor((secs%3600)/60),s=secs%60;bbUpdateStat('bbstat-uptime',h>0?`${h}h ${String(m).padStart(2,'0')}m`:`${m}m ${String(s).padStart(2,'0')}s`);bbCalcOpenPnl();}
 
-// ---- Live P&L from Bybit (replaces per-level estimate) ----
-// Open P&L    -> /v5/position/list unrealisedPnl (real, includes funding)
-// Closed P&L  -> cumRealisedPnl minus baseline snapshotted at bot start
-let bbPnlInterval = null;
-let bbClosedPnlBaseline = null;
-
-async function bbFetchLivePnl(){
-  if(!bbState||!bbState.running||bbState.paused)return;
-  try{
-    const pos = await bbSignedGet('/v5/position/list',{category:BB_CATEGORY,symbol:BB_SYMBOL});
-    if(pos.retCode!==0)return;
-    const p = pos.result?.list?.[0];
-    if(!p)return;
-    const uPnl = parseFloat(p.unrealisedPnl||0);
-    const cumPnl = parseFloat(p.cumRealisedPnl||0);
-    // Open P&L
-    bbUpdateStat('bbstat-opnl',(uPnl>=0?'+':'')+'$'+uPnl.toFixed(2),uPnl>=0?'up':'down');
-    // Closed P&L session = delta from baseline
-    if(bbClosedPnlBaseline===null) bbClosedPnlBaseline=cumPnl;
-    const sessionClosed = cumPnl - bbClosedPnlBaseline;
-    bbUpdateStat('bbstat-pnl',(sessionClosed>=0?'+':'')+'$'+sessionClosed.toFixed(2),sessionClosed>=0?'up':'down');
-    bbState.pnl = sessionClosed;
-    bbSave();
-  }catch(e){
-    console.warn('[BBGrid] bbFetchLivePnl error',e.message);
-  }
-}
-
-function bbStartPnlPoller(){
-  bbStopPnlPoller();
-  bbFetchLivePnl();
-  bbPnlInterval = setInterval(bbFetchLivePnl, 5000);
-}
-function bbStopPnlPoller(){
-  if(bbPnlInterval){ clearInterval(bbPnlInterval); bbPnlInterval=null; }
-}
-
-// stub — no longer used but called from bbStartPriceWs and bbTickUptime
-function bbCalcOpenPnl(){}
-
-// ---- In-GUI Bot Console ----
-const _bbConsoleMax = 300;
-const _origLog   = console.log.bind(console);
-const _origWarn  = console.warn.bind(console);
-const _origError = console.error.bind(console);
-
-function bbConsoleWrite(level, args){
-  const el = document.getElementById('bb-console');
-  if(!el) return;
-  const ts = new Date().toLocaleTimeString('en-GB',{hour12:false});
-  const text = args.map(a => {
-    if(typeof a === 'string') return a;
-    try{ return JSON.stringify(a).slice(0,300); }catch(e){ return String(a); }
-  }).join(' ');
-  const colors = {log:'var(--text)',warn:'#d9a93f',error:'#e2645f'};
-  const line = document.createElement('div');
-  line.style.cssText = `color:${colors[level]||'var(--text)'};white-space:pre-wrap;word-break:break-all;border-bottom:0.5px solid var(--border);padding:2px 0;`;
-  line.textContent = `${ts}  ${text}`;
-  el.appendChild(line);
-  // Trim old entries
-  while(el.children.length > _bbConsoleMax) el.removeChild(el.firstChild);
-  el.scrollTop = el.scrollHeight;
-}
-
-console.log = function(...args){
-  _origLog(...args);
-  bbConsoleWrite('log', args);
-};
-console.warn = function(...args){
-  _origWarn(...args);
-  bbConsoleWrite('warn', args);
-};
-console.error = function(...args){
-  _origError(...args);
-  bbConsoleWrite('error', args);
-};
-
-function bbConsoleClear(){
-  const el = document.getElementById('bb-console');
-  if(el) el.innerHTML = '';
+function bbCalcOpenPnl(){
+  if(!bbCurrentPrice||!bbState)return;
+  const np=bbState.netPos;
+  if(!np||!np.qty||!np.side){bbUpdateStat('bbstat-opnl','$0.00');bbUpdateStat('bbstat-maxloss','--');return;}
+  const avgEntry=np.totalCost/np.qty;
+  const openPnl=np.side==='Buy'?(bbCurrentPrice-avgEntry)*np.qty:(avgEntry-bbCurrentPrice)*np.qty;
+  const slLow=bbState.lower*0.995,slHigh=bbState.upper*1.005;
+  const slPrice=np.side==='Buy'?slLow:slHigh;
+  const maxLoss=np.side==='Buy'?(slPrice-avgEntry)*np.qty:(avgEntry-slPrice)*np.qty;
+  bbUpdateStat('bbstat-opnl',(openPnl>=0?'+':'')+'$'+openPnl.toFixed(2),openPnl>=0?'up':'down');
+  if(maxLoss<0){bbUpdateStat('bbstat-maxloss','-$'+Math.abs(maxLoss).toFixed(2),'down');}
+  else{bbUpdateStat('bbstat-maxloss','$'+maxLoss.toFixed(2));}
 }
 function bbRenderLevelTable(){const tbody=document.getElementById('bb-level-tbody');if(!tbody)return;if(!bbState||!bbState.levels||!bbState.levels.length){tbody.innerHTML='<tr><td colspan="6" class="grid-table-empty">No grid active</td></tr>';return;}const rows=[...bbState.levels].reverse().map((lv,ri)=>{const i=bbState.levels.length-1-ri,side=lv.isBuy?'<span class="gl-side-buy">BUY</span>':'<span class="gl-side-sell">SELL</span>',statusMap={pending:'<span class="gl-status-idle">pending</span>',open:'<span class="gl-status-open">open</span>',waiting:'<span class="gl-status-filled">waiting</span>',filled:'<span class="gl-status-filled">filled</span>',error:'<span class="gl-status-sl">error</span>',skip:'<span class="gl-status-idle">-</span>'},fp=lv.fillPrice?'$'+lv.fillPrice.toLocaleString('en-US',{maximumFractionDigits:2}):'--';return `<tr><td>${i+1}</td><td>$${lv.price.toLocaleString('en-US',{maximumFractionDigits:0})}</td><td>${side}</td><td>$${lv.notional.toLocaleString('en-US',{maximumFractionDigits:0})}</td><td>${fp}</td><td>${statusMap[lv.status]||lv.status}</td></tr>`;});tbody.innerHTML=rows.join('');}
 function bbStartVizLoop(){if(bbVizRaf)cancelAnimationFrame(bbVizRaf);function loop(){if(bbVizDirty){bbDrawViz();bbVizDirty=false;}bbVizRaf=requestAnimationFrame(loop);}bbVizRaf=requestAnimationFrame(loop);}
 function bbDrawViz(){const canvas=document.getElementById('bb-viz-canvas'),empty=document.getElementById('bb-viz-empty');if(!canvas)return;if(!bbState||!bbState.levels||!bbState.levels.length){canvas.style.display='none';if(empty)empty.style.display='flex';return;}canvas.style.display='block';if(empty)empty.style.display='none';const wrap=document.getElementById('bb-viz-wrap'),W=wrap?wrap.clientWidth-28:500,nL=bbState.levels.length,rowH=Math.max(22,Math.min(40,Math.floor(440/nL))),H=nL*rowH+40;canvas.width=W;canvas.height=H;canvas.style.height=H+'px';const ctx=canvas.getContext('2d');ctx.clearRect(0,0,W,H);const lower=bbState.lower,upper=bbState.upper,range=upper-lower||1,padL=90,padR=20,barW=W-padL-padR,pY=p=>20+((upper-p)/range)*(H-40);ctx.fillStyle='rgba(40,215,200,0.04)';ctx.fillRect(padL,pY(upper),barW,pY(lower)-pY(upper));bbState.levels.forEach(lv=>{const y=pY(lv.price),color=lv.status==='filled'?'#d9a93f':lv.status==='open'?(lv.isBuy?'#3ddc97':'#e2645f'):lv.status==='error'?'#e2645f':'#3d3c44';ctx.beginPath();ctx.strokeStyle=color;ctx.lineWidth=lv.status==='open'?1.2:0.7;ctx.setLineDash(lv.status==='open'?[]:[4,4]);ctx.moveTo(padL,y);ctx.lineTo(W-padR,y);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=color;ctx.font='10px Inter,sans-serif';ctx.textAlign='right';ctx.fillText('$'+lv.price.toLocaleString('en-US',{maximumFractionDigits:0}),padL-5,y+3.5);if(lv.status==='open'){ctx.fillStyle=color;ctx.font='bold 9px Inter,sans-serif';ctx.textAlign='left';ctx.fillText(lv.isBuy?'▶':'◀',W-padR+3,y+3.5);}});if(bbCurrentPrice!==null&&bbCurrentPrice>=lower*0.9&&bbCurrentPrice<=upper*1.1){const y=pY(bbCurrentPrice);ctx.beginPath();ctx.strokeStyle='#d9a93f';ctx.lineWidth=2;ctx.setLineDash([6,3]);ctx.moveTo(padL,y);ctx.lineTo(W-padR,y);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#d9a93f';ctx.font='bold 11px Inter,sans-serif';ctx.textAlign='right';ctx.fillText('$'+bbCurrentPrice.toLocaleString('en-US',{maximumFractionDigits:0}),padL-5,y-4);ctx.beginPath();ctx.arc(padL+4,y,4,0,Math.PI*2);ctx.fillStyle='#d9a93f';ctx.fill();}[lower*0.995,upper*1.005].forEach(sl=>{const y=pY(sl);ctx.beginPath();ctx.strokeStyle='rgba(226,100,95,0.5)';ctx.lineWidth=1;ctx.setLineDash([2,4]);ctx.moveTo(padL,y);ctx.lineTo(W-padR,y);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='rgba(226,100,95,0.7)';ctx.font='9px Inter,sans-serif';ctx.textAlign='right';ctx.fillText('SL',padL-5,y+3);});}
 bbStartPriceWs();
-(function bbRestoreOnLoad(){const saved=bbLoad();if(!saved)return;bbState=saved;document.getElementById('bb-lower').value=saved.lower||'';document.getElementById('bb-upper').value=saved.upper||'';document.getElementById('bb-levels').value=saved.nLevels||'';document.getElementById('bb-notional').value=saved.notional||'';document.getElementById('bb-leverage').value=saved.leverage||10;const lvD=document.getElementById('bb-leverage-display');if(lvD)lvD.textContent=(saved.leverage||10)+'x';if(saved.running){bbSetBadge(saved.paused?'paused':'running');bbSetLiveDot(saved.paused?'paused':'live');bbShowControls(true,saved.paused);bbUpdateStat('bbstat-fills',saved.fillCount||0);const pnl=saved.pnl||0;bbUpdateStat('bbstat-pnl',(pnl>=0?'+':'')+'$'+pnl.toFixed(2),pnl>=0?'up':'down');bbUpdateStat('bbstat-orders',(saved.levels||[]).filter(l=>l.status==='open').length);bbUpdateStat('bbstat-state',saved.paused?'Paused (restored)':'Running (restored)');bbStartPrivateWs();if(!saved.paused){bbClosedPnlBaseline=null;bbStartPnlPoller();}clearInterval(bbUptimeInterval);bbUptimeInterval=setInterval(bbTickUptime,1000);bbStartVizLoop();}else{bbSetBadge('stopped');bbUpdateStat('bbstat-state','Stopped');const pnl=saved.pnl||0;bbUpdateStat('bbstat-pnl',(pnl>=0?'+':'')+'$'+pnl.toFixed(2),pnl>=0?'up':'down');bbUpdateStat('bbstat-fills',saved.fillCount||0);bbStartVizLoop();}bbRenderLevelTable();bbCheckCapital();})();
+(function bbRestoreOnLoad(){const saved=bbLoad();if(!saved)return;bbState=saved;document.getElementById('bb-lower').value=saved.lower||'';document.getElementById('bb-upper').value=saved.upper||'';document.getElementById('bb-levels').value=saved.nLevels||'';document.getElementById('bb-notional').value=saved.notional||'';document.getElementById('bb-leverage').value=saved.leverage||10;const lvD=document.getElementById('bb-leverage-display');if(lvD)lvD.textContent=(saved.leverage||10)+'x';if(saved.running){bbSetBadge(saved.paused?'paused':'running');bbSetLiveDot(saved.paused?'paused':'live');bbShowControls(true,saved.paused);bbUpdateStat('bbstat-fills',saved.fillCount||0);const pnl=saved.pnl||0;bbUpdateStat('bbstat-pnl',(pnl>=0?'+':'')+'$'+pnl.toFixed(2),pnl>=0?'up':'down');bbUpdateStat('bbstat-orders',(saved.levels||[]).filter(l=>l.status==='open').length);bbUpdateStat('bbstat-state',saved.paused?'Paused (restored)':'Running (restored)');bbStartPrivateWs();clearInterval(bbUptimeInterval);bbUptimeInterval=setInterval(bbTickUptime,1000);bbStartVizLoop();}else{bbSetBadge('stopped');bbUpdateStat('bbstat-state','Stopped');const pnl=saved.pnl||0;bbUpdateStat('bbstat-pnl',(pnl>=0?'+':'')+'$'+pnl.toFixed(2),pnl>=0?'up':'down');bbUpdateStat('bbstat-fills',saved.fillCount||0);bbStartVizLoop();}bbRenderLevelTable();bbCheckCapital();})();
 </script>
 <script>
 // ===================== BYBIT LIFETIME P&L =====================
@@ -5813,4 +5869,366 @@ bbHandleFill = async function(ex){
 
 // Init on load
 bbRenderLifetime();
+</script>
+
+<style>
+.sea-fb{font-size:11px;padding:3px 10px;border:0.5px solid var(--border);border-radius:5px;background:transparent;color:var(--text-faint);cursor:pointer;}
+.sea-fb.active{background:var(--bg2);color:var(--text);border-color:var(--border-bright);}
+.sea-geo{display:inline-block;font-size:10px;padding:1px 5px;border-radius:3px;background:#1a3a5c;color:#5aabf0;}
+.sea-mac{display:inline-block;font-size:10px;padding:1px 5px;border-radius:3px;background:#3d2a00;color:#f0a940;}
+.sea-cry{display:inline-block;font-size:10px;padding:1px 5px;border-radius:3px;background:#0a2e1e;color:#3ddc97;}
+.sea-pol{display:inline-block;font-size:10px;padding:1px 5px;border-radius:3px;background:#231b45;color:#9b8fef;}
+</style>
+
+<script>
+// ── SEA DATA ──────────────────────────────────────────────────────────────
+var SEA_PRICE=[
+  ['2020-01-01',7200],['2020-03-12',4900],['2020-03-15',5300],['2020-05-11',9000],
+  ['2020-12-31',28900],['2021-01-20',40000],['2021-04-14',63600],['2021-05-19',36700],
+  ['2021-11-10',68000],['2021-12-31',46200],['2022-02-24',34500],['2022-03-16',41000],
+  ['2022-05-09',31000],['2022-06-18',18500],['2022-11-08',20500],['2022-11-21',15700],
+  ['2022-12-31',16600],['2023-03-10',20500],['2023-06-01',27200],['2023-10-07',27800],
+  ['2023-10-23',35000],['2023-12-31',42200],['2024-01-11',49200],['2024-01-25',39500],
+  ['2024-03-14',73800],['2024-04-14',62000],['2024-04-20',64000],['2024-05-01',57800],
+  ['2024-09-18',60200],['2024-11-05',69200],['2024-12-05',100500],['2024-12-18',108300],
+  ['2024-12-28',94200],['2025-01-20',109000],['2025-02-10',97000],['2025-06-13',107000],
+  ['2025-10-06',126200],['2025-10-10',103000],['2025-11-01',118000],['2025-12-31',93000],
+  ['2026-01-28',77200],['2026-02-05',63000],['2026-03-01',70000],['2026-04-01',82000],
+  ['2026-05-01',73000],['2026-05-28',72900],['2026-06-05',62000],['2026-06-10',59000],
+  ['2026-06-15',67000],['2026-06-19',63100]
+];
+var SEA_EVENTS=[
+  {date:'2020-03-12',label:'COVID crash',cat:'macro',pre:-30,post:480,pat:'bear→bull',note:'BTC fell 50% in 24h. Fed printed. Recovered fully within months.'},
+  {date:'2020-03-15',label:'Fed: rates → 0% + QE',cat:'macro',pre:-10,post:310,pat:'bear→bull',note:'Emergency cut + $700B QE. Year-long bull run followed. Liquidity = price.'},
+  {date:'2021-01-20',label:'Biden inauguration',cat:'pol',pre:35,post:-25,pat:'bull→bear',note:'Pre-inaug run to $40K then -25%. Classic exit liquidity event.'},
+  {date:'2021-04-14',label:'Coinbase IPO',cat:'crypto',pre:80,post:-48,pat:'bull→bear',note:'ATH at listing. BTC $64K→$30K in weeks. Buy the hype, sell the news.'},
+  {date:'2021-05-19',label:'China mining ban',cat:'geo',pre:-15,post:120,pat:'bear→bull',note:'BTC -30% in a day. Panic bottom — recovered to new ATH by Nov.'},
+  {date:'2021-11-10',label:'BTC ATH $69K',cat:'crypto',pre:60,post:-75,pat:'bull→bear',note:'All-time high. Sold off into year-long bear losing 75%.'},
+  {date:'2022-02-24',label:'Russia invades Ukraine',cat:'geo',pre:-28,post:42,pat:'bear→bull',note:'-28% pre-war on fear. +42% rebound after invasion — sanctions exposed BTC utility.'},
+  {date:'2022-03-16',label:'Fed: first rate hike',cat:'macro',pre:-5,post:-35,pat:'bull→bear',note:'First hike since 2018. Bear continued all year. Liquidity drained = price crashed.'},
+  {date:'2022-05-09',label:'Terra/LUNA collapse',cat:'crypto',pre:5,post:-55,pat:'bull→bear',note:'UST lost peg. $40B wiped. BTC $36K→$17K. Contagion hit Celsius, 3AC, FTX.'},
+  {date:'2022-11-08',label:'FTX collapse',cat:'crypto',pre:-10,post:157,pat:'bear→bull',note:'FTX bankrupt in days. BTC bottomed at $15.5K. Cycle capitulation low.'},
+  {date:'2023-03-10',label:'SVB bank collapse',cat:'macro',pre:-12,post:26,pat:'bear→bull',note:'TradFi fear = BTC bid. Banks bad, BTC good narrative drove fast recovery.'},
+  {date:'2023-10-07',label:'Israel-Hamas war',cat:'geo',pre:2,post:-10,pat:'neutral',note:'Short sell-off, quick recovery. Macro decided price, not the conflict.'},
+  {date:'2023-10-23',label:'BlackRock ETF rumor',cat:'crypto',pre:15,post:35,pat:'bull→bull',note:'Fake ETF news +10% in minutes. Floor stayed elevated into year-end.'},
+  {date:'2024-01-11',label:'Spot ETF approved',cat:'crypto',pre:80,post:-18,pat:'bull→bear',note:'$42K→$49K pre-approval. Dropped to $38K in 3 weeks. Classic sell the news.'},
+  {date:'2024-04-14',label:'Iran strikes Israel',cat:'geo',pre:-16,post:22,pat:'bear→bull',note:'-16% weekend crash. ETF inflows $420M buffered panic. +22% in 48h.'},
+  {date:'2024-04-20',label:'Bitcoin halving',cat:'crypto',pre:60,post:-10,pat:'bull→bear',note:'ATH $73K 3 weeks before. Dropped to $58K post-halving. First ever pre-halving ATH.'},
+  {date:'2024-09-18',label:'Fed: first rate cut',cat:'macro',pre:8,post:15,pat:'bull→bull',note:'First cut since COVID. $56K→$64K. Liquidity cycle turning bull.'},
+  {date:'2024-11-05',label:'Trump election win',cat:'pol',pre:10,post:44,pat:'bull→bull',note:'Exception — genuinely unexpected. $70K→$108K in weeks.'},
+  {date:'2024-12-18',label:'Fed hawkish pause',cat:'macro',pre:15,post:-15,pat:'bull→bear',note:'Cut but signaled only 2 cuts in 2025. BTC -10% from $108K ATH in 24h.'},
+  {date:'2025-01-20',label:'Trump inauguration',cat:'pol',pre:35,post:-28,pat:'bull→bear',note:'ATH $109K on inauguration day. $78K within weeks. No immediate exec orders.'},
+  {date:'2025-10-10',label:'US-China 100% tariffs',cat:'macro',pre:-9,post:14,pat:'bear→bull',note:'$122K→$103K in hours. $19B liquidations. Recovered +14% as markets digested it.'},
+  {date:'2026-01-28',label:'US-Iran war begins',cat:'geo',pre:-8,post:-3,pat:'neutral',note:'BTC range-bound ~$77K. Geopolitical sensitivity near all-time lows.'},
+  {date:'2026-02-05',label:'Record $3.2B realized loss',cat:'macro',pre:-20,post:12,pat:'bear→bull',note:'Biggest realized loss day ever. $87K→$60K capitulation.'},
+  {date:'2026-05-28',label:'US strikes Iran',cat:'geo',pre:-8,post:-17,pat:'bull→bear',note:'$1B liquidations, 93% longs. BTC below $73K. Peace hopes ended.'},
+  {date:'2026-06-15',label:'US-Iran peace deal',cat:'geo',pre:-17,post:13,pat:'bear→bull',note:'$59K→$67K (+13%). $210M shorts liquidated. Then sell the news on signing — $600M longs wiped.'},
+];
+var SEA_CC={geo:'#378ADD',macro:'#BA7517',crypto:'#3ddc97',pol:'#9b8fef'};
+var SEA_PAT={
+  'bull→bear':{l:'Buy rumor / sell news',c:'#e2645f'},
+  'bear→bull':{l:'Sell rumor / buy news',c:'#3ddc97'},
+  'bull→bull':{l:'Continuation bull',c:'#3ddc97'},
+  'neutral':{l:'No clear reaction',c:'#888'}
+};
+var SEA_CB={geo:'sea-geo',macro:'sea-mac',crypto:'sea-cry',pol:'sea-pol'};
+var seaAF='all';
+
+function seaTs(s){return new Date(s).getTime();}
+function seaFE(){return seaAF==='all'?SEA_EVENTS:SEA_EVENTS.filter(function(e){return e.cat===seaAF;});}
+
+// ── DRAW ──────────────────────────────────────────────────────────────────
+function seaDraw(){
+  var wrap=document.getElementById('seaWrap');
+  var c=document.getElementById('seaC');
+  if(!wrap||!c)return;
+  var W=wrap.clientWidth;
+  if(!W||W<50)return; // not visible yet — observer will retry
+  var H=300;
+  c.width=W; c.height=H;
+  c.style.height=H+'px';
+  var ctx=c.getContext('2d');
+  var P={l:10,r:56,t:20,b:30};
+  var cW=W-P.l-P.r, cH=H-P.t-P.b;
+  var t0=seaTs(SEA_PRICE[0][0]), t1=seaTs(SEA_PRICE[SEA_PRICE.length-1][0]);
+  var pMax=135000;
+  function xf(d){return P.l+(seaTs(d)-t0)/(t1-t0)*cW;}
+  function yf(p){return P.t+(1-p/pMax)*cH;}
+
+  ctx.fillStyle='#0d0f10'; ctx.fillRect(0,0,W,H);
+
+  [0,25000,50000,75000,100000,125000].forEach(function(p){
+    var y=yf(p);
+    ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(P.l,y);ctx.lineTo(P.l+cW,y);ctx.stroke();
+    ctx.fillStyle='#555';ctx.font='10px Inter,sans-serif';ctx.textAlign='left';
+    ctx.fillText('$'+Math.round(p/1000)+'K',P.l+cW+4,y+3);
+  });
+
+  ['2020','2021','2022','2023','2024','2025','2026'].forEach(function(y){
+    var x=xf(y+'-07-01');
+    if(x>P.l&&x<P.l+cW){
+      ctx.fillStyle='#444';ctx.font='10px Inter,sans-serif';ctx.textAlign='center';
+      ctx.fillText(y,x,P.t+cH+18);
+    }
+  });
+
+  var evts=seaFE();
+  evts.forEach(function(e){
+    ctx.strokeStyle=SEA_CC[e.cat]+'55';ctx.lineWidth=1;ctx.setLineDash([3,3]);
+    ctx.beginPath();ctx.moveTo(xf(e.date),P.t);ctx.lineTo(xf(e.date),P.t+cH);ctx.stroke();
+  });
+  ctx.setLineDash([]);
+
+  ctx.strokeStyle='#3ddc97';ctx.lineWidth=2;
+  ctx.beginPath();
+  SEA_PRICE.forEach(function(pt,i){
+    i===0?ctx.moveTo(xf(pt[0]),yf(pt[1])):ctx.lineTo(xf(pt[0]),yf(pt[1]));
+  });
+  ctx.stroke();
+
+  evts.forEach(function(e){
+    var cl=SEA_PRICE.reduce(function(b,p){
+      return Math.abs(seaTs(p[0])-seaTs(e.date))<Math.abs(seaTs(b[0])-seaTs(e.date))?p:b;
+    });
+    ctx.beginPath();ctx.arc(xf(e.date),yf(cl[1]),5,0,Math.PI*2);
+    ctx.fillStyle=SEA_CC[e.cat];ctx.fill();
+    ctx.strokeStyle='#0d0f10';ctx.lineWidth=1.5;ctx.stroke();
+  });
+}
+
+// ── TABLE ─────────────────────────────────────────────────────────────────
+function seaTable(){
+  var tbody=document.getElementById('seaTbody');
+  if(!tbody)return;
+  var evts=seaFE().slice().sort(function(a,b){return a.date.localeCompare(b.date);});
+  tbody.innerHTML=evts.map(function(e){
+    var p=SEA_PAT[e.pat]||{l:'?',c:'#888'};
+    return '<tr>'
+      +'<td style="color:var(--text-faint);white-space:nowrap;font-size:11px;padding:6px 6px;border-bottom:0.5px solid var(--border)">'+e.date+'</td>'
+      +'<td style="font-size:11px;padding:6px 6px;border-bottom:0.5px solid var(--border)">'+e.label
+        +'<div style="font-size:10px;color:var(--text-faint);margin-top:2px;line-height:1.4">'+e.note+'</div></td>'
+      +'<td style="padding:6px 6px;border-bottom:0.5px solid var(--border)"><span class="'+SEA_CB[e.cat]+'">'
+        +(e.cat==='geo'?'Geo':e.cat==='macro'?'Macro':e.cat==='crypto'?'Crypto':'Pol')+'</span></td>'
+      +'<td style="padding:6px 6px;border-bottom:0.5px solid var(--border);color:'+(e.pre>=0?'#3ddc97':'#e2645f')+'">'+(e.pre>0?'+':'')+e.pre+'%</td>'
+      +'<td style="padding:6px 6px;border-bottom:0.5px solid var(--border);color:'+(e.post>=0?'#3ddc97':'#e2645f')+'">'+(e.post>0?'+':'')+e.post+'%</td>'
+      +'<td style="padding:6px 6px;border-bottom:0.5px solid var(--border);font-size:10px;color:'+p.c+'">'+p.l+'</td>'
+      +'</tr>';
+  }).join('');
+}
+
+// ── TOOLTIP ───────────────────────────────────────────────────────────────
+function seaInitTip(){
+  var c=document.getElementById('seaC');
+  if(!c||c._tipInited)return;
+  c._tipInited=true;
+  c.addEventListener('mousemove',function(ev){
+    var rect=this.getBoundingClientRect();
+    var mx=ev.clientX-rect.left;
+    var t0=seaTs(SEA_PRICE[0][0]),t1=seaTs(SEA_PRICE[SEA_PRICE.length-1][0]);
+    var P={l:10,r:56};
+    var ht=t0+(mx-P.l)/(this.width-P.l-P.r)*(t1-t0);
+    var evts=seaFE(),cl=null,md=Infinity;
+    evts.forEach(function(e){var d=Math.abs(seaTs(e.date)-ht);if(d<md){md=d;cl=e;}});
+    var tip=document.getElementById('seaTip');
+    if(cl&&md<(t1-t0)*0.025){
+      var p=SEA_PAT[cl.pat]||{l:'?',c:'#888'};
+      tip.innerHTML='<b style="color:var(--text)">'+cl.label+'</b><br>'
+        +'<span style="color:var(--text-faint);font-size:10px">'+cl.date+'</span><br><br>'
+        +'<span style="color:var(--text-faint)">Pre-event</span> <b style="color:'+(cl.pre>=0?'#3ddc97':'#e2645f')+'">'+(cl.pre>0?'+':'')+cl.pre+'%</b><br>'
+        +'<span style="color:var(--text-faint)">Post-event</span> <b style="color:'+(cl.post>=0?'#3ddc97':'#e2645f')+'">'+(cl.post>0?'+':'')+cl.post+'%</b><br>'
+        +'<span style="color:var(--text-faint)">Pattern</span> <b style="color:'+p.c+'">'+p.l+'</b><br><br>'
+        +'<span style="color:var(--text-faint);font-size:10px">'+cl.note+'</span>';
+      tip.style.display='block';
+      var lx=mx+14,ly=ev.clientY-rect.top-10;
+      if(lx+230>this.width)lx=mx-240;
+      tip.style.left=lx+'px';tip.style.top=ly+'px';
+    } else { tip.style.display='none'; }
+  });
+  c.addEventListener('mouseleave',function(){
+    var t=document.getElementById('seaTip');if(t)t.style.display='none';
+  });
+}
+
+// ── FILTER BUTTONS ────────────────────────────────────────────────────────
+document.getElementById('seaFilters').addEventListener('click',function(ev){
+  var b=ev.target.closest('[data-cat]');if(!b)return;
+  seaAF=b.dataset.cat;
+  document.querySelectorAll('.sea-fb').forEach(function(x){x.classList.toggle('active',x===b);});
+  seaDraw();seaTable();
+});
+
+// ── MUTATION OBSERVER — draw as soon as tab becomes visible ───────────────
+(function(){
+  var tab=document.getElementById('tab-sea-news');
+  if(!tab)return;
+  var drawn=false;
+  function tryDraw(){
+    if(drawn)return;
+    var wrap=document.getElementById('seaWrap');
+    if(wrap&&wrap.clientWidth>50){
+      drawn=true;
+      seaDraw();seaTable();seaInitTip();
+    }
+  }
+  var obs=new MutationObserver(function(mutations){
+    mutations.forEach(function(m){
+      if(m.type==='attributes'&&m.attributeName==='class'){
+        if(tab.classList.contains('active')){
+          drawn=false; // allow redraw on each open
+          requestAnimationFrame(function(){requestAnimationFrame(tryDraw);});
+        }
+      }
+    });
+  });
+  obs.observe(tab,{attributes:true});
+  window.addEventListener('resize',function(){if(tab.classList.contains('active'))seaDraw();});
+})();
+
+// ── FOMC DATA ─────────────────────────────────────────────────────────────
+var FOMC_DATA=[
+  {date:'2022-03-16',dec:'Hike +25bp',rate:'0.25-0.5%',btc:41000,pre:43500,post:38000,note:'First hike since 2018. Brief bounce then continued bear all year.'},
+  {date:'2022-05-04',dec:'Hike +50bp',rate:'0.75-1.0%',btc:38500,pre:40800,post:31000,note:'Largest hike in 22 years. Terra collapse happening simultaneously.'},
+  {date:'2022-06-15',dec:'Hike +75bp',rate:'1.5-1.75%',btc:22000,pre:29500,post:19800,note:'Emergency 75bp. BTC already in freefall. -25% pre.'},
+  {date:'2022-07-27',dec:'Hike +75bp',rate:'2.25-2.5%',btc:21500,pre:20500,post:23500,note:'Only 2022 bounce — BTC +9% post on pivot hopes.'},
+  {date:'2022-09-21',dec:'Hike +75bp',rate:'3.0-3.25%',btc:19400,pre:21800,post:18500,note:'Hawkish. BTC -11% pre, -5% post. Bear deepening.'},
+  {date:'2022-11-02',dec:'Hike +75bp',rate:'3.75-4.0%',btc:20500,pre:19800,post:16200,note:'FTX collapse happening same week. -21% post.'},
+  {date:'2022-12-14',dec:'Hike +50bp',rate:'4.25-4.5%',btc:17200,pre:17000,post:16600,note:'Pivot slowdown. BTC flat — already capitulated.'},
+  {date:'2023-02-01',dec:'Hike +25bp',rate:'4.5-4.75%',btc:23200,pre:20500,post:22800,note:'BTC +13% pre on pivot hopes. Held gains post.'},
+  {date:'2023-03-22',dec:'Hike +25bp',rate:'4.75-5.0%',btc:28000,pre:22000,post:27200,note:'SVB crisis just happened. +27% pre (flight to BTC), -3% post.'},
+  {date:'2023-05-03',dec:'Hike +25bp',rate:'5.0-5.25%',btc:28800,pre:29500,post:27200,note:'Last hike. BTC -2% pre, -5% post — sell the last hike.'},
+  {date:'2023-06-14',dec:'Hold 5.25%',rate:'5.0-5.25%',btc:25700,pre:27200,post:25000,note:'First hold. Uncertainty drove -6% pre, -3% post.'},
+  {date:'2023-07-26',dec:'Hike +25bp',rate:'5.25-5.5%',btc:29300,pre:30200,post:29100,note:'Final hike. Muted reaction both sides.'},
+  {date:'2023-09-20',dec:'Hold 5.5%',rate:'5.25-5.5%',btc:27300,pre:25800,post:26500,note:'Hold. BTC +6% pre relief, -3% post.'},
+  {date:'2023-11-01',dec:'Hold 5.5%',rate:'5.25-5.5%',btc:34500,pre:27800,post:35200,note:'ETF anticipation running. +24% pre, +2% post — narrative dominant.'},
+  {date:'2023-12-13',dec:'Hold 5.5%',rate:'5.25-5.5%',btc:41800,pre:37000,post:43500,note:'Dovish pivot signal. Bull narrative building. +13% pre, +4% post.'},
+  {date:'2024-01-31',dec:'Hold 5.5%',rate:'5.25-5.5%',btc:42500,pre:43800,post:42000,note:'ETF just launched. Sell-the-news dip -3% pre, -1% post.'},
+  {date:'2024-03-20',dec:'Hold 5.5%',rate:'5.25-5.5%',btc:63000,pre:51000,post:64500,note:'+23% pre — ETF + halving narrative overrode FOMC. +2% post.'},
+  {date:'2024-05-01',dec:'Hold 5.5%',rate:'5.25-5.5%',btc:57800,pre:64500,post:61200,note:'-10% pre halving hangover. +6% post modest relief.'},
+  {date:'2024-06-12',dec:'Hold 5.5%',rate:'5.25-5.5%',btc:67500,pre:61000,post:65800,note:'+11% pre. -3% post. Range market.'},
+  {date:'2024-07-31',dec:'Hold 5.5%',rate:'5.25-5.5%',btc:65400,pre:67500,post:62100,note:'-3% pre, -5% post. Quiet summer.'},
+  {date:'2024-09-18',dec:'Cut -50bp',rate:'4.75-5.0%',btc:60200,pre:55800,post:63500,note:'First cut. +8% pre, +5% post. One of the rare post-FOMC gains.'},
+  {date:'2024-11-07',dec:'Cut -25bp',rate:'4.5-4.75%',btc:75000,pre:69200,post:81000,note:'Post-election euphoria. Trump win dominated. +8% pre, +8% post.'},
+  {date:'2024-12-18',dec:'Cut -25bp (hawkish)',rate:'4.25-4.5%',btc:101000,pre:100500,post:93000,note:'Hawkish guidance killed the cut. ATH then -8% post.'},
+  {date:'2025-01-29',dec:'Hold 4.5%',rate:'4.25-4.5%',btc:102000,pre:109000,post:95000,note:'-7% pre post-inaug dump. -7% post. Double punishment.'},
+  {date:'2025-03-19',dec:'Hold 4.5%',rate:'4.25-4.5%',btc:83000,pre:90000,post:84000,note:'-8% pre, +1% post. Tariff fears dominant.'},
+  {date:'2025-05-07',dec:'Hold 4.5%',rate:'4.25-4.5%',btc:97000,pre:84000,post:103000,note:'Exception — BTC +15% pre (April rally), +6% post. Only 2025 gain.'},
+  {date:'2025-06-18',dec:'Hold 4.5%',rate:'4.25-4.5%',btc:107000,pre:97000,post:101000,note:'+10% pre, -6% post. Sell the news.'},
+  {date:'2025-07-30',dec:'Hold 4.5%',rate:'4.25-4.5%',btc:118000,pre:107000,post:113000,note:'+10% pre, -4% post. Pattern holding.'},
+  {date:'2025-09-17',dec:'Cut -25bp',rate:'4.0-4.25%',btc:123000,pre:126000,post:118000,note:'-2% pre near ATH, -4% post. Cut fully priced in, no pop.'},
+  {date:'2025-10-29',dec:'Cut -25bp',rate:'3.75-4.0%',btc:110000,pre:126000,post:103000,note:'-13% pre (tariff crash same week), -6% post.'},
+  {date:'2025-12-10',dec:'Cut -25bp',rate:'3.5-3.75%',btc:95000,pre:93000,post:88000,note:'+2% pre, -7% post. Third cut in a row, no excitement.'},
+  {date:'2026-01-28',dec:'Hold 3.75%',rate:'3.5-3.75%',btc:77200,pre:87000,post:67000,note:'-11% pre (record realized loss event), -13% post. Brutal.'},
+  {date:'2026-03-18',dec:'Hold 3.75%',rate:'3.5-3.75%',btc:70000,pre:63000,post:72000,note:'+11% pre (recovery from Feb low), +3% post. Rare positive.'},
+  {date:'2026-04-29',dec:'Hold 3.75%',rate:'3.5-3.75%',btc:78000,pre:65000,post:71000,note:'+20% pre (April rally), -9% post. Sell the news restored.'},
+];
+
+function fomcPct(a,b){return ((b-a)/a*100).toFixed(1);}
+
+function fomcInit(){
+  // stats cards
+  var el=document.getElementById('fomcStats');
+  if(el){
+    var drops=FOMC_DATA.filter(function(d){return parseFloat(fomcPct(d.btc,d.post))<0;});
+    var avgPost=FOMC_DATA.reduce(function(s,d){return s+parseFloat(fomcPct(d.btc,d.post));},0)/FOMC_DATA.length;
+    var avgPre=FOMC_DATA.reduce(function(s,d){return s+parseFloat(fomcPct(d.pre,d.btc));},0)/FOMC_DATA.length;
+    var stats=[
+      {l:'Meetings analysed',v:FOMC_DATA.length,c:'var(--text)'},
+      {l:'Post-FOMC drops',v:drops.length+' of '+FOMC_DATA.length+' ('+(Math.round(drops.length/FOMC_DATA.length*100))+'%)',c:'#e2645f'},
+      {l:'Avg 10d pre-move',v:(avgPre>=0?'+':'')+avgPre.toFixed(1)+'%',c:avgPre>=0?'#3ddc97':'#e2645f'},
+      {l:'Avg 3d post-move',v:(avgPost>=0?'+':'')+avgPost.toFixed(1)+'%',c:avgPost>=0?'#3ddc97':'#e2645f'},
+    ];
+    el.innerHTML=stats.map(function(s){
+      return '<div style="background:var(--bg1);border-radius:8px;padding:12px 14px;border:0.5px solid var(--border)">'
+        +'<div style="font-size:10px;color:var(--text-faint);margin-bottom:4px">'+s.l+'</div>'
+        +'<div style="font-size:20px;font-weight:500;color:'+s.c+'">'+s.v+'</div></div>';
+    }).join('');
+  }
+  // table
+  var tbody=document.getElementById('fomcTbody');
+  if(tbody){
+    tbody.innerHTML=FOMC_DATA.slice().reverse().map(function(d){
+      var prePct=fomcPct(d.pre,d.btc), postPct=fomcPct(d.btc,d.post);
+      return '<tr>'
+        +'<td style="padding:6px 8px;border-bottom:0.5px solid var(--border);white-space:nowrap;font-size:11px;color:var(--text-faint)">'+d.date+'</td>'
+        +'<td style="padding:6px 8px;border-bottom:0.5px solid var(--border);font-size:11px">'+d.dec+'</td>'
+        +'<td style="padding:6px 8px;border-bottom:0.5px solid var(--border);text-align:right;font-size:11px">$'+d.btc.toLocaleString()+'</td>'
+        +'<td style="padding:6px 8px;border-bottom:0.5px solid var(--border);text-align:right;font-size:11px;color:'+(parseFloat(prePct)>=0?'#3ddc97':'#e2645f')+'">'+(parseFloat(prePct)>=0?'+':'')+prePct+'%</td>'
+        +'<td style="padding:6px 8px;border-bottom:0.5px solid var(--border);text-align:right;font-size:11px;color:'+(parseFloat(postPct)>=0?'#3ddc97':'#e2645f')+'">'+(parseFloat(postPct)>=0?'+':'')+postPct+'%</td>'
+        +'<td style="padding:6px 8px;border-bottom:0.5px solid var(--border);font-size:11px;color:var(--text-faint)">'+d.note+'</td>'
+        +'</tr>';
+    }).join('');
+  }
+  // patterns
+  var pel=document.getElementById('fomcPatterns');
+  if(pel){
+    var pats=[
+      {t:'The pre-FOMC squeeze',b:'Leveraged longs build in the 10 days before the decision. Open interest peaks. Whether the news is good or bad, the unwind triggers a liquidation cascade. Average pre-FOMC move: +4% into the decision.'},
+      {t:'Post-FOMC dump (regardless of outcome)',b:'BTC dropped after 8 of 9 FOMC meetings in 2025. Hold, cut, or hike — the positioning unwind happens either way. Average post-decision move: ~-6% over 3 days.'},
+      {t:'The exception: genuine surprise or dominant narrative',b:'The only post-FOMC rallies came when the Fed surprised (Sept 2024 50bp cut) or when an external narrative dominated (Nov 2024 Trump win, Nov 2023 ETF anticipation). Without an override, expect the dump.'},
+      {t:'Trading implication',b:'Avoid adding longs in the 3-5 days before FOMC. If long, reduce into the meeting. Post-FOMC dips are historically good entries if the macro trend is still bullish.'},
+    ];
+    pel.innerHTML=pats.map(function(p){
+      return '<div style="padding:10px 12px;background:var(--bg2);border-radius:6px;border:0.5px solid var(--border)">'
+        +'<div style="font-size:11px;font-weight:500;color:var(--text);margin-bottom:6px">'+p.t+'</div>'
+        +'<div style="font-size:11px;color:var(--text-faint);line-height:1.6">'+p.b+'</div></div>';
+    }).join('');
+  }
+}
+
+// MutationObserver for FOMC tab
+(function(){
+  var tab=document.getElementById('tab-sea-fomc');
+  if(!tab)return;
+  var obs=new MutationObserver(function(mutations){
+    mutations.forEach(function(m){
+      if(m.type==='attributes'&&m.attributeName==='class'&&tab.classList.contains('active')){
+        fomcInit();
+      }
+    });
+  });
+  obs.observe(tab,{attributes:true});
+})();
+
+// ── AI OPINION ────────────────────────────────────────────────────────────
+async function aiAskOpinion(){
+  var type=document.getElementById('aiEventType').value;
+  var reaction=document.getElementById('aiPriceReaction').value.trim();
+  var desc=document.getElementById('aiEventDesc').value.trim();
+  if(!reaction||!desc){alert('Fill in the price reaction and event description.');return;}
+  var typeLabels={
+    surprise_bearish:'Surprise shock (bearish) — war, collapse, ban',
+    surprise_bullish:'Surprise shock (bullish) — unexpected deal or policy',
+    known_bearish:'Known/anticipated bearish event — rate hike',
+    known_bullish:'Known/anticipated bullish event — rate cut, ETF approval',
+    geopolitical:'Geopolitical escalation',
+    geopolitical_de:'Geopolitical de-escalation / peace deal',
+    crypto_specific:'Crypto-specific event',
+  };
+  var hist='HISTORICAL PATTERNS:\n'
+    +'Surprise bearish shocks (war/crash/ban): dump fast then 100% recovery rate IF no fundamental damage to BTC.\n'
+    +'Known bullish events (ETF/halving/inauguration): price runs up pre-event, sells off on the news.\n'
+    +'Known bearish events (rate hikes): price drops and keeps dropping as liquidity drains.\n'
+    +'Geopolitical de-escalation: pop on announcement, then sell the news on formal signing.\n'
+    +'Recovery speed increasing over time as institutional ETF flows buffer panic selling.\n'
+    +'KEY RULE: The event is never the trade. What happens to LIQUIDITY after determines whether gains hold.\n';
+  var prompt='You are a crypto market analyst. Use this historical data:\n\n'+hist
+    +'\nCURRENT EVENT:\nType: '+typeLabels[type]+'\nDescription: '+desc+'\nPrice reaction: '+reaction
+    +'\n\nGive a SHORT direct opinion (max 200 words) on:\n1. Most likely price direction next 1-7 days\n2. Key thing to watch\n3. Biggest risk to the thesis';
+  var btn=document.querySelector('[onclick="aiAskOpinion()"]');
+  var res=document.getElementById('aiResult');
+  var txt=document.getElementById('aiResultText');
+  btn.textContent='Thinking...';btn.disabled=true;res.style.display='none';
+  try{
+    var r=await fetch('https://royal-darkness-0ac6.wimneys.workers.dev/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:400,messages:[{role:'user',content:prompt}]})
+    });
+    var data=await r.json();
+    txt.textContent=(data.content||[]).map(function(b){return b.text||'';}).join('')||'No response.';
+    res.style.display='block';
+  }catch(e){txt.textContent='Error: '+e.message;res.style.display='block';}
+  btn.textContent='Ask AI for opinion';btn.disabled=false;
+}
 </script>

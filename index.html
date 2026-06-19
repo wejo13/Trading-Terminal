@@ -1059,15 +1059,21 @@
     </div>
 
     <div class="sidebar-section-label">Research</div>
-    <div class="nav-item" data-tab="sea-news" onclick="switchTab('sea-news')">
+    <div class="nav-group-label">
+      <i class="ti ti-chart-line"></i>Altcoin Event Research
+    </div>
+    <div class="nav-sub-item" data-tab="alt-events" onclick="switchTab('alt-events')">
+      <span class="nav-sub-dot"></span>Coin Event Research
+    </div>
+    <div class="nav-group-label">
       <i class="ti ti-calendar-stats"></i>BTC Price Events Research
     </div>
-      <div class="nav-sub-item" data-tab="sea-news" onclick="switchTab('sea-news')">
-        <i class="ti ti-circle"></i>News Driven Events
-      </div>
-      <div class="nav-sub-item" data-tab="sea-fomc" onclick="switchTab('sea-fomc')">
-        <i class="ti ti-circle"></i>FOMC Analysis
-      </div>
+    <div class="nav-sub-item" data-tab="sea-news" onclick="switchTab('sea-news')">
+      <span class="nav-sub-dot"></span>News Driven Events
+    </div>
+    <div class="nav-sub-item" data-tab="sea-fomc" onclick="switchTab('sea-fomc')">
+      <span class="nav-sub-dot"></span>FOMC Analysis
+    </div>
 
     <div class="sidebar-footer">
       <div class="nav-item" data-tab="settings" onclick="switchTab('settings')">
@@ -1225,19 +1231,19 @@
             <div class="grid-inputs">
               <div class="grid-field">
                 <label class="grid-label">Lower bound <span class="grid-label-hint">$</span></label>
-                <input type="number" id="grid-lower" class="grid-input" placeholder="e.g. 90000" step="100">
+                <input type="number" id="grid-lower" class="grid-input" autocomplete="off" placeholder="e.g. 90000" step="100">
               </div>
               <div class="grid-field">
                 <label class="grid-label">Upper bound <span class="grid-label-hint">$</span></label>
-                <input type="number" id="grid-upper" class="grid-input" placeholder="e.g. 110000" step="100">
+                <input type="number" id="grid-upper" class="grid-input" autocomplete="off" placeholder="e.g. 110000" step="100">
               </div>
               <div class="grid-field">
                 <label class="grid-label">Grid levels</label>
-                <input type="number" id="grid-levels" class="grid-input" placeholder="e.g. 10" min="2" max="50" step="1">
+                <input type="number" id="grid-levels" class="grid-input" autocomplete="off" placeholder="e.g. 10" min="2" max="50" step="1">
               </div>
               <div class="grid-field">
                 <label class="grid-label">Notional per level <span class="grid-label-hint">$</span></label>
-                <input type="number" id="grid-notional" class="grid-input" placeholder="e.g. 200" step="10">
+                <input type="number" id="grid-notional" class="grid-input" autocomplete="off" placeholder="e.g. 200" step="10">
               </div>
               <div class="grid-field" style="grid-column:1/-1;">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
@@ -1451,19 +1457,19 @@
             <div class="grid-inputs">
               <div class="grid-field">
                 <label class="grid-label">Lower bound <span class="grid-label-hint">$</span></label>
-                <input type="number" id="bb-lower" class="grid-input" placeholder="e.g. 90000" step="100">
+                <input type="number" id="bb-lower" class="grid-input" autocomplete="off" placeholder="e.g. 90000" step="100">
               </div>
               <div class="grid-field">
                 <label class="grid-label">Upper bound <span class="grid-label-hint">$</span></label>
-                <input type="number" id="bb-upper" class="grid-input" placeholder="e.g. 110000" step="100">
+                <input type="number" id="bb-upper" class="grid-input" autocomplete="off" placeholder="e.g. 110000" step="100">
               </div>
               <div class="grid-field">
                 <label class="grid-label">Grid levels</label>
-                <input type="number" id="bb-levels" class="grid-input" placeholder="e.g. 10" min="2" max="50" step="1">
+                <input type="number" id="bb-levels" class="grid-input" autocomplete="off" placeholder="e.g. 10" min="2" max="50" step="1">
               </div>
               <div class="grid-field">
                 <label class="grid-label">Notional per level <span class="grid-label-hint">$</span></label>
-                <input type="number" id="bb-notional" class="grid-input" placeholder="e.g. 200" step="10">
+                <input type="number" id="bb-notional" class="grid-input" autocomplete="off" placeholder="e.g. 200" step="10">
               </div>
               <div class="grid-field" style="grid-column:1/-1;">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
@@ -1597,6 +1603,15 @@
       </div><!-- /grid-bot-layout -->
 
       <div class="grid-toast" id="bbToast"></div>
+
+      <!-- Bot Console -->
+      <div class="grid-card" style="margin:12px 16px 16px;">
+        <div class="grid-card-header" style="display:flex;align-items:center;justify-content:space-between;">
+          <span class="grid-card-title"><i class="ti ti-terminal-2"></i> Bot Console</span>
+          <button onclick="bbConsoleClear()" style="font-size:10px;color:var(--text-faint);background:none;border:none;cursor:pointer;font-family:var(--font);padding:0;">clear</button>
+        </div>
+        <div id="bb-console" style="background:#0d0f10;border-radius:6px;padding:8px 10px;font-family:monospace;font-size:10.5px;line-height:1.6;height:180px;overflow-y:auto;color:var(--text-dim);"></div>
+      </div>
 
     </div><!-- /tab-grid-bybit -->
 
@@ -1976,11 +1991,11 @@
             </div>
             <div>
               <div style="font-size:11px;color:var(--text-faint);margin-bottom:5px;">Current price reaction</div>
-              <input id="aiPriceReaction" type="text" placeholder="e.g. -8% in 24h, price at $62K" style="width:100%;font-size:12px;padding:7px 10px;background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;color:var(--text);box-sizing:border-box;">
+              <input id="aiPriceReaction" type="text" autocomplete="off" placeholder="e.g. -8% in 24h, price at $62K" style="width:100%;font-size:12px;padding:7px 10px;background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;color:var(--text);box-sizing:border-box;">
             </div>
             <div>
               <div style="font-size:11px;color:var(--text-faint);margin-bottom:5px;">Event description</div>
-              <input id="aiEventDesc" type="text" placeholder="e.g. US sanctions on Iran" style="width:100%;font-size:12px;padding:7px 10px;background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;color:var(--text);box-sizing:border-box;">
+              <input id="aiEventDesc" type="text" autocomplete="off" placeholder="e.g. US sanctions on Iran" style="width:100%;font-size:12px;padding:7px 10px;background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;color:var(--text);box-sizing:border-box;">
             </div>
           </div>
           <button onclick="aiAskOpinion()" style="font-size:12px;padding:8px 18px;background:var(--teal);color:#000;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Ask AI for opinion</button>
@@ -2017,6 +2032,77 @@
           <div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px;">Pattern Analysis</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:12px;" id="fomcPatterns"></div>
         </div>
+      </div>
+    </div>
+
+    <!-- ===================== ALTCOIN EVENT RESEARCH TAB ===================== -->
+    <div class="tab-view" id="tab-alt-events" data-title="Altcoin Event Research">
+      <div style="padding:16px">
+
+        <!-- Coin selector + event type filter -->
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:11px;color:var(--text-faint);">Coin:</span>
+            <select id="altCoinSelect" onchange="altRender()" style="font-size:12px;padding:5px 10px;background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;color:var(--text);">
+              <option value="BTC">BTC</option>
+              <option value="ETH">ETH</option>
+              <option value="SOL">SOL</option>
+              <option value="BNB">BNB</option>
+              <option value="XRP">XRP</option>
+            </select>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:11px;color:var(--text-faint);">Type:</span>
+            <div id="altFilters" style="display:flex;flex-wrap:wrap;gap:6px;">
+              <button class="sea-fb active" data-acat="all">All</button>
+              <button class="sea-fb" data-acat="hack">Hack / Exploit</button>
+              <button class="sea-fb" data-acat="upgrade">Network Upgrade</button>
+              <button class="sea-fb" data-acat="partnership">Partnership / Deal</button>
+              <button class="sea-fb" data-acat="ownership">Ownership / Regulation</button>
+              <button class="sea-fb" data-acat="listing">Listing / Delisting</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Legend -->
+        <div style="display:flex;flex-wrap:wrap;gap:14px;font-size:11px;color:var(--text-faint);margin-bottom:10px;">
+          <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#e2645f;margin-right:4px;vertical-align:middle;"></span>Hack / Exploit</span>
+          <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#28d7c8;margin-right:4px;vertical-align:middle;"></span>Network Upgrade</span>
+          <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#3ddc97;margin-right:4px;vertical-align:middle;"></span>Partnership / Deal</span>
+          <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#d9a93f;margin-right:4px;vertical-align:middle;"></span>Ownership / Regulation</span>
+          <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#9b8ae8;margin-right:4px;vertical-align:middle;"></span>Listing / Delisting</span>
+          <span style="margin-left:auto;font-size:10px;">Hover dots for details</span>
+        </div>
+
+        <!-- Chart -->
+        <div style="position:relative;border-radius:6px;overflow:hidden;background:#0d0f10;margin-bottom:16px;" id="altChartWrap">
+          <div id="altChartLoading" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;font-size:12px;color:var(--text-faint);background:#0d0f10;z-index:5;">
+            <span>Loading price data...</span>
+          </div>
+          <canvas id="altC" style="display:block;width:100%;height:260px;"></canvas>
+          <div id="altTip" style="position:absolute;display:none;background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;padding:10px 12px;font-size:12px;max-width:220px;z-index:10;pointer-events:none;line-height:1.6;"></div>
+        </div>
+
+        <!-- Summary stat cards -->
+        <div id="altStats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;"></div>
+
+        <!-- Event table -->
+        <div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px;">Event breakdown</div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead><tr style="border-bottom:0.5px solid var(--border);">
+            <th style="text-align:left;padding:5px 6px;font-weight:500;color:var(--text-faint);font-size:11px;width:96px;">Date</th>
+            <th style="text-align:left;padding:5px 6px;font-weight:500;color:var(--text-faint);font-size:11px;">Event</th>
+            <th style="text-align:left;padding:5px 6px;font-weight:500;color:var(--text-faint);font-size:11px;width:110px;">Type</th>
+            <th style="text-align:right;padding:5px 6px;font-weight:500;color:var(--text-faint);font-size:11px;width:60px;">7d pre</th>
+            <th style="text-align:right;padding:5px 6px;font-weight:500;color:var(--text-faint);font-size:11px;width:60px;">7d post</th>
+            <th style="text-align:left;padding:5px 6px;font-weight:500;color:var(--text-faint);font-size:11px;">Pattern</th>
+          </tr></thead>
+          <tbody id="altTbody"></tbody>
+        </table>
+
+        <!-- Key insights -->
+        <div id="altInsights" style="margin-top:20px;"></div>
+
       </div>
     </div>
 
@@ -5451,6 +5537,44 @@ function gridDrawViz(){
 // ===================== BYBIT GRID BOT =====================
 const BB_STORAGE_KEY='ema_watch_bb_grid_v1',BB_REST_BASE='https://api.bybit.com',BB_WS_PUBLIC='wss://stream.bybit.com/v5/public/linear',BB_WS_PRIVATE='wss://stream.bybit.com/v5/private',BB_SYMBOL='BTCUSDT',BB_CATEGORY='linear';
 let bbState=null,bbPriceWs=null,bbPrivateWs=null,bbCurrentPrice=null,bbUptimeInterval=null,bbVizRaf=null,bbVizDirty=false;
+
+// ── BOT CONSOLE ──────────────────────────────────────────────────────────────
+function bbConsoleLog(msg, type){
+  const el=document.getElementById('bb-console');
+  if(!el)return;
+  const ts=new Date().toLocaleTimeString('en-GB',{hour12:false});
+  const color=type==='error'?'#e2645f':type==='warn'?'#d9a93f':'#9aa0a6';
+  const line=document.createElement('div');
+  line.style.color=color;
+  line.textContent=ts+'  '+msg;
+  el.appendChild(line);
+  el.scrollTop=el.scrollHeight;
+  // cap at 300 lines
+  while(el.children.length>300)el.removeChild(el.firstChild);
+}
+function bbConsoleClear(){const el=document.getElementById('bb-console');if(el)el.innerHTML='';}
+// Intercept console methods scoped to BBGrid logs
+(function(){
+  const _log=console.log.bind(console);
+  const _warn=console.warn.bind(console);
+  const _error=console.error.bind(console);
+  console.log=function(){
+    _log.apply(console,arguments);
+    const msg=Array.from(arguments).join(' ');
+    if(msg.includes('[BBGrid]'))bbConsoleLog(msg,'log');
+  };
+  console.warn=function(){
+    _warn.apply(console,arguments);
+    const msg=Array.from(arguments).join(' ');
+    if(msg.includes('[BBGrid]'))bbConsoleLog(msg,'warn');
+  };
+  console.error=function(){
+    _error.apply(console,arguments);
+    const msg=Array.from(arguments).join(' ');
+    if(msg.includes('[BBGrid]'))bbConsoleLog(msg,'error');
+  };
+})();
+
 function bbGetKey(){return localStorage.getItem('bybit_api_key')||'';}
 function bbGetSecret(){return localStorage.getItem('bybit_api_secret')||'';}
 function saveSettingsBybit(){const k=document.getElementById('settings-bybit-key').value.trim(),s=document.getElementById('settings-bybit-secret').value.trim(),st=document.getElementById('settings-bybit-status');if(!k||!s){st.textContent='both fields required';return;}localStorage.setItem('bybit_api_key',k);localStorage.setItem('bybit_api_secret',s);st.textContent='saved ✓';setTimeout(()=>{st.textContent='';},2500);}
@@ -5542,56 +5666,49 @@ async function bbHandleFill(ex){
   if(!bbState.netPos) bbState.netPos={qty:0,side:null,totalCost:0,totalFees:0,counterOrderId:null,counterClientId:null};
   const np=bbState.netPos;
 
-  // ── COUNTER ORDER FILL (cycle complete) ───────────────────────────────────
-  if(clientOrderId===np.counterClientId){
-    console.log('[BBGrid] counter fill — cycle complete. qty:',fillQty,'price:',fillPrice);
-    // Book P&L: net position was long/short, counter closed it
-    const grossPnl=np.side==='Buy'
-      ?(fillPrice-np.totalCost/np.qty)*np.qty
-      :(np.totalCost/np.qty-fillPrice)*np.qty;
-    const netPnl=grossPnl-fee-np.totalFees;
+  // ── HELPER: complete a cycle and restart the grid ─────────────────────────
+  async function bbCompleteCycle(closeFee){
+    const avgEntry=np.totalCost/np.qty;
+    const grossPnl=np.side==='Buy'?(fillPrice-avgEntry)*np.qty:(avgEntry-fillPrice)*np.qty;
+    const netPnl=grossPnl-closeFee-np.totalFees;
     bbState.pnl=(bbState.pnl||0)+netPnl;
     bbState.fillCount=(bbState.fillCount||0)+1;
-    console.log('[BBGrid] round trip PnL:',netPnl.toFixed(4),'cumul:',bbState.pnl.toFixed(4));
+    console.log('[BBGrid] cycle complete — round trip PnL:',netPnl.toFixed(4),'cumul:',bbState.pnl.toFixed(4));
     bbLifetimeAddTrade(netPnl);
     bbUpdateStat('bbstat-fills',bbState.fillCount);
     const pnl=bbState.pnl||0;
     bbUpdateStat('bbstat-pnl',(pnl>=0?'+':'')+'$'+pnl.toFixed(2),pnl>=0?'up':'down');
     // Clear net position
     bbState.netPos={qty:0,side:null,totalCost:0,totalFees:0,counterOrderId:null,counterClientId:null};
-    // Mark all levels as open (reset filled/waiting states)
     bbState.levels.forEach(lv=>{if(lv.status==='filled'||lv.status==='waiting')lv.status='open';});
     bbSave();bbRenderLevelTable();bbVizDirty=true;
-    // ── CYCLE RESTART: wait 10s, fetch price, redeploy grid ──────────────────
-    console.log('[BBGrid] cycle complete — waiting 10s before redeploying grid...');
+    // Wait 10s then redeploy
+    console.log('[BBGrid] waiting 10s before redeploying grid...');
     bbUpdateStat('bbstat-state','Cycle reset — waiting 10s...');
     await new Promise(r=>setTimeout(r,10000));
-    if(!bbState||!bbState.running)return; // bot was stopped during wait
-    // Fetch fresh price
+    if(!bbState||!bbState.running)return;
     let currentPrice=bbCurrentPrice;
     try{
-      const ticker=await bbSignedGet('/v5/market/tickers',{category:BB_CATEGORY,symbol:BB_SYMBOL});
-      const tp=parseFloat(ticker?.result?.list?.[0]?.lastPrice||0);
+      const ticker=await fetch(`https://api.bybit.com/v5/market/tickers?category=linear&symbol=${BB_SYMBOL}`);
+      const td=await ticker.json();
+      const tp=parseFloat(td?.result?.list?.[0]?.lastPrice||0);
       if(tp>1000)currentPrice=tp;
     }catch(e){console.warn('[BBGrid] price fetch failed, using WS price');}
     console.log('[BBGrid] redeploying grid at price',currentPrice);
     bbUpdateStat('bbstat-state','Redeploying grid...');
-    const THRESHOLD=50; // $50 buffer — skip levels too close to current price
+    const THRESHOLD=50;
     let placed=0;
     for(let i=0;i<bbState.levels.length;i++){
       const lv=bbState.levels[i];
       const diff=currentPrice-lv.price;
-      const shouldBeBuy=diff>0; // level is below price → buy
-      const shouldBeSell=diff<0; // level is above price → sell
       if(Math.abs(diff)<THRESHOLD){
         lv.status='skip';
-        console.log('[BBGrid] skipping level',i,'at',lv.price,'— within $'+THRESHOLD+' of price');
+        console.log('[BBGrid] skipping level',i,'at',lv.price,'within $'+THRESHOLD+' of price');
         continue;
       }
+      const shouldBeBuy=diff>0;
       const clientId=`bbgrid_${shouldBeBuy?'b':'s'}_${i}_${Date.now()}`;
-      lv.isBuy=shouldBeBuy;
-      lv.clientOrderId=clientId;
-      lv.status='pending';
+      lv.isBuy=shouldBeBuy;lv.clientOrderId=clientId;lv.status='pending';
       const orderId=await bbPlaceOrder(lv.price,shouldBeBuy,bbState.notional,clientId);
       if(orderId){lv.orderId=orderId;lv.status='open';placed++;}
       else lv.status='error';
@@ -5603,68 +5720,91 @@ async function bbHandleFill(ex){
     bbUpdateStat('bbstat-orders',placed);
     bbUpdateStat('bbstat-state','Running');
     console.log('[BBGrid] grid redeployed —',placed,'orders placed');
+  }
+
+  // ── COUNTER ORDER FILL (matched by clientId) ──────────────────────────────
+  if(clientOrderId===np.counterClientId){
+    console.log('[BBGrid] counter fill (matched) — closing position. qty:',fillQty,'price:',fillPrice);
+    await bbCompleteCycle(fee);
     return;
   }
 
-  // ── GRID LEVEL FILL (opening leg) ─────────────────────────────────────────
+  // ── GRID LEVEL FILL ───────────────────────────────────────────────────────
   const li=bbState.levels.findIndex(lv=>lv.clientOrderId===clientOrderId);
-  if(li===-1){console.log('[BBGrid] fill unmatched — ignoring',clientOrderId);return;}
+  if(li===-1){
+    // Unmatched fill — check if it closes our net position (e.g. a grid sell fills while we are long)
+    if(np.qty>0&&np.side){
+      const closesPosition=(np.side==='Buy'&&!isBuy)||(np.side==='Sell'&&isBuy);
+      if(closesPosition){
+        console.log('[BBGrid] unmatched fill closes net position — treating as cycle complete');
+        await bbCompleteCycle(fee);
+        return;
+      }
+    }
+    console.log('[BBGrid] fill unmatched — ignoring',clientOrderId);
+    return;
+  }
+
   const level=bbState.levels[li];
+
+  // If this grid fill is in the OPPOSITE direction to our net position, it closes us out
+  if(np.qty>0&&np.side){
+    const closesPosition=(np.side==='Buy'&&!isBuy)||(np.side==='Sell'&&isBuy);
+    if(closesPosition){
+      console.log('[BBGrid] grid level fill closes net position — treating as cycle complete');
+      // Cancel the pending counter order if any before completing
+      if(np.counterOrderId){await bbCancelOrder(np.counterOrderId);np.counterOrderId=null;np.counterClientId=null;}
+      level.status='open';level.fillPrice=fillPrice;
+      bbRenderLevelTable();bbVizDirty=true;
+      await bbCompleteCycle(fee);
+      return;
+    }
+  }
+
+  // Opening leg — accumulate net position
   level.status='filled';
   level.fillPrice=fillPrice;
   level.isBuy=isBuy;
   bbRenderLevelTable();bbVizDirty=true;
 
-  // Update net position
-  if(np.side===null||np.side===(isBuy?'Buy':'Sell')){
-    // Accumulate in same direction
-    np.side=isBuy?'Buy':'Sell';
-    np.qty+=fillQty;
-    np.totalCost+=fillPrice*fillQty;
-    np.totalFees+=fee;
-  } else {
-    // Opposite fill (shouldn't happen in normal grid flow but handle it)
-    np.qty-=fillQty;
-    np.totalCost-=fillPrice*fillQty;
-    np.totalFees+=fee;
-    if(np.qty<=0){np.qty=0;np.side=null;np.totalCost=0;np.totalFees=0;}
-  }
+  np.side=isBuy?'Buy':'Sell';
+  np.qty+=fillQty;
+  np.totalCost+=fillPrice*fillQty;
+  np.totalFees+=fee;
   const avgEntry=np.qty>0?np.totalCost/np.qty:0;
   console.log('[BBGrid] net position — side:',np.side,'qty:',np.qty.toFixed(3),'avg entry:',avgEntry.toFixed(2));
 
-  // Cancel existing counter order if any
+  // Cancel existing counter if any, place fresh one for full net qty
   if(np.counterOrderId){
     console.log('[BBGrid] cancelling previous counter order',np.counterOrderId);
     await bbCancelOrder(np.counterOrderId);
     np.counterOrderId=null;np.counterClientId=null;
   }
 
-  // Place single counter order for full net qty
-  const counterSide=np.side==='Buy'?'Sell':'Buy';
-  // Counter price: next level beyond the outermost filled level
-  const filledLevels=bbState.levels.filter(lv=>lv.status==='filled'||lv.status==='waiting');
+  // Counter price: one level beyond the outermost filled level
+  const filledIdxs=bbState.levels.map((lv,i)=>lv.status==='filled'?i:-1).filter(i=>i>=0);
   let counterPrice;
   if(np.side==='Buy'){
-    // Long position — counter sell goes one level above highest filled buy
-    const maxFilledIdx=Math.max(...filledLevels.map(lv=>bbState.levels.indexOf(lv)));
-    const counterIdx=Math.min(maxFilledIdx+1,bbState.levels.length-1);
+    const counterIdx=Math.min(Math.max(...filledIdxs)+1,bbState.levels.length-1);
     counterPrice=bbState.levels[counterIdx].price;
   } else {
-    // Short position — counter buy goes one level below lowest filled sell
-    const minFilledIdx=Math.min(...filledLevels.map(lv=>bbState.levels.indexOf(lv)));
-    const counterIdx=Math.max(minFilledIdx-1,0);
+    const counterIdx=Math.max(Math.min(...filledIdxs)-1,0);
     counterPrice=bbState.levels[counterIdx].price;
   }
+
+  // Add a small delay so Bybit position is updated before placing reduceOnly
+  await new Promise(r=>setTimeout(r,500));
+
   const counterQty=np.qty.toFixed(3);
   const counterClientId=`bbgrid_counter_${Date.now()}`;
   np.counterClientId=counterClientId;
-  // Place counter as reduceOnly to close net position
+  const counterSide=np.side==='Buy'?'Sell':'Buy';
   const counterBody={category:BB_CATEGORY,symbol:BB_SYMBOL,side:counterSide,orderType:'Limit',qty:counterQty,price:counterPrice.toFixed(2),timeInForce:'GTC',positionIdx:0,reduceOnly:true,closeOnTrigger:false,orderLinkId:counterClientId};
-  console.log('[BBGrid] placing counter order',counterBody);
+  console.log('[BBGrid] placing counter order — side:',counterSide,'qty:',counterQty,'price:',counterPrice);
   try{
     const r=await bbSignedPost('/v5/order/create',counterBody);
     if(r.retCode!==0){console.error('[BBGrid] counter order error',r.retMsg);np.counterClientId=null;}
-    else{np.counterOrderId=r.result?.orderId||null;console.log('[BBGrid] counter order placed',np.counterOrderId,'qty:',counterQty,'price:',counterPrice,'side:',counterSide);}
+    else{np.counterOrderId=r.result?.orderId||null;console.log('[BBGrid] counter order placed',np.counterOrderId);}
   }catch(e){console.error('[BBGrid] counter order exception',e.message);np.counterClientId=null;}
   bbSave();bbUpdateStat('bbstat-orders',bbState.levels.filter(l=>l.status==='open').length);
 }

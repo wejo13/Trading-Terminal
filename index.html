@@ -5455,11 +5455,24 @@ async function bbHandleFill(ex){
     level.prevFillPrice=null;level.prevFillFee=null;level.prevIsBuy=null;
     level.status='open';level.fillPrice=fillPrice; // show last fill price in table
     bbRenderLevelTable();bbVizDirty=true;
-    // Place next order on this same level (opposite side, same price)
-    const nextClientId=`bbgrid_c_${li}_${Date.now()}`;
+    // Place fresh order back on THIS level (original side — buy below price, sell above)
+    const nextClientId=`bbgrid_r_${li}_${Date.now()}`;
     level.clientOrderId=nextClientId;
-    const orderId=await bbPlaceOrder(level.price,!isBuy,bbState.notional,nextClientId);
-    if(orderId){level.orderId=orderId;console.log('[BBGrid] cycle restart — next order at',level.price,!isBuy?'sell':'buy');}
+    const origIsBuy=level.price<(bbCurrentPrice||(bbState.lower+bbState.upper)/2);
+    const orderId=await bbPlaceOrder(level.price,origIsBuy,bbState.notional,nextClientId);
+    if(orderId){level.orderId=orderId;console.log('[BBGrid] cycle restart — fresh order at',level.price,origIsBuy?'buy':'sell');}
+    // Also restore the adjacent level's order if it was left orderless by the counter placement
+    const adjLi=origIsBuy?li+1:li-1;
+    if(adjLi>=0&&adjLi<bbState.levels.length){
+      const adjLv=bbState.levels[adjLi];
+      if(!adjLv.orderId&&adjLv.status!=='waiting'&&adjLv.status!=='filled'){
+        const adjClientId=`bbgrid_r_${adjLi}_${Date.now()}`;
+        adjLv.clientOrderId=adjClientId;
+        const adjIsBuy=adjLv.price<(bbCurrentPrice||(bbState.lower+bbState.upper)/2);
+        const adjOrderId=await bbPlaceOrder(adjLv.price,adjIsBuy,bbState.notional,adjClientId);
+        if(adjOrderId){adjLv.orderId=adjOrderId;adjLv.status='open';console.log('[BBGrid] restored adjacent level',adjLi,'at',adjLv.price);}
+      }
+    }
     bbSave();bbUpdateStat('bbstat-orders',bbState.levels.filter(l=>l.status==='open').length);
     return;
   }
@@ -5477,6 +5490,14 @@ async function bbHandleFill(ex){
   const counterLi=isBuy?li+1:li-1;
   if(counterLi>=0&&counterLi<bbState.levels.length){
     const cLv=bbState.levels[counterLi];
+    // Cancel the existing order on the adjacent level before placing the counter there,
+    // otherwise two orders sit at the same price and the second fill goes unmatched.
+    if(cLv.orderId){
+      console.log('[BBGrid] cancelling adjacent level order before counter',cLv.orderId);
+      await bbCancelOrder(cLv.orderId);
+      cLv.orderId=null;
+      cLv.status='idle';
+    }
     const counterClientId=`bbgrid_c_${li}_${Date.now()}`;
     // Register the counter on THIS level so when it fills we know which level to book P&L on
     level.clientOrderId=counterClientId;

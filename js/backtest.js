@@ -810,15 +810,17 @@ async function btRun() {
   // Reset opt-grid and rank state whenever a new backtest run begins.
   // btOptGrid / btOptGridParams are cleared so that btRunFiltersAndRank()
   // cannot use results from a prior opt-grid run on different data.
-  btWindowSlices  = null;
-  btOptGrid       = null;
-  btOptGridParams = null;
+  btWindowSlices          = null;
+  btOptGrid               = null;
+  btOptGridParams         = null;
+  btOptGridTactical       = null;
+  btOptGridTacticalParams = null;
   btEnableOptGridBtn();
-  // Clear the rank output and reset the rank button label
-  const rankWrap = document.getElementById('bt-rank-wrap');
-  if (rankWrap) rankWrap.innerHTML = '';
-  const rankStatus = document.getElementById('bt-rank-status');
-  if (rankStatus) rankStatus.textContent = '';
+  Object.values(BT_STUDY_CONFIGS).forEach(cfg => {
+    const rw = document.getElementById(cfg.rankWrapId);    if (rw) rw.innerHTML = '';
+    const rs = document.getElementById(cfg.rankStatusId);  if (rs) rs.textContent = '';
+    const oo = document.getElementById(cfg.outputId);      if (oo) { oo.textContent = ''; oo.style.display = 'none'; }
+  });
   const debugPanel = document.getElementById('bt-debug-panel');
   debugPanel.style.display = btDebug ? 'block' : 'none';
 
@@ -1094,16 +1096,8 @@ async function btRun() {
 let btGridResults = null; // { slPct: number, cells: [{ tp, ...summary, finalBalance, pnl }] }[]
 const BT_GRID_MIN_CLOSED = 15; // below this, flag as low-sample in heatmap display
 
-// Bucket 4: raw optimization grid — separate from btGridResults (heatmap display).
-// Populated by btRunOptGrid(). Read by Buckets 5-6 for filtering and ranking.
-// Structure per combination:
-//   { slPct, tp,
-//     bull1: { trades, wins, losses, testEndExits, netR, pnl },
-//     bull2: { trades, wins, losses, testEndExits, netR, pnl },
-//     combined: { trades, wins, losses, testEndExits, netR, pnl } }
-let btOptGrid = null;
-// Parameters used for the last btRunOptGrid() call — shown in debug output.
-let btOptGridParams = null;
+// btOptGrid, btOptGridParams, btOptGridTactical, btOptGridTacticalParams
+// are declared in the study configs block above (with BT_STUDY_CONFIGS).
 
 function btRunGrid() {
   const statusEl = document.getElementById('bt-grid-status');
@@ -1170,172 +1164,126 @@ function btRunGrid() {
   btn.style.opacity = '1';
 }
 
-// ── Bucket 4: Raw SL × TP Optimization Grid ───────────────────────────────────
-// Runs every SL% × TP-R combination independently for Bull Run 1 and Bull Run 2.
-// Requires "Both Bull Runs" mode to have been run first (btWindowSlices must exist).
-// Uses fixed 1% risk of original starting balance per trade, no compounding.
-// Does NOT filter, rank, or alter strategy logic. Stores all raw combinations.
-//
-// Stored in btOptGrid:
-//   Array of { slPct, tp, bull1, bull2, combined }
-//   Each period object: { trades, wins, losses, testEndExits, winRate,
-//                         profitFactor, netR, pnl, startBalance }
-//
-// Also populates btOptGridParams with the parameter universe for audit output.
-function btRunOptGrid() {
-  // Own status element and button — separate from the heatmap grid controls.
-  const statusEl  = document.getElementById('bt-opt-grid-status');
-  const btn       = document.getElementById('bt-opt-grid-run-btn');
+// ── Shared SL × TP Optimization Grid runner (parameterized by study config) ───
+function btRunOptGridForStudy(cfg) {
+  const statusEl  = document.getElementById(cfg.statusId);
+  const btn       = document.getElementById(cfg.btnId);
   const debugEl   = document.getElementById('bt-debug-output');
 
-  // Require both bull run periods to be available.
-  // btWindowSlices is only populated after "Both Bull Runs" completes.
   if (!btWindowSlices || btWindowSlices.length < 2) {
-    if (statusEl) statusEl.textContent =
-      'Run "Both Bull Runs" mode above first — prerequisite data not available.';
+    if (statusEl) statusEl.textContent = 'Run "Both Bull Runs" mode above first — prerequisite data not available.';
     return;
   }
-
   const bull1Slice = btWindowSlices.find(s => s.periodId === 'bull1');
   const bull2Slice = btWindowSlices.find(s => s.periodId === 'bull2');
   if (!bull1Slice || !bull2Slice) {
-    if (statusEl) statusEl.textContent =
-      'Could not find bull1 and bull2 window slices — re-run "Both Bull Runs".';
+    if (statusEl) statusEl.textContent = 'Could not find bull1 and bull2 window slices — re-run "Both Bull Runs".';
     return;
   }
 
-  // ── Read SL range parameters from the shared heatmap SL inputs ──────────────
   const slMin  = parseFloat(document.getElementById('bt-grid-sl-min').value);
   const slMax  = parseFloat(document.getElementById('bt-grid-sl-max').value);
   const slStep = parseFloat(document.getElementById('bt-grid-sl-step').value);
-
   if (!isFinite(slMin) || !isFinite(slMax) || !isFinite(slStep) || slStep <= 0 || slMax < slMin) {
     if (statusEl) statusEl.textContent = 'Error: check SL min / max / step values above';
     return;
   }
 
   const slValues = [];
-  for (let v = slMin; v <= slMax + 1e-9; v += slStep) {
+  for (let v = slMin; v <= slMax + 1e-9; v += slStep)
     slValues.push(parseFloat((Math.round(v * 1000) / 1000).toFixed(3)));
-  }
 
-  const expectedCombos = slValues.length * BT_TP_LEVELS.length;
+  const tpLevels       = cfg.tpLevels;
+  const expectedCombos = slValues.length * tpLevels.length;
 
-  // ── Read starting balance and risk % from the existing page controls ───────────
-  // Uses the same bt-balance-input and bt-risk-select already on the page —
-  // no duplicate inputs. Values are snapshotted into btOptGridParams at run
-  // start so results remain reproducible regardless of later UI changes.
   const START_BALANCE = parseFloat(document.getElementById('bt-balance-input')?.value);
   const RISK_PCT      = parseFloat(document.getElementById('bt-risk-select')?.value);
-  const COMPOUND      = false; // locked: fixed risk, no compounding
+  const COMPOUND      = false;
 
   if (!isFinite(START_BALANCE) || START_BALANCE <= 0) {
-    if (statusEl) statusEl.textContent = 'Error: set a valid starting balance above before running';
-    return;
+    if (statusEl) statusEl.textContent = 'Error: set a valid starting balance above before running'; return;
   }
   if (!isFinite(RISK_PCT) || RISK_PCT <= 0 || RISK_PCT > 100) {
-    if (statusEl) statusEl.textContent = 'Error: set a valid risk % above before running';
-    return;
+    if (statusEl) statusEl.textContent = 'Error: set a valid risk % above before running'; return;
   }
 
-  // ── Log parameter universe before running ───────────────────────────────────
   const paramLines = [
-    '=== BUCKET 4 OPT GRID — PARAMETER UNIVERSE ===',
-    `SL range     : ${slMin}% to ${slMax}% step ${slStep}%`,
-    `SL values    : [${slValues.join(', ')}]  (${slValues.length} levels)`,
-    `TP-R values  : [${BT_TP_LEVELS.join(', ')}]  (${BT_TP_LEVELS.length} levels)`,
-    `Combinations : ${slValues.length} SL × ${BT_TP_LEVELS.length} TP = ${expectedCombos} expected`,
+    `=== ${cfg.title.toUpperCase()} ===`,
+    cfg.disclaimer, '',
+    `SL range         : ${slMin}% to ${slMax}% step ${slStep}%`,
+    `SL values        : [${slValues.join(', ')}]  (${slValues.length} levels)`,
+    `TP-R values      : [${tpLevels.join(', ')}]  (${tpLevels.length} levels)`,
+    `Combinations     : ${slValues.length} SL × ${tpLevels.length} TP = ${expectedCombos} expected`,
     `Starting balance : $${START_BALANCE.toLocaleString()}`,
     `Risk per trade   : ${RISK_PCT}% of $${START_BALANCE.toLocaleString()} = $${(START_BALANCE * RISK_PCT / 100).toFixed(2)} fixed, no compounding`,
-    `Bull Run 1   : ${new Date(bull1Slice.wStart).toISOString().slice(0,10)} → ${new Date(bull1Slice.wEnd).toISOString().slice(0,10)} (${bull1Slice.sliceCandles.length} candles)`,
-    `Bull Run 2   : ${new Date(bull2Slice.wStart).toISOString().slice(0,10)} → ${new Date(bull2Slice.wEnd).toISOString().slice(0,10)} (${bull2Slice.sliceCandles.length} candles)`,
+    `Bull Run 1       : ${new Date(bull1Slice.wStart).toISOString().slice(0,10)} → ${new Date(bull1Slice.wEnd).toISOString().slice(0,10)} (${bull1Slice.sliceCandles.length} candles)`,
+    `Bull Run 2       : ${new Date(bull2Slice.wStart).toISOString().slice(0,10)} → ${new Date(bull2Slice.wEnd).toISOString().slice(0,10)} (${bull2Slice.sliceCandles.length} candles)`,
     `Running...`,
   ].join('\n');
+
+  const optOutputEl = document.getElementById(cfg.outputId);
+  if (optOutputEl) { optOutputEl.textContent = paramLines; optOutputEl.style.display = 'block'; }
   if (debugEl) debugEl.value = paramLines;
-  console.log(paramLines);
 
   if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
   if (statusEl) statusEl.textContent = `Running ${expectedCombos} combos…`;
 
-  // ── Helper: summarise one period's trades into a raw cell object ─────────────
   function periodCell(trades) {
-    const closed     = trades.filter(t => t.outcome !== 'Open');
-    const wins       = closed.filter(t => t.outcome === 'Win' || (t.outcome === 'test_end_exit' && t.rMade > 0));
-    const losses     = closed.filter(t => t.outcome === 'Loss' || (t.outcome === 'test_end_exit' && t.rMade <= 0));
+    const closed       = trades.filter(t => t.outcome !== 'Open');
+    const wins         = closed.filter(t => t.outcome === 'Win' || (t.outcome === 'test_end_exit' && t.rMade > 0));
+    const losses       = closed.filter(t => t.outcome === 'Loss' || (t.outcome === 'test_end_exit' && t.rMade <= 0));
     const testEndExits = closed.filter(t => t.outcome === 'test_end_exit').length;
-    const netR       = closed.reduce((s, t) => s + (t.rMade || 0), 0);
-    const grossWin   = wins.reduce((s, t)   => s + Math.max(0, t.rMade || 0), 0);
-    const grossLoss  = losses.reduce((s, t) => s + Math.abs(Math.min(0, t.rMade || 0)), 0);
+    const netR         = closed.reduce((s, t) => s + (t.rMade || 0), 0);
+    const grossWin     = wins.reduce((s, t)   => s + Math.max(0, t.rMade || 0), 0);
+    const grossLoss    = losses.reduce((s, t) => s + Math.abs(Math.min(0, t.rMade || 0)), 0);
     const profitFactor = grossLoss > 0 ? grossWin / grossLoss : wins.length > 0 ? Infinity : 0;
-    const winRate    = closed.length > 0 ? wins.length / closed.length * 100 : 0;
-    // Dollar P&L: fixed risk per trade (non-compounding), using the run-start values
-    const riskAmount = START_BALANCE * RISK_PCT / 100;
-    const pnl        = closed.reduce((s, t) => s + riskAmount * (t.rMade || 0), 0);
+    const winRate      = closed.length > 0 ? wins.length / closed.length * 100 : 0;
+    const riskAmount   = START_BALANCE * RISK_PCT / 100;
+    const pnl          = closed.reduce((s, t) => s + riskAmount * (t.rMade || 0), 0);
     return { trades: closed.length, wins: wins.length, losses: losses.length,
              testEndExits, winRate, profitFactor, netR, pnl, startBalance: START_BALANCE };
   }
 
-  // ── Run every SL × TP combination ──────────────────────────────────────────
   const rawResults = [];
-  let actualRuns = 0;
-  let failedRuns = 0;
-
+  let actualRuns = 0, failedRuns = 0;
   const savedSlPct = BT_SL_PCT;
+
   for (const slPct of slValues) {
     BT_SL_PCT = slPct / 100;
-    for (const tp of BT_TP_LEVELS) {
+    for (const tp of tpLevels) {
       try {
-        const trades1 = btRunPeriod(
-          bull1Slice.sliceCandles, bull1Slice.sliceEma,
-          tp, bull1Slice.wStart, bull1Slice.wEnd, 'bull1'
-        );
-        const trades2 = btRunPeriod(
-          bull2Slice.sliceCandles, bull2Slice.sliceEma,
-          tp, bull2Slice.wStart, bull2Slice.wEnd, 'bull2'
-        );
+        const trades1   = btRunPeriod(bull1Slice.sliceCandles, bull1Slice.sliceEma, tp, bull1Slice.wStart, bull1Slice.wEnd, 'bull1');
+        const trades2   = btRunPeriod(bull2Slice.sliceCandles, bull2Slice.sliceEma, tp, bull2Slice.wStart, bull2Slice.wEnd, 'bull2');
         const allTrades = [...trades1, ...trades2];
-
         rawResults.push({
-          slPct,
-          tp,
-          bull1:    periodCell(trades1),
-          bull2:    periodCell(trades2),
-          combined: periodCell(allTrades),
-          // Raw trade arrays retained for Bucket 5 metrics (drawdown, largest winner).
-          // These are closed trades only — 'Open' outcome never appears after Bucket 3.
+          slPct, tp,
+          bull1: periodCell(trades1), bull2: periodCell(trades2), combined: periodCell(allTrades),
           _trades1: trades1.filter(t => t.outcome !== 'Open'),
           _trades2: trades2.filter(t => t.outcome !== 'Open'),
         });
         actualRuns++;
       } catch (err) {
         failedRuns++;
-        console.error(`[OptGrid] SL=${slPct}% TP=${tp}R failed:`, err);
+        console.error(`[OptGrid:${cfg.id}] SL=${slPct}% TP=${tp}R failed:`, err);
       }
     }
   }
   BT_SL_PCT = savedSlPct;
 
-  btOptGrid = rawResults;
-  // Store all parameters used for this run — these lock the reproducibility context.
-  btOptGridParams = {
-    slMin, slMax, slStep, slValues,
-    tpLevels:     BT_TP_LEVELS,
-    expectedCombos,
-    startBalance: START_BALANCE,  // snapshotted from bt-balance-input at run start
-    riskPct:      RISK_PCT,       // snapshotted from bt-risk-select at run start
+  // Write to the study-specific result store — never touches the other study's store
+  const params = {
+    studyId: cfg.id, slMin, slMax, slStep, slValues, tpLevels, expectedCombos,
+    startBalance: START_BALANCE, riskPct: RISK_PCT,
     riskPerTrade: START_BALANCE * RISK_PCT / 100,
-    compound:     COMPOUND,
-    runAt:        new Date().toISOString(),
+    compound: COMPOUND, runAt: new Date().toISOString(),
   };
+  if (cfg.id === 'full') {
+    btOptGrid = rawResults; btOptGridParams = params;
+  } else if (cfg.id === 'tactical') {
+    btOptGridTactical = rawResults; btOptGridTacticalParams = params;
+  }
 
-  // ── Completion summary + sample ────────────────────────────────────────────
-  // Written to bt-opt-grid-output (always visible, no debug toggle needed).
-  // Also written to bt-debug-output and console for completeness.
-  const sampleItems = [
-    ...rawResults.slice(0, 3),
-    rawResults.length > 3 ? rawResults[rawResults.length - 1] : null,
-  ].filter(Boolean);
-
+  const sampleItems = [...rawResults.slice(0,3), rawResults.length > 3 ? rawResults[rawResults.length-1] : null].filter(Boolean);
   const sampleLines = ['', '--- Raw result sample (first 3 + last combo) ---'];
   sampleItems.forEach((r, i) => {
     const isLast = i === sampleItems.length - 1 && rawResults.length > 3;
@@ -1347,46 +1295,39 @@ function btRunOptGrid() {
     );
   });
 
+  const resultStore = cfg.id === 'full' ? `btOptGrid (${rawResults.length} entries)` : `btOptGridTactical (${rawResults.length} entries)`;
   const summaryLines = [
-    '',
-    '=== BUCKET 4 COMPLETION SUMMARY ===',
+    '', `=== ${cfg.title.toUpperCase()} — COMPLETION SUMMARY ===`,
     `Expected combinations : ${expectedCombos}`,
     `Actual runs completed : ${actualRuns}`,
     `Failed runs           : ${failedRuns}`,
-    `btOptGrid entries     : ${btOptGrid.length}`,
+    `Result store          : ${resultStore}`,
     `Starting balance used : $${START_BALANCE.toLocaleString()}`,
     `Risk % used           : ${RISK_PCT}%  ($${(START_BALANCE * RISK_PCT / 100).toFixed(2)} per trade)`,
-    failedRuns === 0
-      ? 'Status: ALL COMBINATIONS COMPLETED SUCCESSFULLY'
-      : `Status: ${failedRuns} FAILED — check console`,
-    '====================================',
+    failedRuns === 0 ? 'Status: ALL COMBINATIONS COMPLETED SUCCESSFULLY' : `Status: ${failedRuns} FAILED — check console`,
+    '='.repeat(44),
   ].join('\n');
 
-  // Strip "Running..." from the pre-run header for the final output
   const paramHeader = paramLines.split('\n').filter(l => l !== 'Running...').join('\n');
   const fullOutput  = paramHeader + sampleLines.join('\n') + '\n' + summaryLines;
 
-  // Primary output: always-visible pre block (no debug toggle needed)
-  const optOutputEl = document.getElementById('bt-opt-grid-output');
-  if (optOutputEl) {
-    optOutputEl.textContent = fullOutput;
-    optOutputEl.style.display = 'block';
-  }
-  // Secondary: debug textarea (visible only when debug toggle is on)
+  if (optOutputEl) { optOutputEl.textContent = fullOutput; optOutputEl.style.display = 'block'; }
   if (debugEl) debugEl.value = fullOutput;
   console.log(fullOutput);
 
   if (statusEl) statusEl.textContent =
-    `Opt grid done · ${actualRuns}/${expectedCombos} combos · ${failedRuns === 0 ? '✓ all succeeded' : failedRuns + ' failed'} · btOptGrid ready`;
-
+    `${cfg.id} grid done · ${actualRuns}/${expectedCombos} combos · ${failedRuns === 0 ? '✓ all succeeded' : failedRuns + ' failed'}`;
   if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
 
-  // Enable the rank button now that btOptGrid is populated.
-  const rankBtn = document.getElementById('bt-rank-run-btn');
-  const rankStatus = document.getElementById('bt-rank-status');
-  if (rankBtn) { rankBtn.disabled = false; rankBtn.style.opacity = '1'; rankBtn.title = ''; }
-  if (rankStatus) rankStatus.textContent = 'Optimisation data ready — click to filter and rank';
+  const rankBtn    = document.getElementById(cfg.rankBtnId);
+  const rankStatus = document.getElementById(cfg.rankStatusId);
+  if (rankBtn)    { rankBtn.disabled = false; rankBtn.style.opacity = '1'; rankBtn.title = ''; }
+  if (rankStatus) rankStatus.textContent = `Data ready — click to filter and rank`;
 }
+
+// Public entry points
+function btRunOptGrid()      { btRunOptGridForStudy(BT_STUDY_CONFIGS.full); }
+function btRunTacticalGrid() { btRunOptGridForStudy(BT_STUDY_CONFIGS.tactical); }
 
 // ── Bucket 5: Filter, rank, and render eligible combinations ─────────────────
 //
@@ -1400,24 +1341,22 @@ function btRunOptGrid() {
 // Ranked by combined dollar P&L descending.
 // Uses btOptGrid (raw results) and btOptGridParams (risk snapshot) set by btRunOptGrid().
 // Does NOT re-run the engine. Does NOT recommend a configuration.
-function btRunFiltersAndRank() {
-  const wrapEl   = document.getElementById('bt-rank-wrap');
-  const statusEl = document.getElementById('bt-rank-status');
-  const btn      = document.getElementById('bt-rank-run-btn');
+function btRunFiltersAndRankForStudy(cfg) {
+  const wrapEl   = document.getElementById(cfg.rankWrapId);
+  const statusEl = document.getElementById(cfg.rankStatusId);
+  const btn      = document.getElementById(cfg.rankBtnId);
 
-  // Guard: require a completed optimisation run.
-  // btOptGridParams.runAt is set at the end of btRunOptGrid() — if it's absent
-  // the grid has never completed (or was cleared by a new btRun() call).
-  if (!btOptGrid || btOptGrid.length === 0 || !btOptGridParams) {
-    if (statusEl) statusEl.textContent =
-      'Run "Both Bull Runs" → "Run SL × TP Optimisation" first.';
+  const rawGrid    = cfg.id === 'full' ? btOptGrid : btOptGridTactical;
+  const gridParams = cfg.id === 'full' ? btOptGridParams : btOptGridTacticalParams;
+  if (!rawGrid || rawGrid.length === 0 || !gridParams) {
+    if (statusEl) statusEl.textContent = `Run the ${cfg.title} optimisation above first.`;
     if (wrapEl) wrapEl.innerHTML = '';
     return;
   }
 
   if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
 
-  const riskPerTrade = btOptGridParams.riskPerTrade; // snapshotted at opt-grid run time
+  const riskPerTrade = gridParams.riskPerTrade;
 
   // ── Helper: max drawdown for ONE period's trade sequence ─────────────────────
   // B1 and B2 are independent simulations with separate starting equity = 0.
@@ -1456,7 +1395,7 @@ function btRunFiltersAndRank() {
   let failF1 = 0, failF2 = 0, failF3 = 0, failF4 = 0, failF5 = 0;
   const eligible = [];
 
-  for (const r of btOptGrid) {
+  for (const r of rawGrid) {
     const c  = r.combined;
     const b1 = r.bull1;
     const b2 = r.bull2;
@@ -1505,11 +1444,12 @@ function btRunFiltersAndRank() {
   eligible.sort((a, b) => b.combPnl - a.combPnl);
 
   // ── Build filter rejection summary ───────────────────────────────────────────
-  const totalRaw  = btOptGrid.length;
+  const totalRaw  = rawGrid.length;
   const totalPass = eligible.length;
   const totalFail = totalRaw - totalPass;
 
   const filterSummary = [
+    cfg.title,
     `Raw combinations      : ${totalRaw}`,
     `─────────────────────────────────────────`,
     `F1 fail (comb < 10t)  : ${failF1}`,
@@ -1684,7 +1624,7 @@ function btRunFiltersAndRank() {
   // ── Compute duration diagnostics for top 5 eligible only (no rank change) ────
   const top5 = eligible.slice(0, 5);
   top5.forEach(r => {
-    const rawEntry = btOptGrid.find(g => g.slPct === r.slPct && g.tp === r.tp);
+    const rawEntry = rawGrid.find(g => g.slPct === r.slPct && g.tp === r.tp);
     const allTrades = rawEntry
       ? [...(rawEntry._trades1 || []), ...(rawEntry._trades2 || [])]
       : [];
@@ -1971,28 +1911,30 @@ function btRunFiltersAndRank() {
   if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
 }
 
+// Public entry points
+function btRunFiltersAndRank()         { btRunFiltersAndRankForStudy(BT_STUDY_CONFIGS.full); }
+function btRunTacticalFiltersAndRank() { btRunFiltersAndRankForStudy(BT_STUDY_CONFIGS.tactical); }
+
 // ── Enable / disable the opt-grid button based on prerequisite state ─────────
 // Called by btRun() after a successful "Both Bull Runs" completion.
 // Also called at the start of btRun() to reset the button while a new run loads.
 function btEnableOptGridBtn() {
-  const btn    = document.getElementById('bt-opt-grid-run-btn');
-  const status = document.getElementById('bt-opt-grid-status');
-  const ready  = !!(btWindowSlices && btWindowSlices.length >= 2);
-  if (btn) {
-    btn.disabled = !ready;
-    btn.style.opacity = ready ? '1' : '0.4';
-    btn.title = ready ? '' : 'Run "Both Bull Runs" mode first to enable this button';
-  }
-  if (status && !ready) {
-    status.textContent = 'Run "Both Bull Runs" above to enable';
-  }
-  // When opt-grid prerequisites are lost (new btRun started), also disable the
-  // rank button — btOptGrid is cleared at this point so it would be stale.
+  const ready = !!(btWindowSlices && btWindowSlices.length >= 2);
+  Object.values(BT_STUDY_CONFIGS).forEach(cfg => {
+    const btn    = document.getElementById(cfg.btnId);
+    const status = document.getElementById(cfg.statusId);
+    if (btn) { btn.disabled = !ready; btn.style.opacity = ready ? '1' : '0.4';
+               btn.title = ready ? '' : 'Run "Both Bull Runs" mode first to enable this button'; }
+    if (status && !ready) status.textContent = 'Run "Both Bull Runs" above to enable';
+  });
   if (!ready) {
-    const rankBtn = document.getElementById('bt-rank-run-btn');
-    const rankStatus = document.getElementById('bt-rank-status');
-    if (rankBtn) { rankBtn.disabled = true; rankBtn.style.opacity = '0.4'; rankBtn.title = 'Run SL × TP Optimisation above first'; }
-    if (rankStatus) rankStatus.textContent = '';
+    Object.values(BT_STUDY_CONFIGS).forEach(cfg => {
+      const rankBtn    = document.getElementById(cfg.rankBtnId);
+      const rankStatus = document.getElementById(cfg.rankStatusId);
+      if (rankBtn) { rankBtn.disabled = true; rankBtn.style.opacity = '0.4';
+                     rankBtn.title = `Run ${cfg.title} optimisation first`; }
+      if (rankStatus) rankStatus.textContent = '';
+    });
   }
 }
 

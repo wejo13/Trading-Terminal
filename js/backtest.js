@@ -1562,7 +1562,7 @@ function btRunFiltersAndRank() {
           <th style="padding:6px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;" title="Worst of B1 and B2 max drawdown. Hover a cell for the period breakdown.">Max DD ▾</th>
           <th style="padding:6px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">Win%</th>
           <th style="padding:6px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">Avg R</th>
-          <th style="padding:6px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;" title="Largest single winning trade $ as % of combined P&L. N/A if combined P&L ≤ 0.">LW%</th>
+          <th style="padding:6px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;" title="Largest single winning trade $ as % of combined net P&L. Distinct from win rate.">Largest win %<br><span style="font-weight:400;font-size:9px;">of net P&L</span></th>
           <th style="padding:6px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">TEE</th>
         </tr>
       </thead>
@@ -1609,6 +1609,78 @@ function btRunFiltersAndRank() {
       .slice(0, 5);
   }
 
+  // ── Concentration / loss-streak diagnostics ──────────────────────────────────
+  // All six metrics are derived from the raw closed trade array.
+  // riskPerTrade is used to convert R values to dollar P&L.
+  function concentrationStats(allTrades, rpt) {
+    if (!allTrades.length) return {
+      maxConsecLosses: 0, longestWinGapDays: null,
+      totalWins: 0,
+      top5WinPctOfGrossWin: null, grossWinPctOfNetPnl: null, top5WinPctOfNetPnl: null,
+    };
+
+    // ── Max consecutive losing trades ─────────────────────────────────────────
+    // A "loss" is any trade where rMade <= 0 (includes test_end_exit losers).
+    let maxConsecLosses = 0, curLoss = 0;
+    for (const t of allTrades) {
+      if ((t.rMade || 0) <= 0) { curLoss++; if (curLoss > maxConsecLosses) maxConsecLosses = curLoss; }
+      else curLoss = 0;
+    }
+
+    // ── Longest gap between winning trades (calendar days) ───────────────────
+    // Sorts winning trades by exit timestamp, measures gap between successive exits.
+    const winExits = allTrades
+      .filter(t => (t.rMade || 0) > 0 && t.exitTs)
+      .map(t => t.exitTs)
+      .sort((a, b) => a - b);
+    let longestWinGapDays = null;
+    for (let i = 1; i < winExits.length; i++) {
+      const gapDays = (winExits[i] - winExits[i - 1]) / 86400000;
+      if (longestWinGapDays === null || gapDays > longestWinGapDays) longestWinGapDays = gapDays;
+    }
+
+    // ── Winner totals and concentration ──────────────────────────────────────
+    const winners = allTrades.filter(t => (t.rMade || 0) > 0);
+    const totalWins = winners.length;
+
+    // Gross winning P&L = sum of all positive-rMade trades in dollars
+    const grossWinDollars = winners.reduce((s, t) => s + rpt * (t.rMade || 0), 0);
+
+    // Net P&L = sum of all trades (positive + negative rMade) in dollars
+    const netPnlDollars = allTrades.reduce((s, t) => s + rpt * (t.rMade || 0), 0);
+
+    // Top-5 winners by dollar P&L (same sort as top5Winners(), but keep $ values)
+    const top5Dollars = winners
+      .map(t => rpt * (t.rMade || 0))
+      .sort((a, b) => b - a)
+      .slice(0, 5);
+    const top5GrossDollars = top5Dollars.reduce((s, v) => s + v, 0);
+
+    // Gross P&L from top-5 winners as % of gross winning P&L
+    const top5WinPctOfGrossWin = grossWinDollars > 0
+      ? (top5GrossDollars / grossWinDollars) * 100
+      : null;
+
+    // Gross winning P&L as % of net P&L (shows how much gross gain was eroded by losses)
+    const grossWinPctOfNetPnl = netPnlDollars > 0
+      ? (grossWinDollars / netPnlDollars) * 100
+      : null;
+
+    // Top-5 winners' P&L as % of net P&L
+    const top5WinPctOfNetPnl = netPnlDollars > 0
+      ? (top5GrossDollars / netPnlDollars) * 100
+      : null;
+
+    return {
+      maxConsecLosses,
+      longestWinGapDays,
+      totalWins,
+      top5WinPctOfGrossWin,  // top-5 $ / gross-win $
+      grossWinPctOfNetPnl,   // gross-win $ / net-P&L $ (>100% = losses ate into gross wins)
+      top5WinPctOfNetPnl,    // top-5 $ / net-P&L $ (% of final P&L from 5 trades)
+    };
+  }
+
   // ── Compute duration diagnostics for top 5 eligible only (no rank change) ────
   const top5 = eligible.slice(0, 5);
   top5.forEach(r => {
@@ -1616,9 +1688,10 @@ function btRunFiltersAndRank() {
     const allTrades = rawEntry
       ? [...(rawEntry._trades1 || []), ...(rawEntry._trades2 || [])]
       : [];
-    r._durationStats = durationStats(allTrades);
-    r._top5Winners   = top5Winners(allTrades, riskPerTrade);
-    r._allTrades     = allTrades; // kept for recommendation logic below
+    r._durationStats      = durationStats(allTrades);
+    r._concentrationStats = concentrationStats(allTrades, riskPerTrade);
+    r._top5Winners        = top5Winners(allTrades, riskPerTrade);
+    r._allTrades          = allTrades; // kept for decision-support logic below
   });
 
   // ── Render ranked table (all eligible, all columns unchanged) ─────────────────
@@ -1650,7 +1723,7 @@ function btRunFiltersAndRank() {
     <div style="margin-top:8px;font-size:10px;color:var(--text-faint);line-height:1.6;">
       Sorted by combined P&amp;L descending.
       <b>Max DD</b> = worst of B1 and B2 period drawdowns (each computed independently; hover for period breakdown).
-      <b>LW%</b> = largest single winning trade $ ÷ combined P&amp;L $ (N/A when ≤ 0; amber = &gt;50%).
+      <b>Largest win % of net P&L</b> = largest single winning trade $ ÷ combined net P&L $. This is not the win rate. N/A when combined P&L ≤ 0; amber = &gt;50%.
       <b>TEE</b> = test_end_exit count. Ranking unchanged by duration diagnostics below.
     </div>`;
 
@@ -1665,7 +1738,19 @@ function btRunFiltersAndRank() {
 
   top5.forEach((r, i) => {
     const ds = r._durationStats;
+    const cs = r._concentrationStats;
     const dOver30Col = ds.over30 > 0 ? 'var(--amber)' : 'var(--text-dim)';
+    const consecCol  = cs.maxConsecLosses >= 10 ? 'var(--red)'
+                     : cs.maxConsecLosses >= 5  ? 'var(--amber)' : 'var(--text)';
+    const winGapCol  = cs.longestWinGapDays !== null && cs.longestWinGapDays > 90
+                     ? 'var(--amber)' : 'var(--text)';
+    const top5GrossCol = cs.top5WinPctOfGrossWin !== null && cs.top5WinPctOfGrossWin > 70
+                     ? 'var(--amber)' : 'var(--text)';
+    const top5NetCol   = cs.top5WinPctOfNetPnl !== null && cs.top5WinPctOfNetPnl > 60
+                     ? 'var(--amber)' : 'var(--text)';
+
+    const fmtPctOrNA = v => v !== null ? v.toFixed(1) + '%' : 'N/A';
+    const fmtGapOrNA = v => v !== null ? v.toFixed(0) + 'd' : 'N/A';
 
     html += `<div style="margin-bottom:14px;padding:10px 12px;background:var(--bg2);
                          border-radius:6px;border:0.5px solid var(--line-old);">
@@ -1673,11 +1758,21 @@ function btRunFiltersAndRank() {
         <span style="font-size:11px;font-weight:700;color:var(--teal);">#${i+1} — SL ${r.slPct}% / TP ${r.tp}R</span>
         <span style="font-size:10px;color:var(--text-faint);">${r.combTrades} trades · ${fmtPnl(r.combPnl)}</span>
       </div>
-      <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:11px;margin-bottom:8px;">
+      <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:11px;margin-bottom:6px;">
         <span style="color:var(--text-dim);">Avg duration <b style="color:var(--text);">${fmtD(ds.avg)}</b></span>
         <span style="color:var(--text-dim);">Median <b style="color:var(--text);">${fmtD(ds.median)}</b></span>
         <span style="color:var(--text-dim);">Longest <b style="color:var(--text);">${fmtD(ds.longest)}</b></span>
         <span style="color:var(--text-dim);">Trades &gt;30d <b style="color:${dOver30Col};">${ds.over30} (${r.combTrades > 0 ? Math.round(ds.over30/r.combTrades*100) : 0}%)</b></span>
+      </div>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:11px;margin-bottom:6px;">
+        <span style="color:var(--text-dim);">Total wins <b style="color:var(--text);">${cs.totalWins}</b></span>
+        <span style="color:var(--text-dim);">Max consec. losses <b style="color:${consecCol};">${cs.maxConsecLosses}</b></span>
+        <span style="color:var(--text-dim);">Longest win gap <b style="color:${winGapCol};">${fmtGapOrNA(cs.longestWinGapDays)}</b></span>
+      </div>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:11px;margin-bottom:8px;">
+        <span style="color:var(--text-dim);" title="Top-5 winners' $ P&L as % of all gross winning $ P&L">Top-5 / gross wins <b style="color:${top5GrossCol};">${fmtPctOrNA(cs.top5WinPctOfGrossWin)}</b></span>
+        <span style="color:var(--text-dim);" title="All gross winning $ P&L as % of final net $ P&L — above 100% means losses eroded gross gains">Gross wins / net P&L <b style="color:var(--text);">${fmtPctOrNA(cs.grossWinPctOfNetPnl)}</b></span>
+        <span style="color:var(--text-dim);" title="Top-5 winners' $ P&L as % of final net $ P&L">Top-5 / net P&L <b style="color:${top5NetCol};">${fmtPctOrNA(cs.top5WinPctOfNetPnl)}</b></span>
       </div>
       <div style="font-size:10px;color:var(--text-faint);margin-bottom:5px;">Top 5 winning trades by P&amp;L:</div>
       <table style="border-collapse:collapse;font-size:10px;width:100%;">
@@ -1801,7 +1896,10 @@ function btRunFiltersAndRank() {
           <th style="padding:5px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">P&amp;L</th>
           <th style="padding:5px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">Avg hold</th>
           <th style="padding:5px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">&gt;30d</th>
-          <th style="padding:5px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">LW%</th>
+          <th style="padding:5px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;" title="Maximum consecutive losing trades">Max L streak</th>
+          <th style="padding:5px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;" title="Longest calendar gap between winning trade exits">Win gap</th>
+          <th style="padding:5px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;" title="Largest single winning trade $ as % of combined net P&L. Distinct from win rate.">Largest win %<br><span style="font-weight:400;font-size:9px;">of net P&L</span></th>
+          <th style="padding:5px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;" title="Top-5 winners' P&L as % of final net P&L">Top-5/net</th>
           <th style="padding:5px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">DD/P&amp;L</th>
           <th style="padding:5px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">B1/B2 split</th>
           <th style="padding:5px 8px;text-align:left;color:var(--text-faint);font-weight:600;font-size:10px;">Flags</th>
@@ -1826,13 +1924,23 @@ function btRunFiltersAndRank() {
         ? `<span style="color:var(--green);">✓ none</span>`
         : e.flags.map(f=>`<span style="color:var(--amber);" title="${f.axis}">⚠ ${f.text}</span>`).join(' ');
 
+      const cs2 = e.r._concentrationStats || {};
+      const consecCol2  = (cs2.maxConsecLosses||0) >= 10 ? 'var(--red)'
+                        : (cs2.maxConsecLosses||0) >= 5  ? 'var(--amber)' : 'var(--text-dim)';
+      const winGapCol2  = cs2.longestWinGapDays > 90 ? 'var(--amber)' : 'var(--text-dim)';
+      const top5NetCol2 = cs2.top5WinPctOfNetPnl !== null && cs2.top5WinPctOfNetPnl > 60
+                        ? 'var(--amber)' : 'var(--text-dim)';
+
       out += `<tr style="border-bottom:0.5px solid var(--line-old);background:${rowBg};">
         <td style="padding:5px 8px;text-align:center;color:var(--text-faint);">${e.rank}${rowLabel ? `<br><span style="font-size:9px;color:var(--teal);">${rowLabel}</span>` : ''}</td>
         <td style="padding:5px 8px;text-align:right;color:var(--text);font-weight:600;">${e.r.slPct}% / ${e.r.tp}R</td>
         <td style="padding:5px 8px;text-align:right;color:var(--green);font-weight:700;">${fmtPnl(e.r.combPnl)}</td>
         <td style="padding:5px 8px;text-align:right;color:${e.ds.avg>60?'var(--amber)':'var(--text-dim)'};">${e.ds.avg.toFixed(1)}d</td>
         <td style="padding:5px 8px;text-align:right;color:${e.over30Pct>0.30?'var(--amber)':'var(--text-dim)'};">${over30Str}</td>
+        <td style="padding:5px 8px;text-align:right;color:${consecCol2};">${cs2.maxConsecLosses ?? '—'}</td>
+        <td style="padding:5px 8px;text-align:right;color:${winGapCol2};">${cs2.longestWinGapDays !== null && cs2.longestWinGapDays !== undefined ? cs2.longestWinGapDays.toFixed(0)+'d' : '—'}</td>
         <td style="padding:5px 8px;text-align:right;color:${e.r.lwPct!==null&&e.r.lwPct>40?'var(--amber)':'var(--text-dim)'};">${e.r.lwPct!==null?fmtPct(e.r.lwPct):'N/A'}</td>
+        <td style="padding:5px 8px;text-align:right;color:${top5NetCol2};">${cs2.top5WinPctOfNetPnl !== null && cs2.top5WinPctOfNetPnl !== undefined ? cs2.top5WinPctOfNetPnl.toFixed(1)+'%' : 'N/A'}</td>
         <td style="padding:5px 8px;text-align:right;color:${e.ddRatio>0.60?'var(--amber)':'var(--text-dim)'};">${ddStr}</td>
         <td style="padding:5px 8px;text-align:right;color:${Math.abs(e.b1Share-0.5)>0.30?'var(--amber)':'var(--text-dim)'};">${b1Str}</td>
         <td style="padding:5px 8px;">${flagStr}</td>

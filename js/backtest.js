@@ -1316,22 +1316,22 @@ function btRunOptGrid() {
     runAt:        new Date().toISOString(),
   };
 
-  // ── Completion summary ──────────────────────────────────────────────────────
-  const sampleLines = [];
+  // ── Completion summary + sample ────────────────────────────────────────────
+  // Written to bt-opt-grid-output (always visible, no debug toggle needed).
+  // Also written to bt-debug-output and console for completeness.
   const sampleItems = [
     ...rawResults.slice(0, 3),
     rawResults.length > 3 ? rawResults[rawResults.length - 1] : null,
   ].filter(Boolean);
 
-  sampleLines.push('', '--- Raw result sample (first 3 + last combo) ---');
+  const sampleLines = ['', '--- Raw result sample (first 3 + last combo) ---'];
   sampleItems.forEach((r, i) => {
     const isLast = i === sampleItems.length - 1 && rawResults.length > 3;
     sampleLines.push(
-      `${isLast ? '...' : ''}  SL ${r.slPct}% / TP ${r.tp}R` +
-      `  B1: ${r.bull1.trades}t ${r.bull1.wins}W/${r.bull1.losses}L pnl=$${r.bull1.pnl.toFixed(0)}` +
-      `  B2: ${r.bull2.trades}t ${r.bull2.wins}W/${r.bull2.losses}L pnl=$${r.bull2.pnl.toFixed(0)}` +
-      `  Comb: ${r.combined.trades}t pnl=$${r.combined.pnl.toFixed(0)} netR=${r.combined.netR.toFixed(2)}` +
-      `  tee=${r.combined.testEndExits}`
+      `${isLast ? '... ' : '    '}SL ${r.slPct}% / TP ${r.tp}R` +
+      `  |  B1: ${r.bull1.trades}t ${r.bull1.wins}W/${r.bull1.losses}L pnl=$${r.bull1.pnl.toFixed(0)}` +
+      `  |  B2: ${r.bull2.trades}t ${r.bull2.wins}W/${r.bull2.losses}L pnl=$${r.bull2.pnl.toFixed(0)}` +
+      `  |  Comb: ${r.combined.trades}t pnl=$${r.combined.pnl.toFixed(0)} netR=${r.combined.netR.toFixed(2)} tee=${r.combined.testEndExits}`
     );
   });
 
@@ -1350,9 +1350,19 @@ function btRunOptGrid() {
     '====================================',
   ].join('\n');
 
-  const fullDebug = paramLines.replace('\nRunning...', '') + sampleLines.join('\n') + '\n' + summaryLines;
-  if (debugEl) debugEl.value = fullDebug;
-  console.log(summaryLines);
+  // Strip "Running..." from the pre-run header for the final output
+  const paramHeader = paramLines.split('\n').filter(l => l !== 'Running...').join('\n');
+  const fullOutput  = paramHeader + sampleLines.join('\n') + '\n' + summaryLines;
+
+  // Primary output: always-visible pre block (no debug toggle needed)
+  const optOutputEl = document.getElementById('bt-opt-grid-output');
+  if (optOutputEl) {
+    optOutputEl.textContent = fullOutput;
+    optOutputEl.style.display = 'block';
+  }
+  // Secondary: debug textarea (visible only when debug toggle is on)
+  if (debugEl) debugEl.value = fullOutput;
+  console.log(fullOutput);
 
   if (statusEl) statusEl.textContent =
     `Opt grid done · ${actualRuns}/${expectedCombos} combos · ${failedRuns === 0 ? '✓ all succeeded' : failedRuns + ' failed'} · btOptGrid ready`;

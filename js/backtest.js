@@ -1568,12 +1568,65 @@ function btRunFiltersAndRank() {
       </thead>
       <tbody>`;
 
+  // ── Duration diagnostics helpers ─────────────────────────────────────────────
+  const MS_PER_DAY = 86400000;
+
+  function tradeDurationDays(t) {
+    if (!t.entryTs || !t.exitTs) return null;
+    return (t.exitTs - t.entryTs) / MS_PER_DAY;
+  }
+
+  function durationStats(allTrades) {
+    const durations = allTrades
+      .map(t => tradeDurationDays(t))
+      .filter(d => d !== null)
+      .sort((a, b) => a - b);
+    if (!durations.length) return { avg: 0, median: 0, longest: 0, over30: 0 };
+    const avg    = durations.reduce((s, d) => s + d, 0) / durations.length;
+    const mid    = Math.floor(durations.length / 2);
+    const median = durations.length % 2 === 0
+      ? (durations[mid - 1] + durations[mid]) / 2
+      : durations[mid];
+    const longest = durations[durations.length - 1];
+    const over30  = durations.filter(d => d > 30).length;
+    return { avg, median, longest, over30 };
+  }
+
+  function top5Winners(allTrades, riskPerTrade) {
+    // All trades with positive rMade, sorted by realized $ P&L descending
+    return allTrades
+      .filter(t => (t.rMade || 0) > 0)
+      .map(t => ({
+        entryTs:  t.entryTs,
+        exitTs:   t.exitTs,
+        outcome:  t.outcome,
+        rMade:    t.rMade,
+        pnl:      riskPerTrade * t.rMade,
+        days:     tradeDurationDays(t),
+        periodId: t.periodId,
+      }))
+      .sort((a, b) => b.pnl - a.pnl)
+      .slice(0, 5);
+  }
+
+  // ── Compute duration diagnostics for top 5 eligible only (no rank change) ────
+  const top5 = eligible.slice(0, 5);
+  top5.forEach(r => {
+    const rawEntry = btOptGrid.find(g => g.slPct === r.slPct && g.tp === r.tp);
+    const allTrades = rawEntry
+      ? [...(rawEntry._trades1 || []), ...(rawEntry._trades2 || [])]
+      : [];
+    r._durationStats = durationStats(allTrades);
+    r._top5Winners   = top5Winners(allTrades, riskPerTrade);
+    r._allTrades     = allTrades; // kept for recommendation logic below
+  });
+
+  // ── Render ranked table (all eligible, all columns unchanged) ─────────────────
   eligible.forEach((r, i) => {
     const pnlCol = r.combPnl >= 0 ? 'var(--green)' : 'var(--red)';
     const ddCol  = r.maxDD > Math.abs(r.combPnl) * 0.5 ? 'var(--amber)' : 'var(--text-dim)';
     const lwCol  = r.lwPct !== null && r.lwPct > 50 ? 'var(--amber)' : 'var(--text-dim)';
     const lwStr  = r.lwPct !== null ? fmtPct(r.lwPct) : 'N/A';
-    // Tooltip shows the per-period DD breakdown
     const ddTip  = `B1 Max DD: -$${r.b1MaxDD.toLocaleString(undefined,{maximumFractionDigits:0})}  |  B2 Max DD: -$${r.b2MaxDD.toLocaleString(undefined,{maximumFractionDigits:0})}  →  worst: -$${r.maxDD.toLocaleString(undefined,{maximumFractionDigits:0})}`;
 
     html += `<tr style="border-bottom:0.5px solid var(--line-old);">
@@ -1596,10 +1649,215 @@ function btRunFiltersAndRank() {
   html += `</tbody></table></div>
     <div style="margin-top:8px;font-size:10px;color:var(--text-faint);line-height:1.6;">
       Sorted by combined P&amp;L descending.
-      <b>Max DD</b> = worst of B1 and B2 period drawdowns (each computed independently on $100/trade equity; hover for B1/B2 breakdown).
-      <b>LW%</b> = largest single winning trade $ ÷ combined P&amp;L $ (N/A when combined P&amp;L ≤ 0; amber = &gt;50%).
-      <b>TEE</b> = test_end_exit count. No recommendation yet.
+      <b>Max DD</b> = worst of B1 and B2 period drawdowns (each computed independently; hover for period breakdown).
+      <b>LW%</b> = largest single winning trade $ ÷ combined P&amp;L $ (N/A when ≤ 0; amber = &gt;50%).
+      <b>TEE</b> = test_end_exit count. Ranking unchanged by duration diagnostics below.
     </div>`;
+
+  // ── Duration diagnostic panels for top 5 ─────────────────────────────────────
+  const fmtD = d => d !== null ? d.toFixed(1) + 'd' : '—';
+  const fmtDate = ts => ts ? new Date(ts).toISOString().slice(0, 10) : '—';
+
+  html += `<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line-old);">
+    <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:12px;">
+      Trade Duration — Top 5 Candidates
+    </div>`;
+
+  top5.forEach((r, i) => {
+    const ds = r._durationStats;
+    const dOver30Col = ds.over30 > 0 ? 'var(--amber)' : 'var(--text-dim)';
+
+    html += `<div style="margin-bottom:14px;padding:10px 12px;background:var(--bg2);
+                         border-radius:6px;border:0.5px solid var(--line-old);">
+      <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
+        <span style="font-size:11px;font-weight:700;color:var(--teal);">#${i+1} — SL ${r.slPct}% / TP ${r.tp}R</span>
+        <span style="font-size:10px;color:var(--text-faint);">${r.combTrades} trades · ${fmtPnl(r.combPnl)}</span>
+      </div>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:11px;margin-bottom:8px;">
+        <span style="color:var(--text-dim);">Avg duration <b style="color:var(--text);">${fmtD(ds.avg)}</b></span>
+        <span style="color:var(--text-dim);">Median <b style="color:var(--text);">${fmtD(ds.median)}</b></span>
+        <span style="color:var(--text-dim);">Longest <b style="color:var(--text);">${fmtD(ds.longest)}</b></span>
+        <span style="color:var(--text-dim);">Trades &gt;30d <b style="color:${dOver30Col};">${ds.over30} (${r.combTrades > 0 ? Math.round(ds.over30/r.combTrades*100) : 0}%)</b></span>
+      </div>
+      <div style="font-size:10px;color:var(--text-faint);margin-bottom:5px;">Top 5 winning trades by P&amp;L:</div>
+      <table style="border-collapse:collapse;font-size:10px;width:100%;">
+        <thead><tr style="color:var(--text-faint);">
+          <th style="padding:3px 6px;text-align:left;font-weight:600;">Entry</th>
+          <th style="padding:3px 6px;text-align:left;font-weight:600;">Exit</th>
+          <th style="padding:3px 6px;text-align:right;font-weight:600;">Dur</th>
+          <th style="padding:3px 6px;text-align:right;font-weight:600;">R</th>
+          <th style="padding:3px 6px;text-align:right;font-weight:600;">P&amp;L</th>
+          <th style="padding:3px 6px;text-align:left;font-weight:600;">Period</th>
+          <th style="padding:3px 6px;text-align:left;font-weight:600;">Outcome</th>
+        </tr></thead>
+        <tbody>`;
+
+    r._top5Winners.forEach(w => {
+      const durCol = w.days !== null && w.days > 30 ? 'var(--amber)' : 'var(--text-dim)';
+      html += `<tr style="border-top:0.5px solid var(--line-old);">
+        <td style="padding:3px 6px;color:var(--text-dim);">${fmtDate(w.entryTs)}</td>
+        <td style="padding:3px 6px;color:var(--text-dim);">${fmtDate(w.exitTs)}</td>
+        <td style="padding:3px 6px;text-align:right;color:${durCol};">${fmtD(w.days)}</td>
+        <td style="padding:3px 6px;text-align:right;color:var(--text-dim);">${w.rMade.toFixed(2)}R</td>
+        <td style="padding:3px 6px;text-align:right;color:var(--green);font-weight:600;">+$${w.pnl.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
+        <td style="padding:3px 6px;color:var(--text-faint);">${w.periodId}</td>
+        <td style="padding:3px 6px;color:var(--text-faint);">${w.outcome}</td>
+      </tr>`;
+    });
+
+    html += `</tbody></table></div>`;
+  });
+
+  html += `</div>`;
+
+  // ── Bucket 6: Decision support — no automatic selection ─────────────────────
+  // Computes flags for each of the top 5 candidates on four axes and renders
+  // them in a comparison table. Does NOT choose a live configuration. That
+  // decision is made explicitly by the user after reviewing the evidence.
+
+  function decisionSupportBlock(top5) {
+    if (top5.length === 0) return '';
+
+    // Evaluate each candidate on four robustness axes.
+    // Flags are informational — they surface concerns but do not override rank.
+    const evaluated = top5.map((r, i) => {
+      const ds = r._durationStats;
+      const over30Pct = r.combTrades > 0 ? ds.over30 / r.combTrades : 0;
+      const ddRatio   = r.combPnl > 0 ? r.maxDD / r.combPnl : Infinity;
+      const b1Share   = r.combPnl > 0 ? r.b1Pnl / r.combPnl : 0;
+
+      // Flags — each describes a specific concern, not a hard exclusion.
+      const flags = [];
+      if (ds.avg > 60)
+        flags.push({ axis: 'Hold time',      text: `avg hold ${ds.avg.toFixed(0)}d` });
+      if (over30Pct > 0.30)
+        flags.push({ axis: 'Hold time',      text: `${Math.round(over30Pct*100)}% of trades >30d` });
+      if (r.lwPct !== null && r.lwPct > 40)
+        flags.push({ axis: 'Outlier dep.',   text: `largest winner = ${r.lwPct.toFixed(0)}% of P&L` });
+      if (ddRatio > 0.60)
+        flags.push({ axis: 'Drawdown',       text: `Max DD = ${Math.round(ddRatio*100)}% of P&L` });
+      if (b1Share > 0.80)
+        flags.push({ axis: 'Period balance', text: `B1 = ${Math.round(b1Share*100)}% of combined P&L` });
+      if (b1Share < 0.20)
+        flags.push({ axis: 'Period balance', text: `B2 = ${Math.round((1-b1Share)*100)}% of combined P&L` });
+
+      return { rank: i + 1, r, ds, over30Pct, ddRatio, b1Share, flags };
+    });
+
+    // Identify: highest P&L (always rank 1) and most practical (fewest flags,
+    // tie-broken by rank). These are observations for the user, not an automatic choice.
+    const highestPnl = evaluated[0];
+    let mostPractical = evaluated[0];
+    for (let i = 1; i < evaluated.length; i++) {
+      if (evaluated[i].flags.length < mostPractical.flags.length) mostPractical = evaluated[i];
+    }
+    const sameCandidate = highestPnl.rank === mostPractical.rank;
+
+    let out = `<div style="margin-top:20px;padding:14px 16px;border-radius:8px;
+                            border:1px solid var(--line-old);background:var(--bg2);">
+      <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:4px;">
+        Bucket 6 — Decision Support
+      </div>
+      <div style="font-size:11px;color:var(--text-faint);margin-bottom:14px;line-height:1.5;">
+        Flags are informational. No configuration has been automatically selected.
+        Review the evidence below and approve a final parameter pair explicitly.
+      </div>`;
+
+    // ── Observation summary ───────────────────────────────────────────────────
+    out += `<div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;line-height:1.8;">`;
+    out += `<b style="color:var(--text);">Highest combined P&L:</b>
+      SL ${highestPnl.r.slPct}% / TP ${highestPnl.r.tp}R — ${fmtPnl(highestPnl.r.combPnl)}`;
+    if (highestPnl.flags.length > 0) {
+      out += ` <span style="color:var(--amber);">(${highestPnl.flags.length} flag${highestPnl.flags.length>1?'s':''}:
+        ${highestPnl.flags.map(f=>f.text).join(' · ')})</span>`;
+    } else {
+      out += ` <span style="color:var(--green);">(no flags)</span>`;
+    }
+    out += `<br>`;
+
+    if (!sameCandidate) {
+      out += `<b style="color:var(--text);">Fewest flags:</b>
+        SL ${mostPractical.r.slPct}% / TP ${mostPractical.r.tp}R — ${fmtPnl(mostPractical.r.combPnl)}
+        (rank #${mostPractical.rank} by P&L`;
+      if (mostPractical.flags.length === 0) {
+        out += `, no flags)`;
+      } else {
+        out += `, ${mostPractical.flags.length} flag${mostPractical.flags.length>1?'s':''}:
+          ${mostPractical.flags.map(f=>f.text).join(' · ')})`;
+      }
+      out += `<br>`;
+    } else {
+      out += `<b style="color:var(--text);">Highest P&L and fewest flags are the same candidate.</b><br>`;
+    }
+    out += `</div>`;
+
+    // ── Comparison table: all top-5, one row each ─────────────────────────────
+    out += `<div style="overflow-x:auto;margin-bottom:12px;">
+    <table style="border-collapse:collapse;font-size:11px;width:100%;min-width:700px;">
+      <thead>
+        <tr style="border-bottom:1px solid var(--line-old);">
+          <th style="padding:5px 8px;text-align:center;color:var(--text-faint);font-weight:600;font-size:10px;">#</th>
+          <th style="padding:5px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">SL% / TP</th>
+          <th style="padding:5px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">P&amp;L</th>
+          <th style="padding:5px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">Avg hold</th>
+          <th style="padding:5px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">&gt;30d</th>
+          <th style="padding:5px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">LW%</th>
+          <th style="padding:5px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">DD/P&amp;L</th>
+          <th style="padding:5px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">B1/B2 split</th>
+          <th style="padding:5px 8px;text-align:left;color:var(--text-faint);font-weight:600;font-size:10px;">Flags</th>
+        </tr>
+      </thead>
+      <tbody>`;
+
+    evaluated.forEach(e => {
+      const isHighest  = e.rank === highestPnl.rank;
+      const isPractical = e.rank === mostPractical.rank;
+      const rowBg = isHighest && !sameCandidate ? 'rgba(40,215,200,0.05)'
+                  : isPractical && !sameCandidate ? 'rgba(61,220,151,0.05)'
+                  : 'transparent';
+      const rowLabel = isHighest && isPractical ? ' ★ highest P&L · fewest flags'
+                     : isHighest ? ' ★ highest P&L'
+                     : isPractical ? ' ✦ fewest flags'
+                     : '';
+      const over30Str = `${e.ds.over30} (${Math.round(e.over30Pct*100)}%)`;
+      const ddStr     = isFinite(e.ddRatio) ? Math.round(e.ddRatio*100)+'%' : '—';
+      const b1Str     = `${Math.round(e.b1Share*100)}% / ${Math.round((1-e.b1Share)*100)}%`;
+      const flagStr   = e.flags.length === 0
+        ? `<span style="color:var(--green);">✓ none</span>`
+        : e.flags.map(f=>`<span style="color:var(--amber);" title="${f.axis}">⚠ ${f.text}</span>`).join(' ');
+
+      out += `<tr style="border-bottom:0.5px solid var(--line-old);background:${rowBg};">
+        <td style="padding:5px 8px;text-align:center;color:var(--text-faint);">${e.rank}${rowLabel ? `<br><span style="font-size:9px;color:var(--teal);">${rowLabel}</span>` : ''}</td>
+        <td style="padding:5px 8px;text-align:right;color:var(--text);font-weight:600;">${e.r.slPct}% / ${e.r.tp}R</td>
+        <td style="padding:5px 8px;text-align:right;color:var(--green);font-weight:700;">${fmtPnl(e.r.combPnl)}</td>
+        <td style="padding:5px 8px;text-align:right;color:${e.ds.avg>60?'var(--amber)':'var(--text-dim)'};">${e.ds.avg.toFixed(1)}d</td>
+        <td style="padding:5px 8px;text-align:right;color:${e.over30Pct>0.30?'var(--amber)':'var(--text-dim)'};">${over30Str}</td>
+        <td style="padding:5px 8px;text-align:right;color:${e.r.lwPct!==null&&e.r.lwPct>40?'var(--amber)':'var(--text-dim)'};">${e.r.lwPct!==null?fmtPct(e.r.lwPct):'N/A'}</td>
+        <td style="padding:5px 8px;text-align:right;color:${e.ddRatio>0.60?'var(--amber)':'var(--text-dim)'};">${ddStr}</td>
+        <td style="padding:5px 8px;text-align:right;color:${Math.abs(e.b1Share-0.5)>0.30?'var(--amber)':'var(--text-dim)'};">${b1Str}</td>
+        <td style="padding:5px 8px;">${flagStr}</td>
+      </tr>`;
+    });
+
+    out += `</tbody></table></div>`;
+
+    // ── Awaiting user decision ────────────────────────────────────────────────
+    out += `<div style="font-size:11px;color:var(--text-faint);line-height:1.6;
+                        border-top:0.5px solid var(--line-old);padding-top:10px;">
+      <b style="color:var(--text-dim);">Awaiting your decision.</b>
+      Review the duration panels, top-5 winning trade breakdown, and flag comparison above,
+      then approve a final SL% / TP-R pair explicitly.
+      <br><span style="color:var(--amber);">
+        Historical signal on Binance spot price. Live execution on a separate instrument.
+        Past performance does not guarantee future results.
+      </span>
+    </div>`;
+
+    out += `</div>`;
+    return out;
+  }
+
+  html += decisionSupportBlock(top5);
 
   wrapEl.innerHTML = html;
   if (btn) { btn.disabled = false; btn.style.opacity = '1'; }

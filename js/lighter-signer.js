@@ -6,7 +6,7 @@ if(typeof window.process === 'undefined'){
   window.process = { env: {} };
 }
 
-import { SignerClient, GroupingType } from './lighter-ts-sdk.browser.js';
+import { SignerClient, GroupingType } from '../wasm/lighter-ts-sdk.browser.js';
 
 async function buildLighterSigner(){
   const privateKey = localStorage.getItem('lighterPrivateKey');

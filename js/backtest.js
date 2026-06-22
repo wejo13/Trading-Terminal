@@ -807,10 +807,18 @@ async function btRun() {
 
   btDebug = document.getElementById('bt-debug-toggle').checked;
   btDebugLog = [];
-  // Reset opt-grid button state whenever a new backtest run begins.
-  // It will be re-enabled only if "Both Bull Runs" completes successfully.
-  btWindowSlices = null;
+  // Reset opt-grid and rank state whenever a new backtest run begins.
+  // btOptGrid / btOptGridParams are cleared so that btRunFiltersAndRank()
+  // cannot use results from a prior opt-grid run on different data.
+  btWindowSlices  = null;
+  btOptGrid       = null;
+  btOptGridParams = null;
   btEnableOptGridBtn();
+  // Clear the rank output and reset the rank button label
+  const rankWrap = document.getElementById('bt-rank-wrap');
+  if (rankWrap) rankWrap.innerHTML = '';
+  const rankStatus = document.getElementById('bt-rank-status');
+  if (rankStatus) rankStatus.textContent = '';
   const debugPanel = document.getElementById('bt-debug-panel');
   debugPanel.style.display = btDebug ? 'block' : 'none';
 
@@ -1293,6 +1301,10 @@ function btRunOptGrid() {
           bull1:    periodCell(trades1),
           bull2:    periodCell(trades2),
           combined: periodCell(allTrades),
+          // Raw trade arrays retained for Bucket 5 metrics (drawdown, largest winner).
+          // These are closed trades only — 'Open' outcome never appears after Bucket 3.
+          _trades1: trades1.filter(t => t.outcome !== 'Open'),
+          _trades2: trades2.filter(t => t.outcome !== 'Open'),
         });
         actualRuns++;
       } catch (err) {
@@ -1368,6 +1380,229 @@ function btRunOptGrid() {
     `Opt grid done · ${actualRuns}/${expectedCombos} combos · ${failedRuns === 0 ? '✓ all succeeded' : failedRuns + ' failed'} · btOptGrid ready`;
 
   if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+
+  // Enable the rank button now that btOptGrid is populated.
+  const rankBtn = document.getElementById('bt-rank-run-btn');
+  const rankStatus = document.getElementById('bt-rank-status');
+  if (rankBtn) { rankBtn.disabled = false; rankBtn.style.opacity = '1'; rankBtn.title = ''; }
+  if (rankStatus) rankStatus.textContent = 'Optimisation data ready — click to filter and rank';
+}
+
+// ── Bucket 5: Filter, rank, and render eligible combinations ─────────────────
+//
+// Hard eligibility filters (all must pass):
+//   F1: combined closed trades >= 10
+//   F2: Bull Run 1 closed trades >= 3
+//   F3: Bull Run 2 closed trades >= 3
+//   F4: Bull Run 1 P&L > 0
+//   F5: Bull Run 2 P&L > 0
+//
+// Ranked by combined dollar P&L descending.
+// Uses btOptGrid (raw results) and btOptGridParams (risk snapshot) set by btRunOptGrid().
+// Does NOT re-run the engine. Does NOT recommend a configuration.
+function btRunFiltersAndRank() {
+  const wrapEl   = document.getElementById('bt-rank-wrap');
+  const statusEl = document.getElementById('bt-rank-status');
+  const btn      = document.getElementById('bt-rank-run-btn');
+
+  // Guard: require a completed optimisation run.
+  // btOptGridParams.runAt is set at the end of btRunOptGrid() — if it's absent
+  // the grid has never completed (or was cleared by a new btRun() call).
+  if (!btOptGrid || btOptGrid.length === 0 || !btOptGridParams) {
+    if (statusEl) statusEl.textContent =
+      'Run "Both Bull Runs" → "Run SL × TP Optimisation" first.';
+    if (wrapEl) wrapEl.innerHTML = '';
+    return;
+  }
+
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
+
+  const riskPerTrade = btOptGridParams.riskPerTrade; // snapshotted at opt-grid run time
+
+  // ── Helper: max drawdown for ONE period's trade sequence ─────────────────────
+  // B1 and B2 are independent simulations with separate starting equity = 0.
+  // Their equity curves must never be concatenated — doing so would create a
+  // fictitious multi-year trough across the gap between the two periods.
+  // Returns the largest peak-to-trough dollar drop within that single period.
+  function periodMaxDD(trades) {
+    let peak = 0, equity = 0, maxDD = 0;
+    for (const t of trades) {
+      equity += riskPerTrade * (t.rMade || 0);
+      if (equity > peak) peak = equity;
+      const dd = peak - equity;
+      if (dd > maxDD) maxDD = dd;
+    }
+    return maxDD;
+  }
+
+  // ── Helper: largest single winning trade $ P&L as % of combined $ P&L ────────
+  // Includes test_end_exit trades (they are realized outcomes).
+  // Returns null — displayed as N/A — when combined P&L is zero or negative,
+  // because the percentage would be undefined or misleading.
+  function largestWinnerPct(allTrades, combPnlDollars) {
+    if (combPnlDollars <= 0) return null;
+    let maxWinDollars = 0;
+    for (const t of allTrades) {
+      // Only count positive-rMade trades (actual winners, including tee winners)
+      const tradePnl = riskPerTrade * Math.max(0, t.rMade || 0);
+      if (tradePnl > maxWinDollars) maxWinDollars = tradePnl;
+    }
+    return (maxWinDollars / combPnlDollars) * 100;
+  }
+
+  // ── Apply filters sequentially, track marginal rejections ────────────────────
+  // Each counter only increments when all prior filters have already passed,
+  // so each number represents the true marginal cost of that specific filter.
+  let failF1 = 0, failF2 = 0, failF3 = 0, failF4 = 0, failF5 = 0;
+  const eligible = [];
+
+  for (const r of btOptGrid) {
+    const c  = r.combined;
+    const b1 = r.bull1;
+    const b2 = r.bull2;
+
+    if (c.trades  < 10)  { failF1++; continue; }
+    if (b1.trades <  3)  { failF2++; continue; }
+    if (b2.trades <  3)  { failF3++; continue; }
+    if (b1.pnl    <= 0)  { failF4++; continue; }
+    if (b2.pnl    <= 0)  { failF5++; continue; }
+
+    // ── Compute derived metrics from retained raw trade arrays ────────────────
+    const trades1 = r._trades1 || [];
+    const trades2 = r._trades2 || [];
+    const allTrades = [...trades1, ...trades2];
+
+    // Max drawdown: computed independently per period; report worst of the two.
+    const b1MaxDD = periodMaxDD(trades1);
+    const b2MaxDD = periodMaxDD(trades2);
+    const maxDD   = Math.max(b1MaxDD, b2MaxDD); // worst of the two periods
+
+    const avgR    = c.trades > 0 ? c.netR / c.trades : 0;
+    const lwPct   = largestWinnerPct(allTrades, c.pnl);
+    const teeCount = b1.testEndExits + b2.testEndExits;
+
+    eligible.push({
+      slPct:       r.slPct,
+      tp:          r.tp,
+      // Combined
+      combPnl:     c.pnl,
+      combTrades:  c.trades,
+      combWinRate: c.winRate,
+      combPF:      c.profitFactor,
+      combNetR:    c.netR,
+      // Per period
+      b1Trades: b1.trades, b1Pnl: b1.pnl, b1MaxDD,
+      b2Trades: b2.trades, b2Pnl: b2.pnl, b2MaxDD,
+      // Derived
+      maxDD,    // worst of b1MaxDD / b2MaxDD
+      avgR,
+      lwPct,    // null → N/A when combPnl <= 0
+      teeCount,
+    });
+  }
+
+  // ── Rank by combined P&L descending ──────────────────────────────────────────
+  eligible.sort((a, b) => b.combPnl - a.combPnl);
+
+  // ── Build filter rejection summary ───────────────────────────────────────────
+  const totalRaw  = btOptGrid.length;
+  const totalPass = eligible.length;
+  const totalFail = totalRaw - totalPass;
+
+  const filterSummary = [
+    `Raw combinations      : ${totalRaw}`,
+    `─────────────────────────────────────────`,
+    `F1 fail (comb < 10t)  : ${failF1}`,
+    `F2 fail (B1 < 3t)     : ${failF2}  [after F1]`,
+    `F3 fail (B2 < 3t)     : ${failF3}  [after F2]`,
+    `F4 fail (B1 P&L ≤ $0) : ${failF4}  [after F3]`,
+    `F5 fail (B2 P&L ≤ $0) : ${failF5}  [after F4]`,
+    `─────────────────────────────────────────`,
+    `Total excluded        : ${totalFail}`,
+    `Eligible (all 5 pass) : ${totalPass}`,
+  ].join('\n');
+
+  if (statusEl) statusEl.textContent =
+    `${totalPass} eligible of ${totalRaw} · ranked by combined P&L`;
+
+  if (!wrapEl) {
+    if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+    return;
+  }
+
+  if (eligible.length === 0) {
+    wrapEl.innerHTML = `<div style="padding:20px;font-size:12px;color:var(--text-faint);">
+      No combinations passed all five filters.<br><br>
+      <pre style="font-size:11px;color:var(--text-dim);white-space:pre-wrap;">${filterSummary}</pre></div>`;
+    if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+    return;
+  }
+
+  // ── Formatting helpers ────────────────────────────────────────────────────────
+  const fmtPF  = v => isFinite(v) ? v.toFixed(2) : '∞';
+  const fmtPnl = v => (v >= 0 ? '+$' : '-$') + Math.abs(v).toLocaleString(undefined, {maximumFractionDigits: 0});
+  const fmtPct = v => v.toFixed(1) + '%';
+
+  // ── Render ranked table ───────────────────────────────────────────────────────
+  let html = `
+    <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;white-space:pre;font-family:monospace;
+                background:var(--bg2);padding:10px 12px;border-radius:6px;border:0.5px solid var(--line-old);">${filterSummary}</div>
+    <div style="overflow-x:auto;">
+    <table style="border-collapse:collapse;font-size:11px;width:100%;min-width:960px;">
+      <thead>
+        <tr style="border-bottom:1px solid var(--line-old);">
+          <th style="padding:6px 8px;text-align:center;color:var(--text-faint);font-weight:600;font-size:10px;">#</th>
+          <th style="padding:6px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">SL%</th>
+          <th style="padding:6px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">TP-R</th>
+          <th style="padding:6px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">Comb P&amp;L</th>
+          <th style="padding:6px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">B1 P&amp;L</th>
+          <th style="padding:6px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">B2 P&amp;L</th>
+          <th style="padding:6px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">Trades (B1/B2)</th>
+          <th style="padding:6px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">PF</th>
+          <th style="padding:6px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;" title="Worst of B1 and B2 max drawdown. Hover a cell for the period breakdown.">Max DD ▾</th>
+          <th style="padding:6px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">Win%</th>
+          <th style="padding:6px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">Avg R</th>
+          <th style="padding:6px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;" title="Largest single winning trade $ as % of combined P&L. N/A if combined P&L ≤ 0.">LW%</th>
+          <th style="padding:6px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">TEE</th>
+        </tr>
+      </thead>
+      <tbody>`;
+
+  eligible.forEach((r, i) => {
+    const pnlCol = r.combPnl >= 0 ? 'var(--green)' : 'var(--red)';
+    const ddCol  = r.maxDD > Math.abs(r.combPnl) * 0.5 ? 'var(--amber)' : 'var(--text-dim)';
+    const lwCol  = r.lwPct !== null && r.lwPct > 50 ? 'var(--amber)' : 'var(--text-dim)';
+    const lwStr  = r.lwPct !== null ? fmtPct(r.lwPct) : 'N/A';
+    // Tooltip shows the per-period DD breakdown
+    const ddTip  = `B1 Max DD: -$${r.b1MaxDD.toLocaleString(undefined,{maximumFractionDigits:0})}  |  B2 Max DD: -$${r.b2MaxDD.toLocaleString(undefined,{maximumFractionDigits:0})}  →  worst: -$${r.maxDD.toLocaleString(undefined,{maximumFractionDigits:0})}`;
+
+    html += `<tr style="border-bottom:0.5px solid var(--line-old);">
+      <td style="padding:6px 8px;text-align:center;color:var(--text-faint);">${i + 1}</td>
+      <td style="padding:6px 8px;text-align:right;color:var(--text);">${r.slPct}%</td>
+      <td style="padding:6px 8px;text-align:right;color:var(--text);font-weight:600;">${r.tp}R</td>
+      <td style="padding:6px 8px;text-align:right;color:${pnlCol};font-weight:700;">${fmtPnl(r.combPnl)}</td>
+      <td style="padding:6px 8px;text-align:right;color:var(--text-dim);">${fmtPnl(r.b1Pnl)}</td>
+      <td style="padding:6px 8px;text-align:right;color:var(--text-dim);">${fmtPnl(r.b2Pnl)}</td>
+      <td style="padding:6px 8px;text-align:right;color:var(--text-dim);">${r.combTrades} (${r.b1Trades}/${r.b2Trades})</td>
+      <td style="padding:6px 8px;text-align:right;color:var(--text-dim);">${fmtPF(r.combPF)}</td>
+      <td style="padding:6px 8px;text-align:right;color:${ddCol};" title="${ddTip}">-$${r.maxDD.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
+      <td style="padding:6px 8px;text-align:right;color:var(--text-dim);">${fmtPct(r.combWinRate)}</td>
+      <td style="padding:6px 8px;text-align:right;color:var(--text-dim);">${r.avgR.toFixed(3)}R</td>
+      <td style="padding:6px 8px;text-align:right;color:${lwCol};">${lwStr}</td>
+      <td style="padding:6px 8px;text-align:right;color:var(--text-faint);">${r.teeCount}</td>
+    </tr>`;
+  });
+
+  html += `</tbody></table></div>
+    <div style="margin-top:8px;font-size:10px;color:var(--text-faint);line-height:1.6;">
+      Sorted by combined P&amp;L descending.
+      <b>Max DD</b> = worst of B1 and B2 period drawdowns (each computed independently on $100/trade equity; hover for B1/B2 breakdown).
+      <b>LW%</b> = largest single winning trade $ ÷ combined P&amp;L $ (N/A when combined P&amp;L ≤ 0; amber = &gt;50%).
+      <b>TEE</b> = test_end_exit count. No recommendation yet.
+    </div>`;
+
+  wrapEl.innerHTML = html;
+  if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
 }
 
 // ── Enable / disable the opt-grid button based on prerequisite state ─────────
@@ -1384,6 +1619,14 @@ function btEnableOptGridBtn() {
   }
   if (status && !ready) {
     status.textContent = 'Run "Both Bull Runs" above to enable';
+  }
+  // When opt-grid prerequisites are lost (new btRun started), also disable the
+  // rank button — btOptGrid is cleared at this point so it would be stale.
+  if (!ready) {
+    const rankBtn = document.getElementById('bt-rank-run-btn');
+    const rankStatus = document.getElementById('bt-rank-status');
+    if (rankBtn) { rankBtn.disabled = true; rankBtn.style.opacity = '0.4'; rankBtn.title = 'Run SL × TP Optimisation above first'; }
+    if (rankStatus) rankStatus.textContent = '';
   }
 }
 

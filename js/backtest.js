@@ -17,6 +17,13 @@ const BT_TP_LEVELS = [1,2,3,4,5,6,7,8,9,10,20,50,100]; // multiples of R
 // Bull market presets
 const BT_BULL_1 = [Date.UTC(2019, 1, 1), Date.UTC(2021, 10, 30, 23, 59, 59)]; // Feb 2019 -> Nov 2021
 const BT_BULL_2 = [Date.UTC(2022, 11, 1), Date.UTC(2025, 9, 31, 23, 59, 59)]; // Dec 2022 -> Oct 2025
+
+// EMA warmup: fetch this many 4H candles before the period start for EMA seeding.
+// 1,000 candles = ~167 days of continuous history before the first tradable candle.
+// These candles are used only for EMA calculation — no entries or state changes occur
+// before BT_START_TS. BT_WARMUP_START_TS is set alongside BT_START_TS at run time.
+const BT_WARMUP_CANDLES = 1000;
+let BT_WARMUP_START_TS = null; // set at run time: BT_START_TS minus 1000 x 4H
 let btDebug = false; // set window.btDebug = true in console to log near-EMA rejected candles
 Object.defineProperty(window, 'btDebug', { get: () => btDebug, set: v => { btDebug = v; } });
 let btDebugLog = [];
@@ -52,6 +59,11 @@ async function btFetchCandles() {
   let end = BT_END_TS;
   const limit = 1000;
 
+  // Fetch back to BT_WARMUP_START_TS (not BT_START_TS) so the EMA has 1,000 candles
+  // of continuous pre-period history to warm up on. Entries and state are blocked
+  // before BT_START_TS in the strategy logic — warmup candles never generate trades.
+  const fetchTarget = BT_WARMUP_START_TS !== null ? BT_WARMUP_START_TS : BT_START_TS;
+
   while (true) {
     statusEl.textContent = `Fetching candles… ${allCandles.length.toLocaleString()} loaded`;
     const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${BT_SYMBOL}&interval=${BT_INTERVAL}&limit=${limit}&end=${end}`;
@@ -69,18 +81,19 @@ async function btFetchCandles() {
       c: parseFloat(c[4])
     }));
 
-    // oldest candle in this batch
     const oldest = candles[candles.length - 1].ts;
     allCandles.push(...candles);
 
-    if (oldest <= BT_START_TS) break;
+    if (oldest <= fetchTarget) break;
     end = oldest - 1;
     await new Promise(r => setTimeout(r, 80)); // rate limit buffer
   }
 
-  // sort oldest → newest, keep the full superset range (EMA needs continuous history)
+  // Sort oldest to newest. Return full warmup+period range so EMA is computed on all
+  // of it. btApplyIncludeWindows and the entry guard (ts >= BT_START_TS) keep warmup
+  // candles out of trade evaluation.
   allCandles.sort((a, b) => a.ts - b.ts);
-  return allCandles.filter(c => c.ts >= BT_START_TS && c.ts <= BT_END_TS);
+  return allCandles.filter(c => c.ts >= fetchTarget && c.ts <= BT_END_TS);
 }
 
 // ── Trim a (candles, ema) pair down to only the configured include-windows ─────
@@ -165,6 +178,12 @@ function btRunLevel(candles, ema, tpMultiple) {
     const wasBelow = prevClose < prevEma;
     const isBullish = c.c > c.o;
     const closedAbove = c.c > emaVal;
+
+    // Hard entry guard: never open a trade on a warmup candle.
+    // BT_START_TS is the first eligible tradable candle boundary — warmup candles
+    // exist solely to produce a well-seeded EMA and must not generate entries,
+    // cooldown state, or any performance metrics.
+    if (c.ts < BT_START_TS) continue;
 
     if (wasBelow && isBullish && closedAbove) {
       inTrade = {
@@ -810,16 +829,51 @@ async function btRun() {
   }
 
   try {
-    // Fetch candles (superset range; windows are applied after EMA calc)
-    let candles = await btFetchCandles();
-    statusEl.textContent = `${candles.length.toLocaleString()} candles loaded — computing EMA…`;
+    // Set warmup start: fetch 1,000 x 4H candles before the period start for EMA seeding.
+    // For Bull Run 2 and combined mode, BT_START_TS is already Feb 2019 or earlier,
+    // so warmup is naturally covered. For Bull Run 1 (Feb 2019) this pushes the fetch
+    // back ~167 days to ~Aug 2018, giving the EMA a well-seeded starting value.
+    BT_WARMUP_START_TS = BT_START_TS - (BT_WARMUP_CANDLES * BT_INTERVAL_MS);
 
-    // EMA on the full continuous superset first, for accuracy
-    const closes = candles.map(c => c.c);
-    let ema = btCalcEMA(closes, BT_EMA_PERIOD);
+    // Fetch candles (warmup + full period; windows applied after EMA calc)
+    let allCandles = await btFetchCandles();
 
-    // Now trim to the configured windows (no-op in custom range mode)
+    // Compute EMA on the full warmup+period sequence for accuracy
+    const allCloses = allCandles.map(c => c.c);
+    let allEma = btCalcEMA(allCloses, BT_EMA_PERIOD);
+
+    // Build audit summary before trimming to trade windows
+    const warmupCandles = allCandles.filter(c => c.ts < BT_START_TS);
+    const periodCandles = allCandles.filter(c => c.ts >= BT_START_TS);
+    const firstTradable = periodCandles[0];
+    const warmupStart = allCandles[0];
+    const auditLines = [
+      `── Bucket 1 Data Audit ──────────────────────────────`,
+      `Warmup fetch start : ${warmupStart ? new Date(warmupStart.ts).toISOString().slice(0,10) : 'n/a'}`,
+      `Warmup candle count: ${warmupCandles.length} (target ≥ ${BT_WARMUP_CANDLES})`,
+      `Period start (BT)  : ${new Date(BT_START_TS).toISOString().slice(0,10)}`,
+      `First tradable     : ${firstTradable ? new Date(firstTradable.ts).toISOString().slice(0,10) : 'n/a'}`,
+      `Period candles     : ${periodCandles.length}`,
+      `Total fetched      : ${allCandles.length}`,
+      `EMA warm at entry  : ${allEma[allCandles.indexOf(firstTradable)] !== null ? 'YES' : 'NO — PROBLEM'}`,
+      `─────────────────────────────────────────────────────`,
+    ].join('\n');
+    console.log(auditLines);
+
+    // Surface audit in the existing debug textarea so it's visible in the UI
+    const debugEl = document.getElementById('bt-debug-output');
+    if (debugEl) debugEl.value = auditLines + '\n\n' + (debugEl.value || '');
+
+    statusEl.textContent = `${allCandles.length.toLocaleString()} candles loaded (${warmupCandles.length} warmup + ${periodCandles.length} period) — computing EMA…`;
+
+    // Trim to trade windows now (no-op in custom range mode)
+    // Use allCandles/allEma so window filter sees the full index-aligned arrays
+    let candles = allCandles;
+    let ema = allEma;
     ({ candles, ema } = btApplyIncludeWindows(candles, ema));
+
+    // After window trim, enforce the entry guard at candle level (belt-and-suspenders:
+    // btRunLevel also checks c.ts >= BT_START_TS before opening any trade)
     btData = candles;
 
     if (!candles.length) {

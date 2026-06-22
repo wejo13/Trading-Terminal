@@ -2,10 +2,10 @@
 // Strategy: BTC 4H candle wicks into 4H 200 EMA from above → long entry at candle close
 // SL: 3% below entry (= 1R). TP tested at 1R–10R independently.
 // Cooldown: 20 candles after SL hit before next entry.
-// Data: Bybit kline API, paginated back to March 2020.
+// Data: Binance spot kline API (api.binance.com/api/v3/klines), paginated forward from warmup start.
 
 const BT_SYMBOL = 'BTCUSDT';
-const BT_INTERVAL = '240'; // 4H in minutes
+const BT_INTERVAL = '4h'; // Binance 4H interval enum
 const BT_INTERVAL_MS = 4 * 60 * 60 * 1000;
 let BT_SL_PCT = 0.03;    // default 3%, overridden by user input each run
 const BT_EMA_PERIOD = 200;
@@ -52,48 +52,61 @@ function btCalcEMA(closes, period) {
   return ema;
 }
 
-// ── Fetch all 4H candles from BT_START_TS to BT_END_TS (or superset of windows) ─
+// ── Fetch all 4H candles from BT_WARMUP_START_TS to BT_END_TS ─────────────────
+// Uses Binance spot BTCUSDT kline API — history available from Aug 2017, covering
+// all of Bull Run 1 (Feb 2019) and the required warmup (back to ~Aug 2018).
+// Bybit linear BTCUSDT only launched Mar 2020 and cannot cover Bull Run 1 at all.
+//
+// Binance pagination differs from Bybit:
+//   - Response is oldest-first (no sort needed)
+//   - Paginate FORWARDS using startTime, not backwards using end
+//   - Interval param is '4h' string, not minutes
+//   - Response fields: [openTime, open, high, low, close, volume, closeTime, ...]
 async function btFetchCandles() {
   const statusEl = document.getElementById('bt-status');
   const allCandles = [];
-  let end = BT_END_TS;
   const limit = 1000;
+  const fetchStart = BT_WARMUP_START_TS !== null ? BT_WARMUP_START_TS : BT_START_TS;
+  let startTime = fetchStart;
 
-  // Fetch back to BT_WARMUP_START_TS (not BT_START_TS) so the EMA has 1,000 candles
-  // of continuous pre-period history to warm up on. Entries and state are blocked
-  // before BT_START_TS in the strategy logic — warmup candles never generate trades.
-  const fetchTarget = BT_WARMUP_START_TS !== null ? BT_WARMUP_START_TS : BT_START_TS;
+  // Hard pre-flight: if Binance cannot possibly have data for this window, fail fast.
+  // Binance BTCUSDT spot launched August 2017 — nothing before that exists.
+  const BINANCE_BTCUSDT_LAUNCH_MS = Date.UTC(2017, 7, 17); // Aug 17 2017
+  if (fetchStart < BINANCE_BTCUSDT_LAUNCH_MS) {
+    throw new Error(
+      `Requested warmup start ${new Date(fetchStart).toISOString().slice(0,10)} is before ` +
+      `Binance BTCUSDT launch (2017-08-17). Reduce BT_WARMUP_CANDLES or adjust the period.`
+    );
+  }
 
-  while (true) {
+  while (startTime <= BT_END_TS) {
     statusEl.textContent = `Fetching candles… ${allCandles.length.toLocaleString()} loaded`;
-    const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${BT_SYMBOL}&interval=${BT_INTERVAL}&limit=${limit}&end=${end}`;
+    const url = `https://api.binance.com/api/v3/klines?symbol=${BT_SYMBOL}&interval=${BT_INTERVAL}&limit=${limit}&startTime=${startTime}&endTime=${BT_END_TS}`;
     const res = await fetch(url);
-    const json = await res.json();
-    const list = json?.result?.list;
-    if (!list || list.length === 0) break;
+    if (!res.ok) throw new Error(`Binance API error ${res.status}: ${await res.text()}`);
+    const list = await res.json();
+    if (!Array.isArray(list) || list.length === 0) break;
 
-    // Bybit returns newest first: [ts, open, high, low, close, vol, turnover]
-    const candles = list.map(c => ({
-      ts: parseInt(c[0]),
-      o: parseFloat(c[1]),
-      h: parseFloat(c[2]),
-      l: parseFloat(c[3]),
-      c: parseFloat(c[4])
-    }));
+    // Binance returns oldest-first: [openTime, open, high, low, close, volume, closeTime, ...]
+    for (const c of list) {
+      allCandles.push({
+        ts: c[0],           // open time ms
+        o: parseFloat(c[1]),
+        h: parseFloat(c[2]),
+        l: parseFloat(c[3]),
+        c: parseFloat(c[4])
+      });
+    }
 
-    const oldest = candles[candles.length - 1].ts;
-    allCandles.push(...candles);
-
-    if (oldest <= fetchTarget) break;
-    end = oldest - 1;
+    if (list.length < limit) break; // last page — no more data
+    // Advance: next page starts 1ms after the last candle's open time
+    startTime = list[list.length - 1][0] + 1;
     await new Promise(r => setTimeout(r, 80)); // rate limit buffer
   }
 
-  // Sort oldest to newest. Return full warmup+period range so EMA is computed on all
-  // of it. btApplyIncludeWindows and the entry guard (ts >= BT_START_TS) keep warmup
-  // candles out of trade evaluation.
-  allCandles.sort((a, b) => a.ts - b.ts);
-  return allCandles.filter(c => c.ts >= fetchTarget && c.ts <= BT_END_TS);
+  // Binance returns oldest-first already — no sort needed.
+  // Clamp to [fetchStart, BT_END_TS] to discard any edge-page overshoot.
+  return allCandles.filter(c => c.ts >= fetchStart && c.ts <= BT_END_TS);
 }
 
 // ── Trim a (candles, ema) pair down to only the configured include-windows ─────
@@ -838,6 +851,24 @@ async function btRun() {
     // Fetch candles (warmup + full period; windows applied after EMA calc)
     let allCandles = await btFetchCandles();
 
+    // ── HARD VALIDATION: data source must have reached the requested warmup start ──
+    // If the earliest returned candle is later than BT_WARMUP_START_TS, the data
+    // source hit its history wall before our warmup window. The EMA will be
+    // under-seeded and results cannot be trusted. Stop immediately.
+    if (allCandles.length === 0) {
+      throw new Error('No candles returned from data source. Check symbol and date range.');
+    }
+    const actualFetchStart = allCandles[0].ts;
+    const warmupSlackMs = BT_INTERVAL_MS * 3; // allow up to 3 candles of slack for exchange open gaps
+    if (actualFetchStart > BT_WARMUP_START_TS + warmupSlackMs) {
+      const requested = new Date(BT_WARMUP_START_TS).toISOString().slice(0,10);
+      const actual    = new Date(actualFetchStart).toISOString().slice(0,10);
+      throw new Error(
+        `DATA SOURCE TOO SHORT: requested warmup back to ${requested} but earliest candle is ${actual}. ` +
+        `The EMA cannot be properly seeded. Switch to a data source with longer history or shorten the warmup window.`
+      );
+    }
+
     // Compute EMA on the full warmup+period sequence for accuracy
     const allCloses = allCandles.map(c => c.c);
     let allEma = btCalcEMA(allCloses, BT_EMA_PERIOD);
@@ -874,8 +905,15 @@ async function btRun() {
 
     const auditLines = [
       `=== BUCKET 1 DATA AUDIT ===`,
+      `Data source                : Binance spot REST API (api.binance.com/api/v3/klines)`,
+      `Instrument                 : ${BT_SYMBOL} spot — canonical historical signal proxy`,
+      `  NOTE: live execution (if any) would use a separate instrument (e.g. Bybit`,
+      `        BTCUSDT perp). Spot price is the correct backtest reference; the Bybit`,
+      `        linear contract did not exist before 2020-03-30 and cannot cover Bull Run 1.`,
+      `Interval                   : ${BT_INTERVAL} (4-hour candles)`,
       `Selected period            : ${periodLabel}`,
-      `Warmup fetch start         : ${warmupStart ? new Date(warmupStart.ts).toISOString().slice(0,10) : 'n/a'}`,
+      `Warmup fetch start (requested): ${new Date(BT_WARMUP_START_TS).toISOString().slice(0,10)}`,
+      `Actual first fetched candle: ${warmupStart ? new Date(warmupStart.ts).toISOString().slice(0,10) : 'n/a'}`,
       `Warmup candles requested   : ${BT_WARMUP_CANDLES}`,
       `Warmup candles actually fetched: ${warmupCandles.length}`,
       `Official period start      : ${new Date(BT_START_TS).toISOString().slice(0,10)}`,

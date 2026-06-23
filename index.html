@@ -1974,6 +1974,196 @@
           </div>
         </div>
 
+        <!-- Backtest Conclusion & Next Bull-Run Playbook -->
+        <div style="background:var(--card);border-radius:var(--radius-card);padding:20px 20px 24px;margin-bottom:16px;border:0.5px solid var(--line-old);">
+
+          <!-- Section header -->
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:18px;">
+            <i class="ti ti-book-2" style="color:var(--teal);font-size:15px;"></i>
+            <span style="font-size:13px;font-weight:700;color:var(--text);">Backtest Conclusion &amp; Next Bull-Run Playbook</span>
+          </div>
+
+          <!-- 1. Strategy tested -->
+          <div style="margin-bottom:20px;">
+            <div style="font-size:11px;font-weight:700;color:var(--teal);letter-spacing:0.06em;text-transform:uppercase;margin-bottom:8px;">1 · Strategy Tested</div>
+            <div style="font-size:11px;color:var(--text-dim);line-height:1.8;">
+              <span style="color:var(--text-faint);">Market / signal source</span> &nbsp;Binance spot BTCUSDT, 4H candles<br>
+              <span style="color:var(--text-faint);">Indicator</span> &nbsp;200 EMA<br>
+              <span style="color:var(--text-faint);">Direction</span> &nbsp;Long only<br>
+              <span style="color:var(--text-faint);">Risk model</span> &nbsp;Fixed 1% of starting balance per trade, no compounding<br>
+              <span style="color:var(--text-faint);">Cooldown</span> &nbsp;20 completed 4H candles after a stop-out<br>
+              <span style="color:var(--text-faint);">SL-first rule</span> &nbsp;If SL and TP are both touched in the same candle, SL is assumed to hit first
+            </div>
+            <div style="margin-top:10px;font-size:11px;color:var(--text-dim);line-height:1.8;">
+              <span style="font-weight:600;color:var(--text);">Entry conditions (all five must be true):</span><br>
+              <span style="color:var(--text-faint);">①</span> Previous completed 4H candle closed below the 200 EMA<br>
+              <span style="color:var(--text-faint);">②</span> Current completed 4H candle is bullish (close &gt; open)<br>
+              <span style="color:var(--text-faint);">③</span> Current candle closes back above the 200 EMA<br>
+              <span style="color:var(--text-faint);">④</span> No tactical trade is currently open<br>
+              <span style="color:var(--text-faint);">⑤</span> No cooldown is active
+            </div>
+            <div style="margin-top:10px;padding:8px 12px;background:var(--bg2);border-radius:6px;border-left:2px solid var(--amber);font-size:10px;color:var(--text-dim);line-height:1.6;">
+              <b style="color:var(--amber);">Important limitation:</b> backtests used manually selected bull-market windows. This is not yet an objective live bull-market filter. Results apply to the selected periods only and must not be treated as a bear-market strategy.
+            </div>
+          </div>
+
+          <!-- 2. What was tested -->
+          <div style="margin-bottom:20px;">
+            <div style="font-size:11px;font-weight:700;color:var(--teal);letter-spacing:0.06em;text-transform:uppercase;margin-bottom:8px;">2 · What Was Tested</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+              <div style="flex:1;min-width:160px;background:var(--bg2);border-radius:8px;padding:12px 14px;border:0.5px solid var(--line-old);">
+                <div style="font-size:10px;color:var(--text-faint);margin-bottom:6px;letter-spacing:0.04em;text-transform:uppercase;">Tactical Study (1R–10R)</div>
+                <div style="font-size:11px;color:var(--text-dim);line-height:1.8;">
+                  SL range tested &nbsp;<b style="color:var(--text);">0.5% – 10%</b><br>
+                  Step size &nbsp;<b style="color:var(--text);">0.25%</b><br>
+                  SL values tested &nbsp;<b style="color:var(--text);">39</b><br>
+                  TP range &nbsp;<b style="color:var(--text);">1R – 10R</b><br>
+                  Total combinations &nbsp;<b style="color:var(--text);">390</b>
+                </div>
+              </div>
+              <div style="flex:1;min-width:160px;background:var(--bg2);border-radius:8px;padding:12px 14px;border:0.5px solid var(--line-old);">
+                <div style="font-size:10px;color:var(--text-faint);margin-bottom:6px;letter-spacing:0.04em;text-transform:uppercase;">Core Trend Study (full universe)</div>
+                <div style="font-size:11px;color:var(--text-dim);line-height:1.8;">
+                  SL range tested &nbsp;<b style="color:var(--text);">0.5% – 10%</b><br>
+                  TP range &nbsp;<b style="color:var(--text);">1R – 100R</b><br>
+                  Also tested &nbsp;<b style="color:var(--text);">20R, 50R, 100R</b><br>
+                  Total combinations &nbsp;<b style="color:var(--text);">507</b>
+                </div>
+              </div>
+            </div>
+            <div style="margin-top:8px;font-size:10px;color:var(--text-faint);line-height:1.5;">
+              The tactical optimisation tested all 39 SL values from 0.5% to 10% — not only the default 3% stop. Every SL × TP combination was run independently across both bull-run periods.
+            </div>
+          </div>
+
+          <!-- 3. Main finding -->
+          <div style="margin-bottom:20px;">
+            <div style="font-size:11px;font-weight:700;color:var(--teal);letter-spacing:0.06em;text-transform:uppercase;margin-bottom:8px;">3 · Main Finding</div>
+            <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px;line-height:1.5;">
+              The edge came from reclaiming the 4H 200 EMA during bull-market conditions, but the strongest historical profits required allowing winners room to run.
+            </div>
+            <div style="font-size:11px;color:var(--text-dim);line-height:1.7;">
+              Lower targets were included in the test but did not rank near the top by combined historical P&amp;L. The tactical leaderboard clustered mainly around <b style="color:var(--text);">7R–10R</b> targets. Very large targets such as 100R produced the largest raw backtest returns, but performance was heavily concentrated in a small number of very long-duration winners and is not suitable as the primary tactical deployment. A practical tactical configuration was therefore selected by balancing profit, trade frequency, drawdown, losing streaks, and holding time — not by maximising P&amp;L alone.
+            </div>
+          </div>
+
+          <!-- 4. Two strategy profiles -->
+          <div style="margin-bottom:20px;">
+            <div style="font-size:11px;font-weight:700;color:var(--teal);letter-spacing:0.06em;text-transform:uppercase;margin-bottom:8px;">4 · Two Strategy Profiles</div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;">
+
+              <!-- Core Trend Study card -->
+              <div style="flex:1;min-width:200px;background:var(--bg2);border-radius:8px;padding:14px 16px;border:0.5px solid var(--line-old);">
+                <div style="font-size:10px;font-weight:700;color:var(--text-faint);letter-spacing:0.06em;text-transform:uppercase;margin-bottom:4px;">A · Core Trend Study</div>
+                <div style="font-size:11px;color:var(--text-faint);margin-bottom:10px;">Research profile only</div>
+                <div style="font-size:11px;color:var(--text-dim);line-height:1.8;">
+                  <span style="color:var(--text-faint);">Purpose</span> &nbsp;Capture rare, extended bull-market trends<br>
+                  <span style="color:var(--text-faint);">Highest raw P&amp;L candidate</span> &nbsp;<b style="color:var(--text);">1% SL / 100R TP</b><br>
+                  <span style="color:var(--text-faint);">Historical result</span> &nbsp;<b style="color:var(--green);">+$45,200</b> at $100 fixed risk<br>
+                  <span style="color:var(--text-faint);">Trades</span> &nbsp;53 &nbsp;·&nbsp; <span style="color:var(--text-faint);">Win rate</span> &nbsp;9.4%
+                </div>
+                <div style="margin-top:8px;font-size:10px;color:var(--text-dim);line-height:1.5;">
+                  Performance depended heavily on a small number of very large winners, some lasting many months. Not selected as a standard tactical live configuration.
+                </div>
+                <div style="margin-top:8px;display:inline-block;font-size:10px;font-weight:700;color:var(--text-faint);background:var(--card);border:0.5px solid var(--line-old);border-radius:4px;padding:2px 7px;">Research only</div>
+              </div>
+
+              <!-- Tactical EMA Reclaim card -->
+              <div style="flex:1;min-width:200px;background:var(--bg2);border-radius:8px;padding:14px 16px;border:0.5px solid var(--teal);">
+                <div style="font-size:10px;font-weight:700;color:var(--teal);letter-spacing:0.06em;text-transform:uppercase;margin-bottom:4px;">B · Tactical EMA Reclaim Study</div>
+                <div style="font-size:11px;color:var(--text-faint);margin-bottom:10px;">Preferred forward-test profile</div>
+                <div style="font-size:11px;color:var(--text-dim);line-height:1.8;">
+                  <span style="color:var(--text-faint);">Purpose</span> &nbsp;Independent tactical reclaim trades, separate sub-account<br>
+                  <span style="color:var(--text-faint);">Configuration</span> &nbsp;<b style="color:var(--text);">2% SL / 9R TP</b><br>
+                  <span style="color:var(--text-faint);">Combined P&amp;L</span> &nbsp;<b style="color:var(--green);">+$6,200</b> at $100 fixed risk<br>
+                  <span style="color:var(--text-faint);">Bull Run 1</span> &nbsp;<b style="color:var(--green);">+$4,400</b> &nbsp;·&nbsp; <span style="color:var(--text-faint);">Bull Run 2</span> &nbsp;<b style="color:var(--green);">+$1,800</b>
+                </div>
+                <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:3px 14px;font-size:10px;color:var(--text-dim);line-height:1.8;">
+                  <span>Trades &nbsp;<b style="color:var(--text);">78</b></span>
+                  <span>Winners &nbsp;<b style="color:var(--text);">14</b></span>
+                  <span>Win rate &nbsp;<b style="color:var(--text);">18.0%</b></span>
+                  <span>Max consec. losses &nbsp;<b style="color:var(--text);">9</b></span>
+                  <span>Avg hold &nbsp;<b style="color:var(--text);">6.6 days</b></span>
+                  <span>Median hold &nbsp;<b style="color:var(--text);">2.4 days</b></span>
+                  <span>Trades &gt;30 days &nbsp;<b style="color:var(--text);">2</b></span>
+                  <span>Longest hold &nbsp;<b style="color:var(--text);">45.5 days</b></span>
+                  <span colspan="2">Max drawdown &nbsp;<b style="color:var(--text);">$900</b></span>
+                </div>
+                <div style="margin-top:8px;display:inline-block;font-size:10px;font-weight:700;color:var(--teal);background:rgba(40,215,200,0.08);border:0.5px solid var(--teal);border-radius:4px;padding:2px 7px;">Forward-test approved</div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- 5. Why 2% / 9R was selected -->
+          <div style="margin-bottom:20px;">
+            <div style="font-size:11px;font-weight:700;color:var(--teal);letter-spacing:0.06em;text-transform:uppercase;margin-bottom:8px;">5 · Why 2% SL / 9R Was Selected</div>
+            <div style="font-size:11px;color:var(--text-dim);line-height:1.7;margin-bottom:10px;">
+              The highest-P&amp;L tactical candidate was <b style="color:var(--text);">4% SL / 10R TP at +$6,600</b>. The selected configuration (<b style="color:var(--text);">2% SL / 9R TP at +$6,200</b>) gave up only <b style="color:var(--text);">$400</b> of historical P&amp;L while producing a materially more practical holding-time profile.
+            </div>
+            <div style="overflow-x:auto;">
+              <table style="border-collapse:collapse;font-size:11px;width:100%;min-width:360px;">
+                <thead>
+                  <tr style="border-bottom:1px solid var(--line-old);">
+                    <th style="padding:5px 8px;text-align:left;color:var(--text-faint);font-weight:600;font-size:10px;">Metric</th>
+                    <th style="padding:5px 8px;text-align:right;color:var(--text-faint);font-weight:600;font-size:10px;">4% / 10R (highest P&amp;L)</th>
+                    <th style="padding:5px 8px;text-align:right;color:var(--teal);font-weight:600;font-size:10px;">2% / 9R (selected)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr style="border-bottom:0.5px solid var(--line-old);"><td style="padding:5px 8px;color:var(--text-dim);">Combined P&amp;L</td><td style="padding:5px 8px;text-align:right;color:var(--text);">+$6,600</td><td style="padding:5px 8px;text-align:right;color:var(--green);font-weight:600;">+$6,200</td></tr>
+                  <tr style="border-bottom:0.5px solid var(--line-old);"><td style="padding:5px 8px;color:var(--text-dim);">Total trades</td><td style="padding:5px 8px;text-align:right;color:var(--text);">55</td><td style="padding:5px 8px;text-align:right;color:var(--green);font-weight:600;">78</td></tr>
+                  <tr style="border-bottom:0.5px solid var(--line-old);"><td style="padding:5px 8px;color:var(--text-dim);">Winners</td><td style="padding:5px 8px;text-align:right;color:var(--text);">11</td><td style="padding:5px 8px;text-align:right;color:var(--green);font-weight:600;">14</td></tr>
+                  <tr style="border-bottom:0.5px solid var(--line-old);"><td style="padding:5px 8px;color:var(--text-dim);">Avg hold</td><td style="padding:5px 8px;text-align:right;color:var(--amber);">17.2 days</td><td style="padding:5px 8px;text-align:right;color:var(--green);font-weight:600;">6.6 days</td></tr>
+                  <tr style="border-bottom:0.5px solid var(--line-old);"><td style="padding:5px 8px;color:var(--text-dim);">Trades &gt;30 days</td><td style="padding:5px 8px;text-align:right;color:var(--amber);">10</td><td style="padding:5px 8px;text-align:right;color:var(--green);font-weight:600;">2</td></tr>
+                  <tr style="border-bottom:0.5px solid var(--line-old);"><td style="padding:5px 8px;color:var(--text-dim);">Longest hold</td><td style="padding:5px 8px;text-align:right;color:var(--amber);">115 days</td><td style="padding:5px 8px;text-align:right;color:var(--green);font-weight:600;">45.5 days</td></tr>
+                  <tr><td style="padding:5px 8px;color:var(--text-dim);">Max losing streak</td><td style="padding:5px 8px;text-align:right;color:var(--amber);">10</td><td style="padding:5px 8px;text-align:right;color:var(--green);font-weight:600;">9</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div style="margin-top:10px;font-size:11px;font-weight:600;color:var(--text);line-height:1.5;">
+              For a tactical account, 2% SL / 9R was the best balance found between historical profitability and a holding-time profile that is realistically tradable.
+            </div>
+          </div>
+
+          <!-- 6. What is most likely to make money next bull run -->
+          <div style="margin-bottom:20px;">
+            <div style="font-size:11px;font-weight:700;color:var(--teal);letter-spacing:0.06em;text-transform:uppercase;margin-bottom:8px;">6 · Highest-Probability Framework for the Next Bull Market</div>
+            <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;font-style:italic;">Based on these historical tests, the highest-probability framework to carry into the next bull market is:</div>
+            <div style="font-size:11px;color:var(--text-dim);line-height:1.9;">
+              <span style="color:var(--teal);font-weight:700;">①</span> &nbsp;Trade only when Bitcoin is in a confirmed bull-market regime or an objectively defined equivalent filter.<br>
+              <span style="color:var(--teal);font-weight:700;">②</span> &nbsp;Take valid 4H 200 EMA reclaim signals.<br>
+              <span style="color:var(--teal);font-weight:700;">③</span> &nbsp;Keep the tactical system separate from any long-term or core BTC position.<br>
+              <span style="color:var(--teal);font-weight:700;">④</span> &nbsp;Use the 2% SL / 9R TP configuration as the tactical forward-test baseline.<br>
+              <span style="color:var(--teal);font-weight:700;">⑤</span> &nbsp;Keep risk fixed and small per trade.<br>
+              <span style="color:var(--teal);font-weight:700;">⑥</span> &nbsp;Accept that this is a low-win-rate system and that a sequence of losses is normal and expected.<br>
+              <span style="color:var(--teal);font-weight:700;">⑦</span> &nbsp;Allow winners to reach the target rather than cutting them early, unless there is a documented operational reason.<br>
+              <span style="color:var(--teal);font-weight:700;">⑧</span> &nbsp;Do not activate the strategy in a bear market simply because price briefly reclaims the EMA.
+            </div>
+          </div>
+
+          <!-- 7. Key risks and limitations -->
+          <div>
+            <div style="font-size:11px;font-weight:700;color:var(--teal);letter-spacing:0.06em;text-transform:uppercase;margin-bottom:8px;">7 · Key Risks and Limitations</div>
+            <div style="padding:12px 14px;background:rgba(227,100,95,0.07);border-radius:8px;border:0.5px solid var(--red);">
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+                <i class="ti ti-alert-triangle" style="color:var(--red);font-size:13px;"></i>
+                <span style="font-size:11px;font-weight:700;color:var(--red);">Important — read before deploying capital</span>
+              </div>
+              <div style="font-size:11px;color:var(--text-dim);line-height:1.9;">
+                <span style="color:var(--red);">▸</span> &nbsp;Historical backtests do not guarantee future returns.<br>
+                <span style="color:var(--red);">▸</span> &nbsp;The study used manually chosen bull-market windows. There is currently no objective live regime filter.<br>
+                <span style="color:var(--red);">▸</span> &nbsp;Fees, funding costs, spread, slippage, and execution differences can reduce live performance materially.<br>
+                <span style="color:var(--red);">▸</span> &nbsp;Actual stop fills can exceed the planned 1R loss — a stop-market order may fill below the placed stop price.<br>
+                <span style="color:var(--red);">▸</span> &nbsp;The strategy can experience long waiting periods and up to 9 consecutive historical losses in the selected tactical configuration.<br>
+                <span style="color:var(--red);">▸</span> &nbsp;The system is currently inactive while BTC is materially below the 4H 200 EMA and broader market conditions are bearish.<br>
+                <span style="color:var(--red);">▸</span> &nbsp;The 2% SL / 9R TP configuration is approved for forward testing only — it is not approved for full-capital live deployment.
+              </div>
+            </div>
+          </div>
+
+        </div>
+
         <!-- Top bar -->
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
           <div style="display:flex;align-items:center;gap:8px;background:var(--card);border-radius:8px;padding:8px 14px;border:0.5px solid var(--line-old);">

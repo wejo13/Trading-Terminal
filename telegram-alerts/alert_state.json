@@ -16,8 +16,8 @@
   "XLMUSDT": "below",
   "ENAUSDT": "below",
   "ADAUSDT": "below",
-  "UNIUSDT": "below",
   "ASTERUSDT": "below",
+  "UNIUSDT": "below",
   "XAUTUSDT": "below",
   "LINKUSDT": "below",
   "PAXGUSDT": "below",
@@ -34,8 +34,8 @@
   "ICPUSDT": "below",
   "RENDERUSDT": "below",
   "APTUSDT": "below",
-  "POLUSDT": "below",
   "WLFIUSDT": "below",
+  "POLUSDT": "below",
   "JSTUSDT": "below",
   "ARBUSDT": "below",
   "ALGOUSDT": "below",
@@ -44,5 +44,6 @@
   "ATOMUSDT": "below",
   "MORPHOUSDT": "below",
   "SKYUSDT": "below",
-  "QNTUSDT": "below"
+  "QNTUSDT": "below",
+  "NEXOUSDT": "below"
 }

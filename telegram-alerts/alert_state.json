@@ -32,7 +32,7 @@
   "DEXEUSDT": "above",
   "FILUSDT": "below",
   "HBARUSDT": "below",
-  "WLFIUSDT": "below",
+  "WLFIUSDT": "touching",
   "DOTUSDT": "below",
   "RENDERUSDT": "below",
   "ICPUSDT": "below",
@@ -47,6 +47,5 @@
   "NIGHTUSDT": "touching",
   "MORPHOUSDT": "touching",
   "SKYUSDT": "below",
-  "QNTUSDT": "below",
-  "NEXOUSDT": "below"
+  "QNTUSDT": "below"
 }

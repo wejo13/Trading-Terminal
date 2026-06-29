@@ -1094,6 +1094,10 @@
       <span class="nav-sub-dot"></span>XRP
     </div>
 
+    <div class="nav-item" data-tab="sp500" onclick="switchTab('sp500')">
+      <i class="ti ti-chart-bar"></i>S&P 500 Watchlist
+    </div>
+
     <div class="sidebar-footer">
       <div class="nav-item" data-tab="settings" onclick="switchTab('settings')">
         <i class="ti ti-settings"></i>Settings
@@ -2939,6 +2943,22 @@
 
     </div>
 
+    <!-- ── S&P 500 Watchlist tab ── -->
+    <div class="tab-view" id="tab-sp500" data-title="S&amp;P 500 Watchlist">
+      <div style="max-width:1100px;">
+        <div class="sp5-card">
+          <div class="sp5-section-head">Valuation &amp; Cycle Context</div>
+          <span class="sp5-demo-banner">DEMO VALUATION DATA &middot; Not live</span>
+          <div id="sp5-valuation-body"><div class="sp5-unavail">Loading…</div></div>
+        </div>
+        <div class="sp5-card">
+          <div class="sp5-section-head">S&amp;P 500 Watchlist</div>
+          <span class="sp5-demo-banner">DEMO DATA &middot; Not live prices &middot; For layout/testing only</span>
+          <div id="sp5-watchlist-body" style="overflow-x:auto;margin-top:10px;"><div class="sp5-unavail">Loading…</div></div>
+        </div>
+      </div>
+    </div><!-- /tab-sp500 -->
+
   </main>
 </div>
 
@@ -2959,6 +2979,53 @@
 .sea-mac{display:inline-block;font-size:10px;padding:1px 5px;border-radius:3px;background:#3d2a00;color:#f0a940;}
 .sea-cry{display:inline-block;font-size:10px;padding:1px 5px;border-radius:3px;background:#0a2e1e;color:#3ddc97;}
 .sea-pol{display:inline-block;font-size:10px;padding:1px 5px;border-radius:3px;background:#231b45;color:#9b8fef;}
+
+  /* ── S&P 500 Watchlist Tab ────────────────────────────────── */
+  .sp5-demo-banner{font-size:10px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;
+    padding:5px 12px;background:rgba(217,169,63,0.12);border:1px solid rgba(217,169,63,0.35);
+    border-radius:4px;color:#d9a93f;margin-bottom:14px;display:inline-block;}
+  .sp5-section-head{font-size:10px;font-weight:700;letter-spacing:0.09em;text-transform:uppercase;
+    color:var(--text-faint);margin:0 0 10px;}
+  .sp5-card{background:var(--card);border-radius:14px;padding:16px;margin-bottom:14px;}
+  .sp5-val-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;}
+  .sp5-val-metric{background:rgba(255,255,255,0.03);border-radius:6px;padding:10px 12px;}
+  .sp5-val-metric--wide{grid-column:span 3;}
+  .sp5-vm-label{font-size:10px;color:var(--text-faint);margin-bottom:4px;letter-spacing:0.04em;}
+  .sp5-vm-val{font-size:18px;font-weight:700;color:var(--text);}
+  .sp5-caution{font-size:11px;font-weight:700;padding:3px 10px;border-radius:4px;letter-spacing:0.04em;}
+  .sp5-caution--normal   {color:#28d7c8;background:rgba(40,215,200,0.1);border:1px solid rgba(40,215,200,0.3);}
+  .sp5-caution--elevated {color:#f97316;background:rgba(249,115,22,0.1);border:1px solid rgba(249,115,22,0.3);}
+  .sp5-caution--extreme  {color:#ef4444;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.35);}
+  .sp5-cycle-note{font-size:11px;color:var(--text-faint);line-height:1.55;padding:10px 12px;
+    background:rgba(255,255,255,0.025);border-left:2px solid #28d7c8;border-radius:0 4px 4px 0;margin-bottom:14px;}
+  .sp5-hist-label{font-size:10px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;
+    color:var(--text-faint);margin-bottom:6px;}
+  .sp5-hist-table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:2px;}
+  .sp5-hist-table th{font-size:10px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;
+    color:var(--text-faint);padding:5px 8px;text-align:left;border-bottom:1px solid rgba(255,255,255,0.08);}
+  .sp5-hist-table td{padding:5px 8px;border-bottom:1px solid rgba(255,255,255,0.04);color:var(--text-dim);}
+  .sp5-hist-table tr:last-child td{border-bottom:none;}
+  .sp5-hist-current td{color:var(--text);font-weight:600;}
+  .sp5-table{width:100%;border-collapse:collapse;font-size:11px;}
+  .sp5-table th{font-size:10px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;
+    color:var(--text-faint);padding:6px 8px;text-align:left;
+    border-bottom:1px solid rgba(255,255,255,0.08);white-space:nowrap;}
+  .sp5-table tbody tr{border-bottom:1px solid rgba(255,255,255,0.04);}
+  .sp5-table tbody tr:last-child{border-bottom:none;}
+  .sp5-table td{padding:6px 8px;color:var(--text-dim);vertical-align:top;}
+  .sp5-table td:first-child{color:var(--text);}
+  .sp5-note{font-size:10px;color:var(--text-faint) !important;max-width:220px;}
+  .sp5-ma{font-size:13px;font-weight:700;}
+  .sp5-ma--above{color:#3ddc97;}
+  .sp5-ma--below{color:#ef4444;}
+  .sp5-status{font-size:10px;font-weight:700;padding:2px 7px;border-radius:3px;letter-spacing:0.03em;}
+  .sp5-status--bullish   {color:#28d7c8;background:rgba(40,215,200,0.1);border:1px solid rgba(40,215,200,0.3);}
+  .sp5-status--neutral   {color:var(--text-dim);background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);}
+  .sp5-status--extended  {color:#f97316;background:rgba(249,115,22,0.1);border:1px solid rgba(249,115,22,0.3);}
+  .sp5-status--weakening {color:#ef4444;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.3);}
+  .sp5-posture{font-size:11px;margin-bottom:10px;color:var(--text-dim);}
+  .sp5-posture-desc{color:var(--text-faint);}
+  .sp5-unavail{font-size:11px;color:var(--text-faint);padding:12px 0;}
 </style>
 
 
@@ -2971,5 +3038,10 @@
 <script src="js/altcoin-events.js"></script>
 
 <script src="js/backtest.js"></script>
+
+<script src="js/sp500-fixture.js"></script>
+<script src="js/sp500-engine.js"></script>
+<script src="js/sp500-render.js"></script>
+<script>if(typeof SP500Render!=="undefined")SP500Render.init();</script>
 </body>
 </html>

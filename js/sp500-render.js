@@ -1,7 +1,7 @@
 /**
  * sp500-render.js
  * Renderer for the S&P 500 Watchlist tab.
- * Reads SP500_VALUATION and SP500_WATCHLIST globals (set by sp500-fixture.js).
+ * All data flows through SP500DataSource.getSnapshot() — never reads fixture globals directly.
  * Classification via SP500Engine (sp500-engine.js).
  * No live data, no APIs.
  */
@@ -60,13 +60,48 @@
     'Extreme':  'sp5-caution--extreme',
   };
 
+  // ── live snapshot cache (set after fetchLive succeeds) ──────────────────────
+  var _liveSnapshot = null;
+
+  // ── data source ─────────────────────────────────────────────────────────────
+
+  function _safeSnapshot() {
+    if (_liveSnapshot) return _liveSnapshot;
+    if (typeof SP500DataSource !== 'undefined' && typeof SP500DataSource.getSnapshot === 'function') {
+      return SP500DataSource.getSnapshot();
+    }
+    return {
+      valuation: (typeof SP500_VALUATION !== 'undefined') ? SP500_VALUATION : null,
+      watchlist:  (typeof SP500_WATCHLIST !== 'undefined') ? SP500_WATCHLIST : [],
+      mode: 'demo', asOf: 'Demo fixture', provider: 'Fixture', isLive: false,
+    };
+  }
+
+  function _setPillDemo() {
+    var dot   = document.getElementById('sp5-live-dot');
+    var label = document.getElementById('sp5-live-label');
+    var pill  = document.getElementById('sp5-live-pill');
+    if (dot)   dot.style.background = 'var(--amber,#d9a93f)';
+    if (label) label.textContent    = 'Demo';
+    if (pill)  { pill.style.borderColor = 'rgba(217,169,63,0.4)'; pill.style.color = '#d9a93f'; }
+  }
+
+  function _setPillLive() {
+    var dot   = document.getElementById('sp5-live-dot');
+    var label = document.getElementById('sp5-live-label');
+    var pill  = document.getElementById('sp5-live-pill');
+    if (dot)   dot.style.background = 'var(--teal,#28d7c8)';
+    if (label) label.textContent    = 'Live';
+    if (pill)  { pill.style.borderColor = ''; pill.style.color = ''; }
+  }
+
   // ── valuation panel ──────────────────────────────────────────────────────────
 
   function renderValuation() {
     var el = document.getElementById('sp5-valuation-body');
     if (!el) return;
 
-    var v = (typeof SP500_VALUATION !== 'undefined') ? SP500_VALUATION : null;
+    var v = _safeSnapshot().valuation;
     if (!v) {
       el.innerHTML = '<div class="sp5-unavail">Valuation fixture data not loaded.</div>';
       return;
@@ -133,7 +168,7 @@
     var el = document.getElementById('sp5-watchlist-body');
     if (!el) return;
 
-    var raw = (typeof SP500_WATCHLIST !== 'undefined') ? SP500_WATCHLIST : null;
+    var raw = _safeSnapshot().watchlist || null;
     if (!raw || !raw.length) {
       el.innerHTML = '<div class="sp5-unavail">Watchlist fixture data not loaded.</div>';
       return;
@@ -154,11 +189,15 @@
         '</div>'
       : '';
 
+    var snap = _safeSnapshot();
+    var isPartial = snap.mode === 'partial';
+
     var html = postureLine +
       '<table class="sp5-table">' +
         '<thead><tr>' +
           '<th>Ticker</th><th>Company</th><th>Sector</th>' +
           '<th>Price</th><th>Day %</th>' +
+          (isPartial ? '<th>Source</th>' : '') +
           '<th>20D</th><th>20D Dist</th><th>200D</th><th>200D Dist</th>' +
           '<th>Status</th><th>Note</th>' +
         '</tr></thead>' +
@@ -171,6 +210,11 @@
       var t20       = r.above20d  ? '<span class="sp5-ma sp5-ma--above">&uarr;</span>' : '<span class="sp5-ma sp5-ma--below">&darr;</span>';
       var t200      = r.above200d ? '<span class="sp5-ma sp5-ma--above">&uarr;</span>' : '<span class="sp5-ma sp5-ma--below">&darr;</span>';
 
+      var sourceCell = isPartial
+        ? '<td class="sp5-source sp5-source--' + _esc(r.priceSource || 'fixture') + '">' +
+            (r.priceSource === 'live' ? 'Live' : 'Fixture') + '</td>'
+        : '';
+
       html +=
         '<tr>' +
         '<td><strong>' + _esc(r.ticker)  + '</strong></td>' +
@@ -178,6 +222,7 @@
         '<td>' + _esc(r.sector)  + '</td>' +
         '<td>' + _fmtPrice(r.price) + '</td>' +
         '<td class="' + _esc(dayCls) + '">' + _fmtPct(r.dayChg) + '</td>' +
+        sourceCell +
         '<td>' + t20  + '</td>' +
         '<td>' + _esc(_fmtDist(r.dist20d))  + '</td>' +
         '<td>' + t200 + '</td>' +
@@ -194,11 +239,58 @@
   // ── public ───────────────────────────────────────────────────────────────────
 
   function init() {
+    // Initial paint with fixture data immediately
     renderValuation();
     renderWatchlist();
+    _setPillDemo();
+
+    // Then fetch live prices and re-render watchlist only.
+    // Valuation panel always stays DEMO — only the watchlist updates to LIVE.
+    if (typeof SP500DataSource !== 'undefined' &&
+        typeof SP500DataSource.fetchLive === 'function') {
+      SP500DataSource.fetchLive(function (snapshot) {
+        _liveSnapshot = snapshot;
+        renderWatchlist();
+        if (snapshot.mode === 'live') {
+          _setPillLive();
+          _updateWatchlistBanner(snapshot);
+        } else if (snapshot.mode === 'partial') {
+          // Pill stays Demo — coverage incomplete, never claim full Live status
+          _updateWatchlistBanner(snapshot);
+        }
+        // mode === 'demo' (fetch failed) — leave existing DEMO state untouched
+      });
+    }
   }
 
-  var SP500Render = { init: init, renderValuation: renderValuation, renderWatchlist: renderWatchlist };
+  function _updateWatchlistBanner(snapshot) {
+    var banner = document.getElementById('sp5-watchlist-banner');
+    if (!banner) return;
+
+    if (snapshot.mode === 'live') {
+      var time = '';
+      try { time = new Date(snapshot.asOf).toLocaleTimeString(); } catch (_) {}
+      banner.textContent = 'LIVE PRICES · ' + (snapshot.provider || 'Live') +
+        (time ? ' · ' + time : '');
+      banner.style.background  = 'rgba(40,215,200,0.08)';
+      banner.style.borderColor = 'rgba(40,215,200,0.35)';
+      banner.style.color       = 'var(--teal,#28d7c8)';
+      return;
+    }
+
+    if (snapshot.mode === 'partial') {
+      banner.textContent = 'PARTIAL LIVE PRICES · ' + snapshot.liveCount + '/' +
+        snapshot.totalCount + ' live · Remaining rows use fixtures';
+      banner.style.background  = 'rgba(249,115,22,0.1)';
+      banner.style.borderColor = 'rgba(249,115,22,0.3)';
+      banner.style.color       = '#f97316';
+      return;
+    }
+    // demo / failure — leave the default DEMO banner untouched
+  }
+
+  var SP500Render = { init: init, renderValuation: renderValuation, renderWatchlist: renderWatchlist,
+    setPillDemo: _setPillDemo, setPillLive: _setPillLive, getSnapshot: _safeSnapshot };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = SP500Render;

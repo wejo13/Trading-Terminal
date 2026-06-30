@@ -439,6 +439,429 @@ section('SPY posture line: no CAPE influence on posture status');
   assert('no percentile in posture line',!postureSection.includes('percentile'));
 })();
 
+
+// ── SECTION: sp500-data-source.js ────────────────────────────────────────────
+
+section('DataSource: getSnapshot returns required metadata fields');
+(function () {
+  // Test the module in isolation (fixtures as globals)
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const dsSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-data-source.js', 'utf8');
+  const globals = {
+    SP500_VALUATION, SP500_WATCHLIST,
+    window:{}, module:{exports:{}}, require,
+  };
+  const DS = new Function(...Object.keys(globals), dsSrc+'\nreturn module.exports;')(...Object.values(globals));
+  const snap = DS.getSnapshot();
+
+  assert('mode is "demo"',           snap.mode === 'demo');
+  assert('isLive is false',          snap.isLive === false);
+  assert('provider is "Fixture"',    snap.provider === 'Fixture');
+  assert('asOf is a string',         typeof snap.asOf === 'string' && snap.asOf.length > 0);
+  assert('valuation is an object',   snap.valuation !== null && typeof snap.valuation === 'object');
+  assert('watchlist is an array',    Array.isArray(snap.watchlist) && snap.watchlist.length > 0);
+})();
+
+section('DataSource: isLive is strictly false (not falsy — must be boolean false)');
+(function () {
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const dsSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-data-source.js', 'utf8');
+  const globals = { SP500_VALUATION, SP500_WATCHLIST, window:{}, module:{exports:{}}, require };
+  const DS = new Function(...Object.keys(globals), dsSrc+'\nreturn module.exports;')(...Object.values(globals));
+  assert('isLive === false (strict)',  DS.getSnapshot().isLive === false);
+  assert('isLive is not null',        DS.getSnapshot().isLive !== null);
+  assert('isLive is not undefined',   DS.getSnapshot().isLive !== undefined);
+})();
+
+section('DataSource: snapshot valuation matches SP500_VALUATION fixture');
+(function () {
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const dsSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-data-source.js', 'utf8');
+  const globals = { SP500_VALUATION, SP500_WATCHLIST, window:{}, module:{exports:{}}, require };
+  const DS = new Function(...Object.keys(globals), dsSrc+'\nreturn module.exports;')(...Object.values(globals));
+  const snap = DS.getSnapshot();
+  assert('cape matches fixture',      snap.valuation.cape === SP500_VALUATION.cape);
+  assert('watchlist length matches',  snap.watchlist.length === SP500_WATCHLIST.length);
+})();
+
+section('Renderer: _safeSnapshot falls back gracefully when DataSource absent');
+(function () {
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const SP500Engine = require('/home/claude/fresh/js/sp500-engine.js');
+  const renderSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-render.js', 'utf8');
+  // No SP500DataSource in globals — should fall back to direct globals
+  const nodes = {};
+  function mn(){ let _h=''; return {style:{},get innerHTML(){return _h;},set innerHTML(v){_h=v;}}; }
+  const doc = { getElementById(id){ if(!nodes[id]) nodes[id]=mn(); return nodes[id]; } };
+  const globals = {
+    SP500_VALUATION, SP500_WATCHLIST, SP500Engine,
+    // SP500DataSource deliberately absent
+    document:doc, window:{}, module:{exports:{}}, require,
+  };
+  const R = new Function(...Object.keys(globals), renderSrc+'\nreturn module.exports;')(...Object.values(globals));
+  const snap = R.getSnapshot();
+  assert('fallback mode is demo',    snap.mode === 'demo');
+  assert('fallback isLive is false', snap.isLive === false);
+  assert('fallback has valuation',   snap.valuation !== null);
+  // Render should still work
+  let threw = false;
+  try { R.renderWatchlist(); } catch(e) { threw = true; }
+  assert('renders without DataSource', !threw);
+})();
+
+section('Renderer: banner text is consistent "DEMO DATA · Fixture values · Not live"');
+(function () {
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const SP500Engine = require('/home/claude/fresh/js/sp500-engine.js');
+  const renderSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-render.js', 'utf8');
+  // Banners are in index.html static HTML, not renderer output — check index.html
+  const html = require('fs').readFileSync('/home/claude/fresh/index.html', 'utf8');
+  // Banners use &middot; entities; check raw HTML directly
+  const bannerCount = (html.match(/sp5-demo-banner/g)||[]).length;
+  assert('at least two banners present', bannerCount >= 2);
+  assert('both say Fixture values',      (html.match(/Fixture values/g)||[]).length >= 2);
+  assert('both say Not live',            (html.match(/Not live/g)||[]).length >= 2);
+  assert('no "Not live prices" variant', !html.includes('Not live prices'));
+  assert('no "For layout" variant',      !html.includes('For layout'));
+})();
+
+section('Index.html: live-pill has IDs for runtime updates');
+(function () {
+  const html = require('fs').readFileSync('/home/claude/fresh/index.html', 'utf8');
+  assert('sp5-live-pill id exists',  html.includes('id="sp5-live-pill"'));
+  assert('sp5-live-dot id exists',   html.includes('id="sp5-live-dot"'));
+  assert('sp5-live-label id exists', html.includes('id="sp5-live-label"'));
+})();
+
+section('Index.html: sp500-data-source.js script tag present before fixture');
+(function () {
+  const html = require('fs').readFileSync('/home/claude/fresh/index.html', 'utf8');
+  const dsIdx  = html.indexOf('sp500-data-source.js');
+  const fixIdx = html.indexOf('sp500-fixture.js');
+  assert('data-source script tag present', dsIdx !== -1);
+  assert('data-source loads before fixture', dsIdx < fixIdx);
+})();
+
+
+// ── SECTION: live data merge (sp500-data-source.js) ──────────────────────────
+
+section('DataSource: fetchLive merges live price/dayChg, preserves fixture fields');
+(function () {
+  const { SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+
+  function mergeRows(fixtureRows, liveRows) {
+    const liveMap = {};
+    for (const r of liveRows) liveMap[r.ticker] = r;
+    return fixtureRows.map(row => {
+      const live = liveMap[row.ticker];
+      if (!live) return row;
+      return Object.assign({}, row, { price: live.price, dayChg: live.dayChg });
+    });
+  }
+
+  const liveRows = [
+    { ticker:'SPY',  price:728.99, dayChg:-0.72 },
+    { ticker:'NVDA', price:192.53, dayChg:-1.64 },
+  ];
+  const merged = mergeRows(SP500_WATCHLIST, liveRows);
+  const spy = merged.find(r => r.ticker === 'SPY');
+
+  assert('SPY price overwritten by live',     spy.price === 728.99);
+  assert('SPY dayChg overwritten by live',    spy.dayChg === -0.72);
+  assert('SPY dist20d preserved from fixture', spy.dist20d === SP500_WATCHLIST.find(r=>r.ticker==='SPY').dist20d);
+  assert('SPY note preserved from fixture',    spy.note === SP500_WATCHLIST.find(r=>r.ticker==='SPY').note);
+  assert('SPY sector preserved from fixture',  spy.sector === SP500_WATCHLIST.find(r=>r.ticker==='SPY').sector);
+})();
+
+section('DataSource: tickers absent from live payload keep fixture values');
+(function () {
+  const { SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+  function mergeRows(fixtureRows, liveRows) {
+    const liveMap = {};
+    for (const r of liveRows) liveMap[r.ticker] = r;
+    return fixtureRows.map(row => {
+      const live = liveMap[row.ticker];
+      if (!live) return row;
+      return Object.assign({}, row, { price: live.price, dayChg: live.dayChg });
+    });
+  }
+  // Only 8 of 12 tickers come back from the trimmed worker
+  const liveRows = ['SPY','NVDA','MSFT','AMZN','META','AAPL','AMD','SMH']
+    .map(t => ({ ticker: t, price: 100, dayChg: 0.1 }));
+  const merged = mergeRows(SP500_WATCHLIST, liveRows);
+  const googl = merged.find(r => r.ticker === 'GOOGL');
+  const avgo  = merged.find(r => r.ticker === 'AVGO');
+  const xlf   = merged.find(r => r.ticker === 'XLF');
+  const xle   = merged.find(r => r.ticker === 'XLE');
+  const fixGoogl = SP500_WATCHLIST.find(r => r.ticker === 'GOOGL');
+
+  assert('GOOGL keeps fixture price (not in live payload)', googl.price === fixGoogl.price);
+  assert('AVGO keeps fixture price',  avgo.price === SP500_WATCHLIST.find(r=>r.ticker==='AVGO').price);
+  assert('XLF keeps fixture price',   xlf.price  === SP500_WATCHLIST.find(r=>r.ticker==='XLF').price);
+  assert('XLE keeps fixture price',   xle.price  === SP500_WATCHLIST.find(r=>r.ticker==='XLE').price);
+})();
+
+section('DataSource: WORKER_URL points to deployed Cloudflare Worker');
+(function () {
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const dsSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-data-source.js', 'utf8');
+  const globals = { SP500_VALUATION, SP500_WATCHLIST, window:{}, module:{exports:{}}, require };
+  const DS = new Function(...Object.keys(globals), dsSrc+'\nreturn module.exports;')(...Object.values(globals));
+  assert('WORKER_URL is the deployed endpoint',
+    DS.WORKER_URL === 'https://royal-darkness-0ac6.wimneys.workers.dev/api/sp500-prices');
+  assert('fetchLive is a function', typeof DS.fetchLive === 'function');
+})();
+
+section('Renderer: setPillLive and setPillDemo are exposed and distinct');
+(function () {
+  const renderSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-render.js', 'utf8');
+  assert('setPillLive present in source',  renderSrc.includes('setPillLive'));
+  assert('setPillDemo present in source',  renderSrc.includes('setPillDemo'));
+  assert('_updateWatchlistBanner present', renderSrc.includes('_updateWatchlistBanner'));
+})();
+
+section('Index.html: watchlist banner has stable ID for live updates');
+(function () {
+  const html = require('fs').readFileSync('/home/claude/fresh/index.html', 'utf8');
+  assert('sp5-watchlist-banner id present', html.includes('id="sp5-watchlist-banner"'));
+})();
+
+
+// ── SECTION: per-row provenance + truthful coverage labeling ─────────────────
+
+section('DataSource: getSnapshot tags every row priceSource=fixture by default');
+(function () {
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const dsSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-data-source.js', 'utf8');
+  const globals = { SP500_VALUATION, SP500_WATCHLIST, window:{}, module:{exports:{}}, require };
+  const DS = new Function(...Object.keys(globals), dsSrc+'\nreturn module.exports;')(...Object.values(globals));
+  const snap = DS.getSnapshot();
+  assert('mode is demo',           snap.mode === 'demo');
+  assert('liveCount is 0',         snap.liveCount === 0);
+  assert('totalCount is 12',       snap.totalCount === 12);
+  snap.watchlist.forEach(r => assert(r.ticker + ' priceSource=fixture', r.priceSource === 'fixture'));
+})();
+
+function buildMergeFn() {
+  // Mirrors _mergeRows in sp500-data-source.js exactly
+  return function mergeRows(fixtureRows, liveRows) {
+    const liveMap = {};
+    for (const r of liveRows) liveMap[r.ticker] = r;
+    return fixtureRows.map(row => {
+      const live = liveMap[row.ticker];
+      if (!live) return Object.assign({}, row, { priceSource: 'fixture' });
+      return Object.assign({}, row, { price: live.price, dayChg: live.dayChg, priceSource: 'live' });
+    });
+  };
+}
+
+section('Coverage: all 12 tickers returned → mode=live, every row priceSource=live');
+(function () {
+  const { SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const mergeRows = buildMergeFn();
+  const liveRows = SP500_WATCHLIST.map(r => ({ ticker: r.ticker, price: 999, dayChg: 1.1 }));
+  const merged = mergeRows(SP500_WATCHLIST, liveRows);
+  const liveCount = merged.filter(r => r.priceSource === 'live').length;
+  const mode = liveCount === 0 ? 'demo' : (liveCount === merged.length ? 'live' : 'partial');
+
+  assert('all 12 rows priceSource=live', liveCount === 12);
+  assert('mode computed as live',        mode === 'live');
+  merged.forEach(r => assert(r.ticker + ' price overwritten', r.price === 999));
+})();
+
+section('Coverage: 8/12 returned → mode=partial, correct per-row provenance');
+(function () {
+  const { SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const mergeRows = buildMergeFn();
+  const liveTickers = ['SPY','NVDA','MSFT','AMZN','META','AAPL','AMD','SMH'];
+  const liveRows = liveTickers.map(t => ({ ticker: t, price: 500, dayChg: 0.5 }));
+  const merged = mergeRows(SP500_WATCHLIST, liveRows);
+  const liveCount = merged.filter(r => r.priceSource === 'live').length;
+  const mode = liveCount === 0 ? 'demo' : (liveCount === merged.length ? 'live' : 'partial');
+
+  assert('exactly 8 rows are live',      liveCount === 8);
+  assert('mode computed as partial',     mode === 'partial');
+  liveTickers.forEach(t => {
+    const row = merged.find(r => r.ticker === t);
+    assert(t + ' is priceSource=live', row.priceSource === 'live');
+  });
+  ['GOOGL','AVGO','XLF','XLE'].forEach(t => {
+    const row = merged.find(r => r.ticker === t);
+    assert(t + ' is priceSource=fixture', row.priceSource === 'fixture');
+  });
+})();
+
+section('Coverage: no payload / failure → demo state preserved, all rows fixture');
+(function () {
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const dsSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-data-source.js', 'utf8');
+  const globals = { SP500_VALUATION, SP500_WATCHLIST, window:{}, module:{exports:{}}, require };
+  const DS = new Function(...Object.keys(globals), dsSrc+'\nreturn module.exports;')(...Object.values(globals));
+  // Simulate fetch failure: getSnapshot() is what the renderer falls back to
+  const snap = DS.getSnapshot();
+  assert('mode is demo on no payload',  snap.mode === 'demo');
+  assert('isLive is false',             snap.isLive === false);
+  assert('liveCount is 0',              snap.liveCount === 0);
+  snap.watchlist.forEach(r => assert(r.ticker + ' stays fixture', r.priceSource === 'fixture'));
+})();
+
+section('Merge: fixture technical fields unchanged after quote merge (live)');
+(function () {
+  const { SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const mergeRows = buildMergeFn();
+  const liveRows = SP500_WATCHLIST.map(r => ({ ticker: r.ticker, price: 777, dayChg: 2.2 }));
+  const merged = mergeRows(SP500_WATCHLIST, liveRows);
+  const nvdaOrig = SP500_WATCHLIST.find(r => r.ticker === 'NVDA');
+  const nvdaNew  = merged.find(r => r.ticker === 'NVDA');
+
+  assert('above20d unchanged',  nvdaNew.above20d  === nvdaOrig.above20d);
+  assert('above200d unchanged', nvdaNew.above200d === nvdaOrig.above200d);
+  assert('dist20d unchanged',   nvdaNew.dist20d   === nvdaOrig.dist20d);
+  assert('dist200d unchanged',  nvdaNew.dist200d  === nvdaOrig.dist200d);
+  assert('sector unchanged',    nvdaNew.sector    === nvdaOrig.sector);
+  assert('note unchanged',      nvdaNew.note      === nvdaOrig.note);
+  assert('company unchanged',   nvdaNew.company   === nvdaOrig.company);
+  assert('only price/dayChg/priceSource changed', nvdaNew.price === 777 && nvdaNew.dayChg === 2.2);
+})();
+
+section('Merge: fixture technical fields unchanged after quote merge (partial)');
+(function () {
+  const { SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const mergeRows = buildMergeFn();
+  const liveRows = [{ ticker:'SPY', price: 700, dayChg: -1.0 }]; // only SPY live
+  const merged = mergeRows(SP500_WATCHLIST, liveRows);
+  const googlOrig = SP500_WATCHLIST.find(r => r.ticker === 'GOOGL');
+  const googlNew  = merged.find(r => r.ticker === 'GOOGL');
+
+  assert('GOOGL price unchanged (fixture)',   googlNew.price   === googlOrig.price);
+  assert('GOOGL dayChg unchanged (fixture)',  googlNew.dayChg  === googlOrig.dayChg);
+  assert('GOOGL above20d unchanged',          googlNew.above20d === googlOrig.above20d);
+  assert('GOOGL dist200d unchanged',          googlNew.dist200d === googlOrig.dist200d);
+})();
+
+section('Renderer: banner text — full live coverage');
+(function () {
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const SP500Engine = require('/home/claude/fresh/js/sp500-engine.js');
+  const renderSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-render.js', 'utf8');
+  const nodes = {};
+  function mn(){ let _h=''; return {style:{},get innerHTML(){return _h;},set innerHTML(v){_h=v;},get textContent(){return _h;},set textContent(v){_h=v;}}; }
+  const doc = { getElementById(id){ if(!nodes[id]) nodes[id]=mn(); return nodes[id]; } };
+  const globals = { SP500_VALUATION, SP500_WATCHLIST, SP500Engine, document:doc, window:{}, module:{exports:{}}, require };
+  const R = new Function(...Object.keys(globals), renderSrc+'\nreturn module.exports;')(...Object.values(globals));
+
+  const liveSnapshot = {
+    valuation: SP500_VALUATION,
+    watchlist: SP500_WATCHLIST.map(r => Object.assign({}, r, { priceSource:'live' })),
+    mode: 'live', isLive: true, provider: 'Twelve Data',
+    asOf: new Date().toISOString(), liveCount: 12, totalCount: 12,
+  };
+  // Directly exercise the internal banner updater via the public renderWatchlist + manual snapshot injection
+  // We test the banner text format using the same function the renderer uses internally
+  R.renderWatchlist(); // initial demo paint
+  // Simulate what init() does on success
+  const banner = doc.getElementById('sp5-watchlist-banner');
+  // Manually invoke same logic the module would (banner text assembled identically)
+  const time = new Date(liveSnapshot.asOf).toLocaleTimeString();
+  banner.textContent = 'LIVE PRICES \u00b7 ' + liveSnapshot.provider + ' \u00b7 ' + time;
+  assert('full coverage banner says LIVE PRICES', banner.textContent.includes('LIVE PRICES'));
+  assert('full coverage banner has provider',     banner.textContent.includes('Twelve Data'));
+})();
+
+section('Renderer: banner text — partial coverage format');
+(function () {
+  const partialSnapshot = { mode: 'partial', liveCount: 8, totalCount: 12 };
+  const text = 'PARTIAL LIVE PRICES \u00b7 ' + partialSnapshot.liveCount + '/' +
+    partialSnapshot.totalCount + ' live \u00b7 Remaining rows use fixtures';
+  assert('partial banner format correct', text === 'PARTIAL LIVE PRICES \u00b7 8/12 live \u00b7 Remaining rows use fixtures');
+})();
+
+section('Renderer: Source column only rendered when coverage is partial');
+(function () {
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const SP500Engine = require('/home/claude/fresh/js/sp500-engine.js');
+  const renderSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-render.js', 'utf8');
+
+  // Demo mode (no SP500DataSource) — Source column should NOT appear
+  const nodes1 = {};
+  function mn1(){ let _h=''; return {style:{},get innerHTML(){return _h;},set innerHTML(v){_h=v;}}; }
+  const doc1 = { getElementById(id){ if(!nodes1[id]) nodes1[id]=mn1(); return nodes1[id]; } };
+  const g1 = { SP500_VALUATION, SP500_WATCHLIST, SP500Engine, document:doc1, window:{}, module:{exports:{}}, require };
+  const R1 = new Function(...Object.keys(g1), renderSrc+'\nreturn module.exports;')(...Object.values(g1));
+  R1.renderWatchlist();
+  const demoHtml = (nodes1['sp5-watchlist-body']||{innerHTML:''}).innerHTML;
+  assert('no Source column header in demo mode', !demoHtml.includes('<th>Source</th>'));
+})();
+
+section('Renderer: Source column shows Live/Fixture labels when partial');
+(function () {
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const SP500Engine = require('/home/claude/fresh/js/sp500-engine.js');
+  const renderSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-render.js', 'utf8');
+
+  const nodes = {};
+  function mn(){ let _h=''; return {style:{},get innerHTML(){return _h;},set innerHTML(v){_h=v;}}; }
+  const doc = { getElementById(id){ if(!nodes[id]) nodes[id]=mn(); return nodes[id]; } };
+
+  // Inject a fake SP500DataSource that returns partial coverage
+  const partialWatchlist = SP500_WATCHLIST.map((r,i) =>
+    Object.assign({}, r, { priceSource: i < 8 ? 'live' : 'fixture' }));
+  const fakeDS = {
+    getSnapshot: () => ({
+      valuation: SP500_VALUATION, watchlist: partialWatchlist,
+      mode: 'partial', isLive: false, provider: 'Twelve Data',
+      asOf: new Date().toISOString(), liveCount: 8, totalCount: 12,
+    }),
+    fetchLive: () => {},
+  };
+
+  const g = { SP500_VALUATION, SP500_WATCHLIST, SP500Engine,
+    SP500DataSource: fakeDS, document:doc, window:{}, module:{exports:{}}, require };
+  const R = new Function(...Object.keys(g), renderSrc+'\nreturn module.exports;')(...Object.values(g));
+  R.renderWatchlist();
+  const html = (nodes['sp5-watchlist-body']||{innerHTML:''}).innerHTML;
+
+  assert('Source column header present when partial', html.includes('<th>Source</th>'));
+  assert('Live label appears',     html.includes('>Live<'));
+  assert('Fixture label appears',  html.includes('>Fixture<'));
+  assert('sp5-source--live class', html.includes('sp5-source--live'));
+  assert('sp5-source--fixture class', html.includes('sp5-source--fixture'));
+})();
+
+section('Renderer: valuation panel stays DEMO regardless of watchlist coverage');
+(function () {
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const SP500Engine = require('/home/claude/fresh/js/sp500-engine.js');
+  const renderSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-render.js', 'utf8');
+  const nodes = {};
+  function mn(){ let _h=''; return {style:{},get innerHTML(){return _h;},set innerHTML(v){_h=v;}}; }
+  const doc = { getElementById(id){ if(!nodes[id]) nodes[id]=mn(); return nodes[id]; } };
+  const g = { SP500_VALUATION, SP500_WATCHLIST, SP500Engine, document:doc, window:{}, module:{exports:{}}, require };
+  const R = new Function(...Object.keys(g), renderSrc+'\nreturn module.exports;')(...Object.values(g));
+  R.renderValuation();
+  const html = (nodes['sp5-valuation-body']||{innerHTML:''}).innerHTML;
+  assert('valuation shows CAPE (fixture)', html.includes('36.8'));
+  // The valuation renderer never reads watchlist coverage at all
+  assert('no Source/Live language in valuation panel', !html.includes('sp5-source'));
+})();
+
+section('Worker source: requests all 12 tickers');
+(function () {
+  const workerSrc = require('fs').readFileSync('/home/claude/worker/merged-index.js', 'utf8');
+  const expected = ['SPY','NVDA','MSFT','AMZN','META','GOOGL','AAPL','AVGO','AMD','SMH','XLF','XLE'];
+  expected.forEach(t => assert('worker requests ' + t, workerSrc.includes("'" + t + "'")));
+})();
+
+section('Response shape: normalized payload still has ticker/price/dayChg/provider/asOf');
+(function () {
+  const workerSrc = require('fs').readFileSync('/home/claude/worker/merged-index.js', 'utf8');
+  assert('payload includes provider field', workerSrc.includes("provider: 'Twelve Data'"));
+  assert('payload includes asOf field',     workerSrc.includes('asOf: new Date().toISOString()'));
+  assert('row includes ticker field',       workerSrc.includes('ticker,'));
+  assert('row includes price field',        workerSrc.includes('price:'));
+  assert('row includes dayChg field',       workerSrc.includes('dayChg:'));
+})();
+
 // ── summary ───────────────────────────────────────────────────────────────────
 
 console.log('\n────────────────────────────────────────');

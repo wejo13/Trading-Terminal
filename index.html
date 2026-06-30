@@ -1108,7 +1108,7 @@
   <main class="main">
     <div class="main-header">
       <div class="main-title" id="mainTitle">Dashboard</div>
-      <div class="live-pill"><span class="dot"></span>Live</div>
+      <div class="live-pill" id="sp5-live-pill"><span class="dot" id="sp5-live-dot"></span><span id="sp5-live-label">Live</span></div>
     </div>
 
     <!-- ===================== DASHBOARD TAB ===================== -->
@@ -2948,12 +2948,12 @@
       <div style="max-width:1100px;">
         <div class="sp5-card">
           <div class="sp5-section-head">Valuation &amp; Cycle Context</div>
-          <span class="sp5-demo-banner">DEMO VALUATION DATA &middot; Not live</span>
+          <span class="sp5-demo-banner">DEMO DATA &middot; Fixture values &middot; Not live</span>
           <div id="sp5-valuation-body"><div class="sp5-unavail">Loading…</div></div>
         </div>
         <div class="sp5-card">
           <div class="sp5-section-head">S&amp;P 500 Watchlist</div>
-          <span class="sp5-demo-banner">DEMO DATA &middot; Not live prices &middot; For layout/testing only</span>
+          <span class="sp5-demo-banner" id="sp5-watchlist-banner">DEMO DATA &middot; Fixture values &middot; Not live</span>
           <div id="sp5-watchlist-body" style="overflow-x:auto;margin-top:10px;"><div class="sp5-unavail">Loading…</div></div>
         </div>
       </div>
@@ -3025,6 +3025,9 @@
   .sp5-status--weakening {color:#ef4444;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.3);}
   .sp5-posture{font-size:11px;margin-bottom:10px;color:var(--text-dim);}
   .sp5-posture-desc{color:var(--text-faint);}
+  .sp5-source{font-size:10px;font-weight:600;}
+  .sp5-source--live{color:var(--teal,#28d7c8);}
+  .sp5-source--fixture{color:var(--text-faint);}
   .sp5-unavail{font-size:11px;color:var(--text-faint);padding:12px 0;}
 </style>
 
@@ -3039,9 +3042,31 @@
 
 <script src="js/backtest.js"></script>
 
+<script src="js/sp500-data-source.js"></script>
 <script src="js/sp500-fixture.js"></script>
 <script src="js/sp500-engine.js"></script>
 <script src="js/sp500-render.js"></script>
-<script>if(typeof SP500Render!=="undefined")SP500Render.init();</script>
+<script>
+if(typeof SP500Render!=="undefined"){
+  SP500Render.init();
+  // Set pill to Demo when S&P tab is active on load (unlikely but safe)
+  if(typeof SP500DataSource!=="undefined"&&!SP500DataSource.getSnapshot().isLive){
+    // Hook tab switch to update pill
+    var _origSwitch=window.switchTab;
+    window.switchTab=function(tab){
+      _origSwitch(tab);
+      if(tab==="sp500")SP500Render.setPillDemo();
+      else{
+        var l=document.getElementById("sp5-live-label");
+        var d=document.getElementById("sp5-live-dot");
+        var p=document.getElementById("sp5-live-pill");
+        if(l)l.textContent="Live";
+        if(d)d.style.background="";
+        if(p){p.style.borderColor="";p.style.color="";}
+      }
+    };
+  }
+}
+</script>
 </body>
 </html>

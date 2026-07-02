@@ -2622,8 +2622,14 @@
           <button onclick="OIExhaustionRender.runAnalysis()" id="oix-run-btn" style="display:flex;align-items:center;gap:7px;background:var(--teal);color:#07060c;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;">
             <i class="ti ti-player-play" style="font-size:14px;"></i>Fetch data &amp; run analysis
           </button>
+          <button onclick="OIExhaustionRender.refreshRawData()" id="oix-refresh-btn" title="Force a fresh Bybit/Binance fetch, bypassing the raw-data cache even if it's still within its 15-minute freshness window" style="display:flex;align-items:center;gap:7px;background:transparent;color:var(--text-dim);border:0.5px solid var(--line-old);border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;">
+            <i class="ti ti-refresh" style="font-size:14px;"></i>Refresh raw data
+          </button>
           <div id="oix-status" style="font-size:11px;color:var(--text-dim);line-height:1.6;flex:1;"></div>
         </div>
+
+        <!-- Stale/failed-run banner — hidden unless the most recent run failed -->
+        <div id="oix-stale-banner" style="display:none;margin-bottom:16px;padding:10px 14px;background:rgba(226,100,95,0.1);border:1px solid rgba(226,100,95,0.35);border-radius:8px;font-size:12px;color:var(--text);"></div>
 
         <!-- Diagnostics (strictPathScore vs netProgressScore) -->
         <div style="background:var(--card);border-radius:var(--radius-card);padding:16px;margin-bottom:16px;border:0.5px solid var(--line-old);">

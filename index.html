@@ -1064,6 +1064,9 @@
     <div class="nav-item" data-tab="backtest" onclick="switchTab('backtest')">
       <i class="ti ti-history"></i>Backtesting
     </div>
+    <div class="nav-item" data-tab="oix" onclick="switchTab('oix')">
+      <i class="ti ti-activity"></i>OI Exhaustion
+    </div>
 
     <div class="sidebar-section-label">Research</div>
     <div class="nav-group-label">
@@ -2523,6 +2526,96 @@
       </div>
     </div>
 
+    <!-- ===================== OI EXHAUSTION TAB ===================== -->
+    <div class="tab-view" id="tab-oix" data-title="OI Exhaustion">
+      <div style="padding:0 0 40px;max-width:1200px;">
+
+        <!-- Data source banner -->
+        <div style="font-size:11px;color:var(--text-faint);margin-bottom:14px;">
+          <i class="ti ti-info-circle" style="font-size:12px;vertical-align:-1px;"></i>
+          Signal: Bybit BTCUSDT linear OI &middot; Chart: Binance BTCUSDT spot
+        </div>
+
+        <!-- Strategy explanation -->
+        <div style="background:var(--card);border-radius:var(--radius-card);padding:14px 16px;margin-bottom:16px;border:0.5px solid var(--line-old);">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <i class="ti ti-info-circle" style="color:var(--teal);font-size:15px;"></i>
+            <span style="font-size:12px;font-weight:600;color:var(--text);">How this signal works</span>
+          </div>
+          <div style="font-size:12px;color:var(--text-dim);line-height:1.7;">
+            The signal only evaluates while price is inside an active HTF range or level zone — outside a zone it produces no score and no alert.<br>
+            For every completed 5-minute candle it compares how much open interest expanded against how far price actually moved:
+            <div style="margin:8px 0;padding:8px 12px;background:var(--bg2);border-radius:6px;font-family:var(--font);font-size:11px;color:var(--text);">
+              priceMovePct = abs((close − prevClose) / prevClose) × 100<br>
+              oiChangePct = (oi − prevOI) / prevOI × 100<br>
+              exhaustionReading = oiChangePct − priceMovePct<br>
+              score = mean(exhaustionReading) over the trailing 144 candles (12h)
+            </div>
+            An alert fires when that rolling score is unusually high relative to its own trailing 30-day history (percentile-based, not a fixed threshold) <b style="color:var(--text);">and</b> the score itself is positive — a candle that merely looks "less bad" than a negative recent history never qualifies.<br>
+            <b style="color:var(--text);">This is an exhaustion / context alert, not an automatic long or short entry.</b> Two neutral contexts are labeled, not traded:
+            <div style="margin-top:6px;">
+              <span class="oix-ctx-badge oix-ctx-bearish-exhaustion" style="margin-right:8px;">up-move-oi-expansion</span>OI expanding while price rose over the trailing 12h — potential long-side crowding.
+            </div>
+            <div style="margin-top:4px;">
+              <span class="oix-ctx-badge oix-ctx-bullish-exhaustion" style="margin-right:8px;">down-move-oi-expansion</span>OI expanding while price fell over the trailing 12h — potential short-side crowding.
+            </div>
+            <div style="margin-top:10px;padding:8px 12px;background:var(--bg2);border-radius:6px;border-left:2px solid var(--amber);font-size:11px;color:var(--text-dim);line-height:1.6;">
+              <b style="color:var(--amber);">Real expectancy requires real, timestamped HTF zones</b> — a wide placeholder zone (or no zone at all) will produce few or meaningless alerts. Define your actual range/level levels below with an accurate "available from" time before treating results as informative.
+            </div>
+          </div>
+        </div>
+
+        <!-- Parameters -->
+        <div style="background:var(--card);border-radius:var(--radius-card);padding:16px;margin-bottom:16px;border:0.5px solid var(--line-old);">
+          <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:12px;">Parameters</div>
+          <div class="oix-param-grid">
+            <label class="oix-param">Symbol<input class="oix-input" value="BTCUSDT" disabled></label>
+            <label class="oix-param">Lookback days<input class="oix-input" type="number" id="oix-lookbackDays"></label>
+            <label class="oix-param">Signal window (candles)<input class="oix-input" type="number" id="oix-signalWindow"></label>
+            <label class="oix-param">Baseline lookback (candles)<input class="oix-input" type="number" id="oix-baselineLookbackCandles"></label>
+            <label class="oix-param">Min baseline samples<input class="oix-input" type="number" id="oix-minBaselineSamples"></label>
+            <label class="oix-param">Alert percentile<input class="oix-input" type="number" id="oix-entryPercentile"></label>
+            <label class="oix-param">Rearm percentile<input class="oix-input" type="number" id="oix-rearmPercentile"></label>
+          </div>
+        </div>
+
+        <!-- Zones editor -->
+        <div style="background:var(--card);border-radius:var(--radius-card);padding:16px;margin-bottom:16px;border:0.5px solid var(--line-old);">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <span style="font-size:12px;font-weight:600;color:var(--text);">Zones</span>
+            <button onclick="OIExhaustionRender.addZoneRow()" style="background:transparent;color:var(--teal);border:0.5px solid var(--teal);border-radius:6px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer;">
+              <i class="ti ti-plus" style="font-size:12px;"></i> Add zone
+            </button>
+          </div>
+          <div id="oix-zones-body"></div>
+        </div>
+
+        <!-- Run -->
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;">
+          <button onclick="OIExhaustionRender.runAnalysis()" id="oix-run-btn" style="display:flex;align-items:center;gap:7px;background:var(--teal);color:#07060c;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;">
+            <i class="ti ti-player-play" style="font-size:14px;"></i>Fetch data &amp; run analysis
+          </button>
+          <div id="oix-status" style="font-size:11px;color:var(--text-dim);line-height:1.6;flex:1;"></div>
+        </div>
+
+        <!-- Chart -->
+        <div style="background:var(--card);border-radius:var(--radius-card);padding:16px;margin-bottom:16px;border:0.5px solid var(--line-old);">
+          <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:10px;">Price chart with zones &amp; alerts <span style="font-weight:400;color:var(--text-faint);">(scroll to zoom, drag to pan)</span></div>
+          <div id="oix-price-chart-wrap" style="position:relative;overflow:hidden;border-radius:6px;background:#0a090f;">
+            <canvas id="oix-price-canvas" style="width:100%;height:340px;display:block;cursor:crosshair;"></canvas>
+            <div id="oix-chart-tooltip" style="display:none;position:absolute;background:var(--card);border:0.5px solid var(--line-old);border-radius:6px;padding:8px 10px;font-size:11px;color:var(--text);pointer-events:none;z-index:10;min-width:160px;"></div>
+          </div>
+        </div>
+
+        <!-- Results -->
+        <div style="background:var(--card);border-radius:var(--radius-card);padding:16px;border:0.5px solid var(--line-old);">
+          <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:10px;">Alerts</div>
+          <div id="oix-results-body" style="overflow-x:auto;"></div>
+        </div>
+
+      </div>
+    </div>
+
     <!-- ===================== SEASONALITY TAB ===================== -->
     <div class="tab-view" id="tab-sea-news" data-title="News Driven Events">
       <div style="padding:16px">
@@ -3029,6 +3122,31 @@
   .sp5-source--live{color:var(--teal,#28d7c8);}
   .sp5-source--fixture{color:var(--text-faint);}
   .sp5-unavail{font-size:11px;color:var(--text-faint);padding:12px 0;}
+
+  /* ── OI Exhaustion Tab ────────────────────────────────────── */
+  .oix-input{background:var(--bg2);color:var(--text);border:0.5px solid var(--line-old);border-radius:6px;
+    padding:6px 8px;font-size:11px;font-family:var(--font);width:100%;box-sizing:border-box;}
+  .oix-input:disabled{opacity:0.5;}
+  .oix-param-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;}
+  .oix-param{display:flex;flex-direction:column;gap:5px;font-size:10px;color:var(--text-faint);
+    letter-spacing:0.03em;text-transform:uppercase;}
+  .oix-zone-row{display:grid;grid-template-columns:1.3fr 0.9fr 1fr 1fr 1.2fr 1.2fr 0.8fr auto;gap:8px;
+    align-items:center;margin-bottom:8px;}
+  .oix-btn-icon{background:transparent;border:0.5px solid var(--line-old);color:var(--text-faint);
+    border-radius:6px;padding:6px 9px;cursor:pointer;font-size:12px;}
+  .oix-btn-icon:hover{color:var(--red);border-color:var(--red);}
+  .oix-table{width:100%;border-collapse:collapse;font-size:11px;}
+  .oix-table th{font-size:10px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;
+    color:var(--text-faint);padding:6px 8px;text-align:left;border-bottom:1px solid rgba(255,255,255,0.08);
+    white-space:nowrap;}
+  .oix-table td{padding:6px 8px;color:var(--text-dim);border-bottom:1px solid rgba(255,255,255,0.04);}
+  .oix-table tbody tr:hover{background:rgba(255,255,255,0.03);}
+  .oix-table tbody tr:last-child td{border-bottom:none;}
+  .oix-ctx-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;
+    letter-spacing:0.03em;text-transform:uppercase;}
+  .oix-ctx-bearish-exhaustion{color:#e2645f;background:rgba(226,100,95,0.1);border:1px solid rgba(226,100,95,0.3);}
+  .oix-ctx-bullish-exhaustion{color:#3ddc97;background:rgba(61,220,151,0.1);border:1px solid rgba(61,220,151,0.3);}
+  .oix-ctx-neutral{color:var(--text-dim);background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);}
 </style>
 
 
@@ -3047,6 +3165,14 @@
 <script src="js/sp500-engine.js"></script>
 <script src="js/sp500-render.js"></script>
   <script src="js/oi-exhaustion-probe.js"></script>
+<script src="js/oi-exhaustion-engine.js"></script>
+<script src="js/oi-exhaustion-backtest.js"></script>
+<script src="js/oi-exhaustion-render.js"></script>
+<script>
+if(typeof OIExhaustionRender!=="undefined"){
+  OIExhaustionRender.init();
+}
+</script>
 <script>
 if(typeof SP500Render!=="undefined"){
   SP500Render.init();

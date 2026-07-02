@@ -2586,6 +2586,24 @@
             <label class="oix-param">Alert percentile<input class="oix-input" type="number" id="oix-entryPercentile"></label>
             <label class="oix-param">Rearm percentile<input class="oix-input" type="number" id="oix-rearmPercentile"></label>
           </div>
+
+          <div style="margin-top:16px;padding-top:14px;border-top:0.5px solid var(--line-old);">
+            <div style="font-size:11px;font-weight:600;color:var(--text-dim);margin-bottom:10px;">
+              OI recency filter <span style="font-weight:400;color:var(--text-faint);">(V2 only, optional, disabled by default — separates "OI built earlier" from "OI still actively expanding now")</span>
+            </div>
+            <div class="oix-param-grid">
+              <label class="oix-param" style="flex-direction:row;align-items:center;gap:6px;">
+                <input type="checkbox" id="oix-oiRecencyFilterEnabled" style="width:auto;">Enable filter
+              </label>
+              <label class="oix-param">Recency window<select class="oix-input" id="oix-oiRecencyWindow">
+                <option value="30m">30m</option>
+                <option value="1h">1h</option>
+                <option value="2h">2h</option>
+                <option value="4h">4h</option>
+              </select></label>
+              <label class="oix-param">Min recent OI change %<input class="oix-input" type="number" id="oix-minimumRecentOIChangePct"></label>
+            </div>
+          </div>
         </div>
 
         <!-- Zones editor -->

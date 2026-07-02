@@ -196,6 +196,14 @@ function runEventStudy(candles, oiRows, zones, opts) {
   const alerts = [];
   let positiveScoreCount = 0;
 
+  // Diagnostic-only accumulation (per explicit milestone: compare
+  // strictPathScore vs netProgressScore side-by-side, without touching
+  // alert logic, chart markers, or backtest behavior above).
+  const strictScoreValues = [];
+  const netProgressScoreValues = [];
+  let positiveNetProgressCount = 0;
+  let choppyButFlatCount = 0;
+
   for (let t = 0; t < series.length; t++) {
     const entry = series[t];
     const ts = timestamps[t];
@@ -203,6 +211,18 @@ function runEventStudy(candles, oiRows, zones, opts) {
 
     if (entry.valid) {
       if (entry.score > 0) positiveScoreCount++;
+      strictScoreValues.push(entry.score);
+      if (entry.netProgressScore !== null) {
+        netProgressScoreValues.push(entry.netProgressScore);
+        if (entry.netProgressScore > 0) positiveNetProgressCount++;
+        // Fixed diagnostic definition, not a tunable alert parameter:
+        // OI grew, net 12h price progress was small/near-flat, but
+        // cumulative path length was large relative to that net move.
+        if (entry.oiChange12hPct !== null && entry.oiChange12hPct > 0 &&
+            entry.priceChopRatio !== null && entry.priceChopRatio >= Engine.DIAGNOSTIC_CHOP_RATIO_THRESHOLD) {
+          choppyButFlatCount++;
+        }
+      }
       const warmingUp = baseline.size() < minBaselineSamples;
       const percentile = warmingUp ? null : baseline.percentileRank(entry.score);
       const zScore = warmingUp ? null : baseline.zScore(entry.score);
@@ -257,6 +277,12 @@ function runEventStudy(candles, oiRows, zones, opts) {
   return {
     alerts,
     summary: buildGroupedSummaries(alerts),
+    diagnostics: {
+      strictPathScore: summarizeDistribution(strictScoreValues),
+      netProgressScore: summarizeDistribution(netProgressScoreValues),
+      choppyButFlatCount,
+      choppyButFlatDefinition: `oiChange12hPct > 0 AND priceChopRatio >= ${Engine.DIAGNOSTIC_CHOP_RATIO_THRESHOLD} (fixed diagnostic constant, not a tunable parameter)`,
+    },
     meta: {
       totalCandles: timestamps.length,
       validScoreCount,
@@ -277,6 +303,26 @@ function percentileBucket(p) {
   if (p >= 99) return '99-100';
   if (p >= 97) return '97-99';
   return '95-97';
+}
+
+/**
+ * Diagnostic-only distribution summary over a full array of score values
+ * (NOT the causal trailing baseline used for live alerting — this is a
+ * post-hoc, whole-dataset view for comparison purposes only).
+ */
+function summarizeDistribution(values) {
+  if (!values.length) {
+    return { count: 0, positiveCount: 0, positiveRatePct: null, p50: null, p90: null, p95: null, p99: null };
+  }
+  const sorted = values.slice().sort((a, b) => a - b);
+  const pct = p => sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))];
+  const positiveCount = values.filter(v => v > 0).length;
+  return {
+    count: values.length,
+    positiveCount,
+    positiveRatePct: (positiveCount / values.length) * 100,
+    p50: pct(50), p90: pct(90), p95: pct(95), p99: pct(99),
+  };
 }
 
 // ── Grouped, per-horizon statistics ─────────────────────────────────────
@@ -393,6 +439,7 @@ const OIExhaustionBacktest = {
   percentileBucket,
   buildGroupedSummaries,
   summarizeHorizonOutcomes,
+  summarizeDistribution,
   HORIZONS_MINUTES,
 };
 

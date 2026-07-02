@@ -102,6 +102,67 @@ section('computeExhaustionSeries: 12h diagnostics computed correctly');
   assert('priceTravel12hAbsPct > 0', s.priceTravel12hAbsPct > 0);
 })();
 
+// ── netProgressScore / priceChopRatio (diagnostic-only, does not affect score) ──
+
+section('netProgressScore: hand-computed, matches oiChange12hPct - abs(priceChange12hPct)');
+(function () {
+  const n = 145;
+  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIVE_MIN);
+  const closes = Array.from({ length: n }, (_, i) => 100 + i); // net +44 over the window
+  const ois = Array.from({ length: n }, (_, i) => 1000 + i * 5); // net OI up more, proportionally
+  const series = E.computeExhaustionSeries(timestamps, closes, ois);
+  const s = series[144];
+  assert('netProgressScore equals oiChange12hPct - |priceChange12hPct|', approx(s.netProgressScore, s.oiChange12hPct - Math.abs(s.priceChange12hPct), 1e-9));
+  assert('netPriceMove12hPct equals abs(priceChange12hPct)', approx(s.netPriceMove12hPct, Math.abs(s.priceChange12hPct), 1e-9));
+})();
+
+section('CHOPPY-BUT-FLAT FIXTURE: strictPathScore negative, netProgressScore positive, same window');
+(function () {
+  // Construct a 144-candle window where price oscillates up/down every
+  // candle (lots of path length) but ends almost exactly where it started
+  // (near-zero net displacement), while OI grows steadily throughout.
+  // strictPathScore penalizes the large cumulative |5m move| every candle;
+  // netProgressScore only sees the (near-zero) net 12h price change, so OI
+  // growth dominates and it comes out positive. This is the core scenario
+  // WEJO flagged strictPathScore as blind to.
+  const n = 145;
+  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIVE_MIN);
+  const closes = [100];
+  const ois = [1000];
+  for (let i = 1; i < n; i++) {
+    // alternate +3% / -3% roughly, so consecutive moves largely cancel,
+    // leaving price choppy but close to flat over the full window
+    const wiggle = (i % 2 === 0) ? 1.03 : (1 / 1.03);
+    closes.push(closes[i - 1] * wiggle);
+    ois.push(ois[i - 1] * 1.002); // steady OI growth throughout, ~34% over 144 candles
+  }
+  const series = E.computeExhaustionSeries(timestamps, closes, ois);
+  const s = series[144];
+
+  assert('price ended up choppy but close to its starting point (small net move)', Math.abs(s.priceChange12hPct) < 5);
+  assert('cumulative path length is large (lots of 5m chop)', s.priceTravel12hAbsPct > 100);
+  assert('strictPathScore (score) is negative — the large path length dominates', s.score < 0);
+  assert('netProgressScore is positive — OI growth outweighs the small NET price move', s.netProgressScore > 0);
+  assert('priceChopRatio is large — cumulative travel far exceeds net displacement', s.priceChopRatio > E.DIAGNOSTIC_CHOP_RATIO_THRESHOLD);
+})();
+
+section('priceChopRatio: near-zero net move does not produce Infinity/NaN (epsilon floor holds)');
+(function () {
+  const n = 145;
+  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIVE_MIN);
+  const closes = [100];
+  const ois = [1000];
+  for (let i = 1; i < n; i++) {
+    // perfectly alternating, exact round-trip -> net price move ~0
+    closes.push(i % 2 === 0 ? 100 : 103);
+    ois.push(ois[i - 1] * 1.001);
+  }
+  const series = E.computeExhaustionSeries(timestamps, closes, ois);
+  const s = series[144];
+  assert('priceChopRatio is finite, not Infinity', isFinite(s.priceChopRatio));
+  assert('priceChopRatio is not NaN', !isNaN(s.priceChopRatio));
+})();
+
 // ── Baseline: percentile + z-score ──────────────────────────────────────────
 
 section('createBaselineLog: percentileRank against a known distribution (mean-rank, no ties)');

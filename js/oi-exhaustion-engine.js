@@ -44,6 +44,12 @@
   var DEFAULT_ENTRY_PERCENTILE = 95;
   var DEFAULT_REARM_PERCENTILE = 80;
 
+  // Diagnostic-only constants (netProgressScore / priceChopRatio / choppy-
+  // but-flat counting). Not tunable alert parameters — these exist only to
+  // make the diagnostic comparison well-defined and reproducible.
+  var DIAGNOSTIC_SMALL_EPSILON = 1e-6; // floor for priceChopRatio's denominator, avoids /~0 blowups on a truly flat 12h window
+  var DIAGNOSTIC_CHOP_RATIO_THRESHOLD = 2; // "choppy" == cumulative path length at least 2x net displacement
+
   // ── Core math ──────────────────────────────────────────────────────────
 
   /**
@@ -113,13 +119,34 @@
       var travelSum = 0;
       for (var k2 = windowStart; k2 <= t; k2++) travelSum += readings[k2].priceMovePct;
 
+      // ── Diagnostic-only second score, added per explicit request. Does
+      // NOT replace or feed into `score` (strictPathScore) above, and does
+      // NOT gate any alert — it's a separate lens on the same window.
+      //
+      // strictPathScore (the `score` field, unchanged): OI expansion vs
+      // cumulative absolute 5m price travel (path length / volatility).
+      // netProgressScore: OI expansion vs NET 12h price displacement — this
+      // can stay positive through a choppy, range-bound 12h stretch where
+      // strictPathScore goes deeply negative, because chop racks up path
+      // length without net progress.
+      var netPriceMove12hPct = priceChange12hPct === null ? null : Math.abs(priceChange12hPct);
+      var netProgressScore = (oiChange12hPct === null || netPriceMove12hPct === null)
+        ? null
+        : oiChange12hPct - netPriceMove12hPct;
+      var priceChopRatio = netPriceMove12hPct === null
+        ? null
+        : travelSum / Math.max(netPriceMove12hPct, DIAGNOSTIC_SMALL_EPSILON);
+
       out[t] = {
         valid: true,
-        score: score,
+        score: score, // strictPathScore — unchanged, still the only score that gates alerts
         oiChange12hPct: oiChange12hPct,
         priceChange12hPct: priceChange12hPct,
         priceTravel12hAbsPct: travelSum,
         direction12h: priceChange12hPct === null ? null : (priceChange12hPct > 0 ? 'up' : (priceChange12hPct < 0 ? 'down' : 'flat')),
+        netPriceMove12hPct: netPriceMove12hPct,
+        netProgressScore: netProgressScore,
+        priceChopRatio: priceChopRatio,
       };
     }
 
@@ -310,6 +337,8 @@
     MIN_BASELINE_SAMPLES: MIN_BASELINE_SAMPLES,
     DEFAULT_ENTRY_PERCENTILE: DEFAULT_ENTRY_PERCENTILE,
     DEFAULT_REARM_PERCENTILE: DEFAULT_REARM_PERCENTILE,
+    DIAGNOSTIC_SMALL_EPSILON: DIAGNOSTIC_SMALL_EPSILON,
+    DIAGNOSTIC_CHOP_RATIO_THRESHOLD: DIAGNOSTIC_CHOP_RATIO_THRESHOLD,
     computeExhaustionReading: computeExhaustionReading,
     computeExhaustionSeries: computeExhaustionSeries,
     createBaselineLog: createBaselineLog,

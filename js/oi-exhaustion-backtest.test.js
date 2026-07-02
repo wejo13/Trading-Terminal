@@ -9,6 +9,7 @@ const {
   runEventStudy,
   percentileBucket,
   summarizeHorizonOutcomes,
+  summarizeDistribution,
 } = require('./oi-exhaustion-backtest.js');
 
 let passed = 0, failed = 0;
@@ -369,6 +370,72 @@ section('runEventStudy: meta.positiveScorePct is 0 (not null/NaN) when every sco
 
   const result = runEventStudy(candles, oiRows, zones, { minBaselineSamples: 50 });
   assert('positiveScorePct is exactly 0, not null', result.meta.positiveScorePct === 0);
+})();
+
+// ── summarizeDistribution ────────────────────────────────────────────────
+
+section('summarizeDistribution: percentiles and positive rate on a known array');
+(function () {
+  const values = Array.from({ length: 100 }, (_, i) => i - 50); // -50..49
+  const s = summarizeDistribution(values);
+  assert('count = 100', s.count === 100);
+  assert('positiveCount = 49 (0 itself is not positive)', s.positiveCount === 49);
+  assert('positiveRatePct = 49', approx(s.positiveRatePct, 49, 1e-9));
+  assert('p50 is near the middle of the range', s.p50 >= -5 && s.p50 <= 5);
+})();
+
+section('summarizeDistribution: empty array does not throw, returns null percentiles');
+(function () {
+  const s = summarizeDistribution([]);
+  assert('count = 0', s.count === 0);
+  assert('positiveRatePct is null, not NaN', s.positiveRatePct === null);
+  assert('p50 is null', s.p50 === null);
+})();
+
+// ── runEventStudy diagnostics: side-by-side strictPathScore vs netProgressScore ──
+
+section('runEventStudy: diagnostics block present and internally consistent, alerts/meta untouched by its presence');
+(function () {
+  const n = 700;
+  const { timestamps, closes, ois } = buildSyntheticSeries(n, { spikeAt: 600 });
+  const candles = timestamps.map((ts, i) => ({ ts, close: closes[i] }));
+  const oiRows = timestamps.map((ts, i) => ({ ts, oi: ois[i] }));
+  const zones = [{ id: 'z1', label: 'wide', type: 'range', top: 1e12, bottom: 0, active: true }];
+
+  const result = runEventStudy(candles, oiRows, zones, { minBaselineSamples: 50 });
+  assert('diagnostics block exists', !!result.diagnostics);
+  assert('strictPathScore distribution present', result.diagnostics.strictPathScore.count === result.meta.validScoreCount);
+  assert('netProgressScore distribution present with a count', result.diagnostics.netProgressScore.count > 0);
+  assert('choppyButFlatCount is a non-negative number', result.diagnostics.choppyButFlatCount >= 0);
+  assert('choppyButFlatDefinition documents the fixed threshold used', result.diagnostics.choppyButFlatDefinition.includes('priceChopRatio'));
+  // alerts/meta must be identical in shape/behavior to before this milestone
+  assert('meta.positiveScoreCount still present (unchanged prior diagnostic)', typeof result.meta.positiveScoreCount === 'number');
+})();
+
+section('runEventStudy: choppy-but-flat synthetic dataset — netProgressScore positive rate exceeds strictPathScore positive rate');
+(function () {
+  // Build 700 candles that chop hard (alternating +3%/-3%) while OI grinds
+  // up steadily throughout — the scenario WEJO specifically flagged.
+  const n = 700;
+  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIVE_MIN);
+  const closes = [100];
+  const ois = [1000];
+  for (let i = 1; i < n; i++) {
+    const wiggle = (i % 2 === 0) ? 1.03 : (1 / 1.03);
+    closes.push(closes[i - 1] * wiggle);
+    ois.push(ois[i - 1] * 1.0015);
+  }
+  const candles = timestamps.map((ts, i) => ({ ts, close: closes[i] }));
+  const oiRows = timestamps.map((ts, i) => ({ ts, oi: ois[i] }));
+  const zones = [{ id: 'z1', label: 'wide', type: 'range', top: 1e12, bottom: 0, active: true }];
+
+  const result = runEventStudy(candles, oiRows, zones, { minBaselineSamples: 50 });
+  const strictRate = result.diagnostics.strictPathScore.positiveRatePct;
+  const netRate = result.diagnostics.netProgressScore.positiveRatePct;
+
+  assert('strictPathScore positive rate is low on a choppy series (path length dominates)', strictRate < 20);
+  assert('netProgressScore positive rate is much higher on the same choppy series (OI growth dominates net-flat price)', netRate > strictRate);
+  assert('choppyButFlatCount is substantial on a genuinely choppy-but-flat series', result.diagnostics.choppyButFlatCount > 0);
 })();
 
 // ── summary ───────────────────────────────────────────────────────────────

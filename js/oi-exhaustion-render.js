@@ -478,6 +478,7 @@
       );
 
       renderResultsTable();
+      renderDiagnostics();
       initChart();
     } catch (err) {
       setStatus(`<span style="color:var(--red);">Error:</span> ${escapeHtml(err.message || String(err))}`);
@@ -485,6 +486,45 @@
     } finally {
       if (runBtn) runBtn.disabled = false;
     }
+  }
+
+  // ── Diagnostics block (strictPathScore vs netProgressScore, compact) ────
+
+  function renderDiagnostics() {
+    const body = document.getElementById('oix-diagnostics-body');
+    if (!body) return;
+    const run = state.lastRun;
+    if (!run || !run.result.diagnostics) { body.innerHTML = ''; return; }
+    const d = run.result.diagnostics;
+
+    function distRow(label, dist) {
+      if (!dist.count) return `<tr><td>${escapeHtml(label)}</td><td colspan="6" style="color:var(--text-faint);">No valid samples</td></tr>`;
+      return `<tr>
+        <td>${escapeHtml(label)}</td>
+        <td>${dist.count.toLocaleString()}</td>
+        <td>${dist.positiveRatePct.toFixed(1)}%</td>
+        <td>${dist.p50.toFixed(4)}</td>
+        <td>${dist.p90.toFixed(4)}</td>
+        <td>${dist.p95.toFixed(4)}</td>
+        <td>${dist.p99.toFixed(4)}</td>
+      </tr>`;
+    }
+
+    body.innerHTML = `
+      <div style="font-size:11px;color:var(--text-faint);margin-bottom:10px;line-height:1.6;">
+        Side-by-side comparison only — <b style="color:var(--text-dim);">strictPathScore</b> is the unchanged v1 signal (still the only score that gates alerts above). <b style="color:var(--text-dim);">netProgressScore</b> compares OI expansion against NET 12h price displacement instead of cumulative path length, so it can stay positive through a choppy, range-bound stretch that strictPathScore scores negative. Not wired to any alert yet.
+      </div>
+      <table class="oix-table" style="margin-bottom:10px;">
+        <thead><tr><th>Score</th><th>Valid candles</th><th>Positive rate</th><th>p50</th><th>p90</th><th>p95</th><th>p99</th></tr></thead>
+        <tbody>
+          ${distRow('strictPathScore (v1, unchanged)', d.strictPathScore)}
+          ${distRow('netProgressScore (diagnostic)', d.netProgressScore)}
+        </tbody>
+      </table>
+      <div style="font-size:11px;color:var(--text-dim);">
+        <b style="color:var(--text);">Choppy-but-flat count:</b> ${d.choppyButFlatCount.toLocaleString()} candles
+        <span style="color:var(--text-faint);"> — ${escapeHtml(d.choppyButFlatDefinition)}</span>
+      </div>`;
   }
 
   // ── Results table ────────────────────────────────────────────────────

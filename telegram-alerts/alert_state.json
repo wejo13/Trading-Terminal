@@ -17,8 +17,8 @@
   "LITUSDT": "below",
   "TAOUSDT": "below",
   "AVAXUSDT": "below",
-  "PAXGUSDT": "below",
   "PEPEUSDT": "below",
+  "PAXGUSDT": "below",
   "LTCUSDT": "below",
   "LINKUSDT": "below",
   "XAUTUSDT": "below",
@@ -45,8 +45,8 @@
   "POLUSDT": "below",
   "ATOMUSDT": "below",
   "NIGHTUSDT": "below",
+  "GRAMUSDT": "above",
   "ETCUSDT": "below",
   "SKYUSDT": "below",
-  "QNTUSDT": "below",
   "NEXOUSDT": "below"
 }

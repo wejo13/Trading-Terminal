@@ -31,10 +31,9 @@
  */
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
-
-const Engine = require('./oi-exhaustion-engine.js');
+const Engine = (typeof module !== 'undefined' && module.exports)
+  ? require('./oi-exhaustion-engine.js')
+  : window.OIExhaustionEngine;
 
 const HORIZONS_MINUTES = [15, 60, 240, 720, 1440]; // 15m, 1h, 4h, 12h, 24h
 const FIVE_MIN_MS = 5 * 60 * 1000;
@@ -355,7 +354,10 @@ function parseArgs(argv) {
   return out;
 }
 
-if (require.main === module) {
+if (typeof require !== 'undefined' && typeof module !== 'undefined' && require.main === module) {
+  const fs = require('fs');
+  const path = require('path');
+
   const args = parseArgs(process.argv.slice(2));
   if (!args.candles || !args.oi || !args.zones) {
     console.error('Usage: node oi-exhaustion-backtest.js --candles <file> --oi <file> --zones <file> [--out <file>]');
@@ -376,7 +378,7 @@ if (require.main === module) {
   console.log(`Report written to: ${outPath}`);
 }
 
-module.exports = {
+const OIExhaustionBacktest = {
   alignCandlesAndOI,
   computeHorizonOutcomes,
   findExactIndex,
@@ -386,3 +388,9 @@ module.exports = {
   summarizeHorizonOutcomes,
   HORIZONS_MINUTES,
 };
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = OIExhaustionBacktest;
+} else {
+  window.OIExhaustionBacktest = OIExhaustionBacktest;
+}

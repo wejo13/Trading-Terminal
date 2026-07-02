@@ -187,6 +187,10 @@ function runEventStudy(candles, oiRows, zones, opts) {
   const rearmPercentile = opts.rearmPercentile || Engine.DEFAULT_REARM_PERCENTILE;
   const minBaselineSamples = opts.minBaselineSamples || Engine.MIN_BASELINE_SAMPLES;
   const baselineLookbackCandles = opts.baselineLookbackCandles || Engine.DEFAULT_BASELINE_LOOKBACK_CANDLES;
+  // Backward-compatible default: any caller that doesn't pass alertModel
+  // (existing tests, CLI, direct API use) gets exactly the original v1
+  // strict-score behavior, unchanged.
+  const alertModel = opts.alertModel || Engine.DEFAULT_ALERT_MODEL;
 
   const { timestamps, closes, ois, highs, lows, hasOHLC, validFlags } = alignCandlesAndOI(candles, oiRows);
   const series = Engine.computeExhaustionSeries(timestamps, closes, ois, { validFlags });
@@ -210,6 +214,9 @@ function runEventStudy(candles, oiRows, zones, opts) {
     const price = closes[t];
 
     if (entry.valid) {
+      // Diagnostics always track BOTH scores regardless of which model is
+      // selected for alerting — this comparison must stay available no
+      // matter what the operator picks below.
       if (entry.score > 0) positiveScoreCount++;
       strictScoreValues.push(entry.score);
       if (entry.netProgressScore !== null) {
@@ -223,39 +230,58 @@ function runEventStudy(candles, oiRows, zones, opts) {
           choppyButFlatCount++;
         }
       }
-      const warmingUp = baseline.size() < minBaselineSamples;
-      const percentile = warmingUp ? null : baseline.percentileRank(entry.score);
-      const zScore = warmingUp ? null : baseline.zScore(entry.score);
 
-      for (const zone of zones) {
-        const inZone = Engine.isPriceInZone(price, zone) && Engine.isZoneTemporallyActive(zone, ts);
-        const prevArmed = zoneStates.get(zone.id);
-        const step = Engine.stepZoneState(prevArmed, inZone, percentile, warmingUp, entry.score, {
-          entryPercentile, rearmPercentile,
-        });
-        zoneStates.set(zone.id, step.armed);
+      // Everything below this point — baseline, percentile, gating, the
+      // state machine, and the alert record itself — uses ONLY the
+      // selected model's score. The two models' scores are never mixed
+      // into the same baseline distribution.
+      const selectedScore = Engine.getModelScore(entry, alertModel);
 
-        if (step.alertFired) {
-          const contextDirection = Engine.classifyContextDirection(entry.priceChange12hPct);
-          const rangeThird = Engine.zoneRangeThird(price, zone);
-          const record = Engine.buildAlertRecord({
-            timestamp: ts,
-            zone, price,
-            score: entry.score,
-            percentile, zScore,
-            oiChange12hPct: entry.oiChange12hPct,
-            priceTravel12hAbsPct: entry.priceTravel12hAbsPct,
-            direction12h: entry.direction12h,
-            contextDirection, rangeThird,
-            baselineSampleCount: baseline.size(),
+      if (selectedScore !== null) {
+        const warmingUp = baseline.size() < minBaselineSamples;
+        const percentile = warmingUp ? null : baseline.percentileRank(selectedScore);
+        const zScore = warmingUp ? null : baseline.zScore(selectedScore);
+
+        for (const zone of zones) {
+          const inZone = Engine.isPriceInZone(price, zone) && Engine.isZoneTemporallyActive(zone, ts);
+          const prevArmed = zoneStates.get(zone.id);
+          const step = Engine.stepZoneState(prevArmed, inZone, percentile, warmingUp, selectedScore, {
+            entryPercentile, rearmPercentile,
           });
-          alerts.push({ ...record, candleIndex: t, percentileBucket: percentileBucket(percentile) });
+          zoneStates.set(zone.id, step.armed);
+
+          if (step.alertFired) {
+            const contextDirection = Engine.classifyContextDirection(entry.priceChange12hPct);
+            const rangeThird = Engine.zoneRangeThird(price, zone);
+            const record = Engine.buildAlertRecord({
+              timestamp: ts,
+              zone, price,
+              score: selectedScore,
+              alertModel,
+              percentile, zScore,
+              oiChange12hPct: entry.oiChange12hPct,
+              priceTravel12hAbsPct: entry.priceTravel12hAbsPct,
+              direction12h: entry.direction12h,
+              contextDirection, rangeThird,
+              baselineSampleCount: baseline.size(),
+            });
+            alerts.push({ ...record, candleIndex: t, percentileBucket: percentileBucket(percentile) });
+          }
+        }
+
+        // Insert AFTER this candle's decisions are final — next candle's
+        // baseline query will see this score, this candle's never sees itself.
+        baseline.insert(selectedScore);
+      } else {
+        // Selected model's score is null for this candle (e.g. netProgress
+        // requested but its 12h base candle was itself invalid) — nothing
+        // to rank or insert. Still honor zone-exit resets so a zone doesn't
+        // stay stuck armed indefinitely through a stretch of null scores.
+        for (const zone of zones) {
+          const inZone = Engine.isPriceInZone(price, zone) && Engine.isZoneTemporallyActive(zone, ts);
+          if (!inZone) zoneStates.set(zone.id, false);
         }
       }
-
-      // Insert AFTER this candle's decisions are final — next candle's
-      // baseline query will see this score, this candle's never sees itself.
-      baseline.insert(entry.score);
     } else {
       // invalid window: still must reset any zone whose price/temporal
       // condition changed, but with no score there is nothing to evaluate.
@@ -285,6 +311,7 @@ function runEventStudy(candles, oiRows, zones, opts) {
     },
     meta: {
       totalCandles: timestamps.length,
+      alertModel,
       validScoreCount,
       positiveScoreCount,
       positiveScorePct: validScoreCount > 0 ? (positiveScoreCount / validScoreCount) * 100 : null,
@@ -419,10 +446,17 @@ if (typeof require !== 'undefined' && typeof module !== 'undefined' && require.m
   const oiRows = JSON.parse(fs.readFileSync(args.oi, 'utf8'));
   const zones = JSON.parse(fs.readFileSync(args.zones, 'utf8'));
 
-  const result = runEventStudy(candles, oiRows, zones);
+  const result = runEventStudy(candles, oiRows, zones, {
+    alertModel: args.alertModel,
+    entryPercentile: args.entryPercentile !== undefined ? Number(args.entryPercentile) : undefined,
+    rearmPercentile: args.rearmPercentile !== undefined ? Number(args.rearmPercentile) : undefined,
+    minBaselineSamples: args.minBaselineSamples !== undefined ? Number(args.minBaselineSamples) : undefined,
+    baselineLookbackCandles: args.baselineLookbackCandles !== undefined ? Number(args.baselineLookbackCandles) : undefined,
+  });
   const outPath = args.out || path.join(__dirname, 'oi-exhaustion-backtest-report.json');
   fs.writeFileSync(outPath, JSON.stringify(result, null, 2));
 
+  console.log(`Alert model: ${result.meta.alertModel}`);
   console.log(`Alerts found: ${result.alerts.length}`);
   console.log(`Valid scored candles: ${result.meta.validScoreCount} / ${result.meta.totalCandles}`);
   console.log(`Positive scores: ${result.meta.positiveScorePct != null ? result.meta.positiveScorePct.toFixed(1) + '%' : 'n/a'} of valid candles`);

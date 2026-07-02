@@ -44,6 +44,31 @@
   var DEFAULT_ENTRY_PERCENTILE = 95;
   var DEFAULT_REARM_PERCENTILE = 80;
 
+  // Alert model selector. STRICT is the unchanged v1 signal (score = OI
+  // expansion vs cumulative absolute path length). NET_PROGRESS is the v2
+  // diagnostic-turned-selectable model (score = OI expansion vs NET 12h
+  // price displacement). Function-level default stays STRICT so that any
+  // caller (tests, CLI, direct API use) that doesn't explicitly pass
+  // alertModel reproduces the original v1 behavior exactly, unchanged.
+  // The UI's own default (netProgress) is a render-layer choice, applied
+  // explicitly when it calls into the backtest — it does not change this.
+  var ALERT_MODEL_STRICT = 'strict';
+  var ALERT_MODEL_NET_PROGRESS = 'netProgress';
+  var DEFAULT_ALERT_MODEL = ALERT_MODEL_STRICT;
+
+  /**
+   * Returns the score value to use for percentile ranking / gating / the
+   * state machine, given a computeExhaustionSeries entry and the selected
+   * alert model. Any unrecognized model value falls back to strict (safe
+   * default, matches DEFAULT_ALERT_MODEL) rather than silently returning
+   * something unexpected.
+   */
+  function getModelScore(entry, alertModel) {
+    if (!entry || !entry.valid) return null;
+    if (alertModel === ALERT_MODEL_NET_PROGRESS) return entry.netProgressScore;
+    return entry.score;
+  }
+
   // Diagnostic-only constants (netProgressScore / priceChopRatio / choppy-
   // but-flat counting). Not tunable alert parameters — these exist only to
   // make the diagnostic comparison well-defined and reproducible.
@@ -318,6 +343,7 @@
       },
       price: fields.price,
       score: fields.score,
+      alertModel: fields.alertModel,
       percentile: fields.percentile,
       zScore: fields.zScore,
       oiChange12hPct: fields.oiChange12hPct,
@@ -339,6 +365,10 @@
     DEFAULT_REARM_PERCENTILE: DEFAULT_REARM_PERCENTILE,
     DIAGNOSTIC_SMALL_EPSILON: DIAGNOSTIC_SMALL_EPSILON,
     DIAGNOSTIC_CHOP_RATIO_THRESHOLD: DIAGNOSTIC_CHOP_RATIO_THRESHOLD,
+    ALERT_MODEL_STRICT: ALERT_MODEL_STRICT,
+    ALERT_MODEL_NET_PROGRESS: ALERT_MODEL_NET_PROGRESS,
+    DEFAULT_ALERT_MODEL: DEFAULT_ALERT_MODEL,
+    getModelScore: getModelScore,
     computeExhaustionReading: computeExhaustionReading,
     computeExhaustionSeries: computeExhaustionSeries,
     createBaselineLog: createBaselineLog,

@@ -29,7 +29,10 @@
     minBaselineSamples: 500,
     entryPercentile: 95,
     rearmPercentile: 80,
+    alertModel: 'netProgress', // UI default per explicit request; engine/backtest default independently to 'strict' for backward compatibility
   };
+
+  const VALID_ALERT_MODELS = ['strict', 'netProgress'];
 
   // ── Pure logic (no DOM) — exported for Node tests ───────────────────────
 
@@ -42,6 +45,7 @@
     s.minBaselineSamples = clampNumber(s.minBaselineSamples, 1, s.baselineLookbackCandles, DEFAULT_SETTINGS.minBaselineSamples);
     s.entryPercentile = clampNumber(s.entryPercentile, 50, 100, DEFAULT_SETTINGS.entryPercentile);
     s.rearmPercentile = clampNumber(s.rearmPercentile, 0, s.entryPercentile, DEFAULT_SETTINGS.rearmPercentile);
+    s.alertModel = VALID_ALERT_MODELS.indexOf(s.alertModel) !== -1 ? s.alertModel : DEFAULT_SETTINGS.alertModel;
     return s;
   }
 
@@ -337,7 +341,7 @@
 
   function renderSettingsForm() {
     const s = state.settings;
-    const ids = ['lookbackDays', 'signalWindow', 'baselineLookbackCandles', 'minBaselineSamples', 'entryPercentile', 'rearmPercentile'];
+    const ids = ['lookbackDays', 'signalWindow', 'baselineLookbackCandles', 'minBaselineSamples', 'entryPercentile', 'rearmPercentile', 'alertModel'];
     ids.forEach(id => {
       const el = document.getElementById('oix-' + id);
       if (el) el.value = s[id];
@@ -345,7 +349,7 @@
   }
 
   function readSettingsFromForm() {
-    const ids = ['lookbackDays', 'signalWindow', 'baselineLookbackCandles', 'minBaselineSamples', 'entryPercentile', 'rearmPercentile'];
+    const ids = ['lookbackDays', 'signalWindow', 'baselineLookbackCandles', 'minBaselineSamples', 'entryPercentile', 'rearmPercentile', 'alertModel'];
     const raw = {};
     ids.forEach(id => {
       const el = document.getElementById('oix-' + id);
@@ -457,6 +461,7 @@
         rearmPercentile: s.rearmPercentile,
         minBaselineSamples: s.minBaselineSamples,
         baselineLookbackCandles: s.baselineLookbackCandles,
+        alertModel: s.alertModel,
       });
 
       const binanceIndex = buildBinanceCandleIndex(binanceCandles);
@@ -468,6 +473,7 @@
 
       setStatus(
         `<span style="color:var(--teal);">Done.</span> ` +
+        `Model: <b>${s.alertModel === 'netProgress' ? 'Net progress score (V2)' : 'Strict path score (V1)'}</b> &middot; ` +
         `Coverage: ${bybitCandles.length} Bybit candles / ${oiRows.length} OI rows / ${binanceCandles.length} Binance candles &middot; ` +
         `Valid scored: ${result.meta.validScoreCount} / ${result.meta.totalCandles} &middot; ` +
         `Positive scores: ${result.meta.positiveScorePct != null ? result.meta.positiveScorePct.toFixed(1) + '%' : '—'} of valid candles &middot; ` +
@@ -543,7 +549,7 @@
       } else if (state.zones.length === 0) {
         reason = 'No zones are defined — the signal only evaluates while price is inside an active zone.';
       } else {
-        reason = 'No candle both sat inside an active zone and cleared the alert percentile threshold in this window.';
+        reason = `No candle both sat inside an active zone and cleared the alert percentile threshold under the ${meta.alertModel === 'netProgress' ? 'Net progress score (V2)' : 'Strict path score (V1)'} model in this window.`;
       }
       body.innerHTML = `<div style="font-size:11px;color:var(--text-faint);padding:14px 0;">${escapeHtml(reason)}</div>`;
       return;
@@ -570,7 +576,7 @@
     body.innerHTML = `
       <table class="oix-table">
         <thead><tr>
-          <th>Time</th><th>Zone</th><th>Price</th>
+          <th>Time</th><th>Zone</th><th>Model</th><th>Price</th>
           <th>Percentile</th><th>Z</th><th>OI 12h</th><th>Travel 12h</th>
           ${horizonCols.map(h => `<th>${h.label}</th>`).join('')}
         </tr></thead>
@@ -578,6 +584,7 @@
           <tr onclick="OIExhaustionRender.focusChartOnAlert(${run.result.alerts.indexOf(a)})" style="cursor:pointer;">
             <td>${new Date(a.timestamp).toISOString().slice(0, 16).replace('T', ' ')}</td>
             <td>${escapeHtml(a.zoneBounds.label || a.zoneId)}</td>
+            <td><span class="oix-model-badge">${a.alertModel === 'netProgress' ? 'V2' : 'V1'}</span></td>
             <td>$${a.price.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
             <td>${a.percentile != null ? a.percentile.toFixed(1) : '—'}</td>
             <td>${a.zScore != null ? a.zScore.toFixed(2) : '—'}</td>
@@ -678,6 +685,7 @@
     const a = nearest.alert;
     const html = `<div style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:11px;">
       <span style="color:var(--text-faint);">Date</span><span>${new Date(a.timestamp).toISOString().slice(0, 16).replace('T', ' ')}</span>
+      <span style="color:var(--text-faint);">Model</span><span>${a.alertModel === 'netProgress' ? 'Net progress score (V2)' : 'Strict path score (V1)'}</span>
       <span style="color:var(--text-faint);">Price</span><span>$${a.price.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
       <span style="color:var(--text-faint);">Score</span><span>${a.score.toFixed(6)}</span>
       <span style="color:var(--text-faint);">Percentile</span><span>${a.percentile != null ? a.percentile.toFixed(1) : '—'}</span>

@@ -52,6 +52,16 @@ section('validateSettings: accepts string-numeric input from form fields (values
   assert('string "97" parsed to number 97', s.entryPercentile === 97);
 })();
 
+section('validateSettings: alertModel defaults to netProgress (UI default), accepts strict explicitly');
+(function () {
+  const s1 = R.validateSettings({});
+  assert('default alertModel is netProgress', s1.alertModel === 'netProgress');
+  const s2 = R.validateSettings({ alertModel: 'strict' });
+  assert('explicit strict selection preserved', s2.alertModel === 'strict');
+  const s3 = R.validateSettings({ alertModel: 'garbage-value' });
+  assert('unrecognized alertModel falls back to the default rather than passing through garbage', s3.alertModel === 'netProgress');
+})();
+
 // ── levelToBoundedZone ───────────────────────────────────────────────────
 
 section('levelToBoundedZone: converts level+tolerance into top/bottom');

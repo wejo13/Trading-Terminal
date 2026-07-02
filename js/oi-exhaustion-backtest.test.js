@@ -438,6 +438,103 @@ section('runEventStudy: choppy-but-flat synthetic dataset — netProgressScore p
   assert('choppyButFlatCount is substantial on a genuinely choppy-but-flat series', result.diagnostics.choppyButFlatCount > 0);
 })();
 
+// ── Alert model selector: V1 exact reproduction, V2 selection, no state leak ──
+
+section('Alert model: omitting alertModel reproduces the original strict alerts exactly');
+(function () {
+  const n = 700;
+  const { timestamps, closes, ois } = buildSyntheticSeries(n, { spikeAt: 600 });
+  const candles = timestamps.map((ts, i) => ({ ts, close: closes[i] }));
+  const oiRows = timestamps.map((ts, i) => ({ ts, oi: ois[i] }));
+  const zones = [{ id: 'z1', label: 'wide', type: 'range', top: 1e12, bottom: 0, active: true }];
+
+  const noModelSpecified = runEventStudy(candles, oiRows, zones, { minBaselineSamples: 50 });
+  const explicitStrict = runEventStudy(candles, oiRows, zones, { minBaselineSamples: 50, alertModel: 'strict' });
+
+  assert('same alert count', noModelSpecified.alerts.length === explicitStrict.alerts.length);
+  assert('identical alert timestamps/scores', JSON.stringify(noModelSpecified.alerts.map(a => [a.timestamp, a.score])) ===
+    JSON.stringify(explicitStrict.alerts.map(a => [a.timestamp, a.score])));
+  assert('meta.alertModel reports strict for the default call', noModelSpecified.meta.alertModel === 'strict');
+  noModelSpecified.alerts.forEach(a => assert(`alert score is strictPathScore-positive (${a.score})`, a.score > 0));
+})();
+
+section('Alert model: netProgress selection uses netProgressScore for percentile ranking and gating, not strictPathScore');
+(function () {
+  // Choppy-but-flat series: strictPathScore stays mostly negative while
+  // netProgressScore is frequently positive (established in the diagnostics
+  // milestone) — selecting netProgress should fire MORE alerts here than
+  // strict, and every fired alert's score must be positive under the
+  // netProgress definition specifically.
+  const n = 700;
+  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIVE_MIN);
+  const closes = [100];
+  const ois = [1000];
+  for (let i = 1; i < n; i++) {
+    const wiggle = (i % 2 === 0) ? 1.03 : (1 / 1.03);
+    closes.push(closes[i - 1] * wiggle);
+    ois.push(ois[i - 1] * 1.0015);
+  }
+  const candles = timestamps.map((ts, i) => ({ ts, close: closes[i] }));
+  const oiRows = timestamps.map((ts, i) => ({ ts, oi: ois[i] }));
+  const zones = [{ id: 'z1', label: 'wide', type: 'range', top: 1e12, bottom: 0, active: true }];
+
+  const strictResult = runEventStudy(candles, oiRows, zones, { minBaselineSamples: 50, alertModel: 'strict' });
+  const netProgressResult = runEventStudy(candles, oiRows, zones, { minBaselineSamples: 50, alertModel: 'netProgress' });
+
+  assert('meta.alertModel reflects the selection', netProgressResult.meta.alertModel === 'netProgress');
+  assert('netProgress model fires at least as many alerts on a choppy-but-flat series', netProgressResult.alerts.length >= strictResult.alerts.length);
+  netProgressResult.alerts.forEach(a => {
+    assert(`netProgress alert record carries alertModel='netProgress'`, a.alertModel === 'netProgress');
+    assert(`netProgress alert score is positive under the netProgress definition (${a.score})`, a.score > 0);
+  });
+  strictResult.alerts.forEach(a => {
+    assert(`strict alert record carries alertModel='strict'`, a.alertModel === 'strict');
+  });
+})();
+
+section('Alert model: switching models does not leak armed state from one run into another');
+(function () {
+  const n = 700;
+  const { timestamps, closes, ois } = buildSyntheticSeries(n, { spikeAt: 600 });
+  const candles = timestamps.map((ts, i) => ({ ts, close: closes[i] }));
+  const oiRows = timestamps.map((ts, i) => ({ ts, oi: ois[i] }));
+  const zones = [{ id: 'z1', label: 'wide', type: 'range', top: 1e12, bottom: 0, active: true }];
+
+  // Run strict FIRST, then netProgress on the identical inputs.
+  const strictThenNetProgress_strictRun = runEventStudy(candles, oiRows, zones, { minBaselineSamples: 50, alertModel: 'strict' });
+  const strictThenNetProgress_netRun = runEventStudy(candles, oiRows, zones, { minBaselineSamples: 50, alertModel: 'netProgress' });
+
+  // Run netProgress in ISOLATION (no prior strict call ever happened).
+  const netProgressAlone = runEventStudy(candles, oiRows, zones, { minBaselineSamples: 50, alertModel: 'netProgress' });
+
+  assert(
+    'netProgress run is byte-identical whether or not a strict run happened first (no shared/leaked state between calls)',
+    JSON.stringify(strictThenNetProgress_netRun.alerts) === JSON.stringify(netProgressAlone.alerts)
+  );
+  assert(
+    'netProgress final baseline size is identical regardless of prior strict call',
+    strictThenNetProgress_netRun.meta.finalBaselineSize === netProgressAlone.meta.finalBaselineSize
+  );
+})();
+
+section('Alert model: unrecognized alertModel value falls back to strict rather than silently misbehaving');
+(function () {
+  const n = 700;
+  const { timestamps, closes, ois } = buildSyntheticSeries(n, { spikeAt: 600 });
+  const candles = timestamps.map((ts, i) => ({ ts, close: closes[i] }));
+  const oiRows = timestamps.map((ts, i) => ({ ts, oi: ois[i] }));
+  const zones = [{ id: 'z1', label: 'wide', type: 'range', top: 1e12, bottom: 0, active: true }];
+
+  const garbage = runEventStudy(candles, oiRows, zones, { minBaselineSamples: 50, alertModel: 'not-a-real-model' });
+  const strict = runEventStudy(candles, oiRows, zones, { minBaselineSamples: 50, alertModel: 'strict' });
+  assert('unrecognized model fires the same alerts as strict', garbage.alerts.length === strict.alerts.length);
+  assert(
+    'unrecognized model produces identical scores/timestamps to strict (falls back safely, doesn\'t silently misbehave)',
+    JSON.stringify(garbage.alerts.map(a => [a.timestamp, a.score, a.percentile])) ===
+    JSON.stringify(strict.alerts.map(a => [a.timestamp, a.score, a.percentile]))
+  );
+})();
+
 // ── summary ───────────────────────────────────────────────────────────────
 
 console.log('\n────────────────────────────────────────');

@@ -2559,6 +2559,11 @@
             <div style="margin-top:4px;">
               <span class="oix-ctx-badge oix-ctx-bullish-exhaustion" style="margin-right:8px;">down-move-oi-expansion</span>OI expanding while price fell over the trailing 12h — potential short-side crowding.
             </div>
+            <div style="margin-top:10px;padding:8px 12px;background:var(--bg2);border-radius:6px;font-size:11px;color:var(--text-dim);line-height:1.6;">
+              <b style="color:var(--text);">Two selectable alert models — pick one in Parameters, never blended:</b><br>
+              <b style="color:var(--teal);">Strict path score (V1)</b> compares OI growth with cumulative intraperiod price travel (path length), so it fires rarely — only when OI expansion outpaces the market's total 5m-by-5m movement, chop included.<br>
+              <b style="color:var(--teal);">Net progress score (V2)</b> compares OI growth with NET 12h price displacement instead, designed to catch OI accumulation during choppy, range-bound conditions where price travels a lot but ends up near flat — a case V1 is structurally blind to.
+            </div>
             <div style="margin-top:10px;padding:8px 12px;background:var(--bg2);border-radius:6px;border-left:2px solid var(--amber);font-size:11px;color:var(--text-dim);line-height:1.6;">
               <b style="color:var(--amber);">Real expectancy requires real, timestamped HTF zones</b> — a wide placeholder zone (or no zone at all) will produce few or meaningless alerts. Define your actual range/level levels below with an accurate "available from" time before treating results as informative.
             </div>
@@ -2570,6 +2575,10 @@
           <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:12px;">Parameters</div>
           <div class="oix-param-grid">
             <label class="oix-param">Symbol<input class="oix-input" value="BTCUSDT" disabled></label>
+            <label class="oix-param">Alert model<select class="oix-input" id="oix-alertModel">
+              <option value="netProgress">Net progress score (V2)</option>
+              <option value="strict">Strict path score (V1)</option>
+            </select></label>
             <label class="oix-param">Lookback days<input class="oix-input" type="number" id="oix-lookbackDays"></label>
             <label class="oix-param">Signal window (candles)<input class="oix-input" type="number" id="oix-signalWindow"></label>
             <label class="oix-param">Baseline lookback (candles)<input class="oix-input" type="number" id="oix-baselineLookbackCandles"></label>
@@ -3153,6 +3162,8 @@
   .oix-ctx-bearish-exhaustion{color:#e2645f;background:rgba(226,100,95,0.1);border:1px solid rgba(226,100,95,0.3);}
   .oix-ctx-bullish-exhaustion{color:#3ddc97;background:rgba(61,220,151,0.1);border:1px solid rgba(61,220,151,0.3);}
   .oix-ctx-neutral{color:var(--text-dim);background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);}
+  .oix-model-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;
+    color:var(--teal);background:rgba(40,215,200,0.1);border:1px solid rgba(40,215,200,0.3);letter-spacing:0.03em;}
 </style>
 
 

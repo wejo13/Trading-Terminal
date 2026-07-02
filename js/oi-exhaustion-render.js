@@ -470,6 +470,7 @@
         `<span style="color:var(--teal);">Done.</span> ` +
         `Coverage: ${bybitCandles.length} Bybit candles / ${oiRows.length} OI rows / ${binanceCandles.length} Binance candles &middot; ` +
         `Valid scored: ${result.meta.validScoreCount} / ${result.meta.totalCandles} &middot; ` +
+        `Positive scores: ${result.meta.positiveScorePct != null ? result.meta.positiveScorePct.toFixed(1) + '%' : '—'} of valid candles &middot; ` +
         `Baseline: ${result.meta.finalBaselineSize} (cap ${result.meta.baselineLookbackCandles}) &middot; ` +
         `Alerts: ${result.alerts.length} &middot; ` +
         `Chart-mapped: ${chartPoints.length}/${result.alerts.length}` +

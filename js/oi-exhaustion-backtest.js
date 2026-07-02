@@ -194,6 +194,7 @@ function runEventStudy(candles, oiRows, zones, opts) {
   const baseline = Engine.createBaselineLog({ baselineLookbackCandles });
   const zoneStates = new Map(zones.map(z => [z.id, false])); // armed state per zone
   const alerts = [];
+  let positiveScoreCount = 0;
 
   for (let t = 0; t < series.length; t++) {
     const entry = series[t];
@@ -201,6 +202,7 @@ function runEventStudy(candles, oiRows, zones, opts) {
     const price = closes[t];
 
     if (entry.valid) {
+      if (entry.score > 0) positiveScoreCount++;
       const warmingUp = baseline.size() < minBaselineSamples;
       const percentile = warmingUp ? null : baseline.percentileRank(entry.score);
       const zScore = warmingUp ? null : baseline.zScore(entry.score);
@@ -250,12 +252,16 @@ function runEventStudy(candles, oiRows, zones, opts) {
     delete alert.candleIndex; // internal only, not part of the reported record
   }
 
+  const validScoreCount = series.filter(s => s.valid).length;
+
   return {
     alerts,
     summary: buildGroupedSummaries(alerts),
     meta: {
       totalCandles: timestamps.length,
-      validScoreCount: series.filter(s => s.valid).length,
+      validScoreCount,
+      positiveScoreCount,
+      positiveScorePct: validScoreCount > 0 ? (positiveScoreCount / validScoreCount) * 100 : null,
       finalBaselineSize: baseline.size(),
       baselineLookbackCandles,
       minBaselineSamples,
@@ -373,6 +379,7 @@ if (typeof require !== 'undefined' && typeof module !== 'undefined' && require.m
 
   console.log(`Alerts found: ${result.alerts.length}`);
   console.log(`Valid scored candles: ${result.meta.validScoreCount} / ${result.meta.totalCandles}`);
+  console.log(`Positive scores: ${result.meta.positiveScorePct != null ? result.meta.positiveScorePct.toFixed(1) + '%' : 'n/a'} of valid candles`);
   console.log(`Final baseline size: ${result.meta.finalBaselineSize} (lookback cap: ${result.meta.baselineLookbackCandles})`);
   console.log(`OHLC boundary detection: ${result.meta.hasOHLC ? 'yes' : 'no (close-only proxy)'}`);
   console.log(`Report written to: ${outPath}`);

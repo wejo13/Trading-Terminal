@@ -325,6 +325,52 @@ section('runEventStudy: zone temporal gating — no alert before availableAtTs, 
   }
 })();
 
+section('runEventStudy: meta.positiveScorePct reflects the actual fraction of positive-score candles');
+(function () {
+  // Half the candles get an engineered positive reading, half stay negative,
+  // so the diagnostic should land close to 50% (not exactly, due to warm-up
+  // candles before the window fills, but well within a wide tolerance here).
+  const n = 700;
+  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIVE_MIN);
+  const closes = [100];
+  const ois = [1000];
+  for (let i = 1; i < n; i++) {
+    const positiveHalf = i % 2 === 0;
+    if (positiveHalf) {
+      closes.push(closes[i - 1] * 1.0001); // tiny price move
+      ois.push(ois[i - 1] * 1.01); // OI expands faster -> positive reading
+    } else {
+      closes.push(closes[i - 1] * 1.02); // large price move
+      ois.push(ois[i - 1] * 1.001); // OI barely moves -> negative reading
+    }
+  }
+  const candles = timestamps.map((ts, i) => ({ ts, close: closes[i] }));
+  const oiRows = timestamps.map((ts, i) => ({ ts, oi: ois[i] }));
+  const zones = [{ id: 'z1', label: 'wide', type: 'range', top: 1e12, bottom: 0, active: true }];
+
+  const result = runEventStudy(candles, oiRows, zones, { minBaselineSamples: 50 });
+  assert('positiveScoreCount + validScoreCount are both present and consistent', result.meta.positiveScoreCount <= result.meta.validScoreCount);
+  assert('positiveScorePct is a percentage between 0 and 100', result.meta.positiveScorePct >= 0 && result.meta.positiveScorePct <= 100);
+})();
+
+section('runEventStudy: meta.positiveScorePct is 0 (not null/NaN) when every score is negative');
+(function () {
+  const n = 700;
+  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIVE_MIN);
+  const closes = [100];
+  const ois = [1000];
+  for (let i = 1; i < n; i++) {
+    closes.push(closes[i - 1] * 1.02);
+    ois.push(ois[i - 1] * 1.001);
+  }
+  const candles = timestamps.map((ts, i) => ({ ts, close: closes[i] }));
+  const oiRows = timestamps.map((ts, i) => ({ ts, oi: ois[i] }));
+  const zones = [{ id: 'z1', label: 'wide', type: 'range', top: 1e12, bottom: 0, active: true }];
+
+  const result = runEventStudy(candles, oiRows, zones, { minBaselineSamples: 50 });
+  assert('positiveScorePct is exactly 0, not null', result.meta.positiveScorePct === 0);
+})();
+
 // ── summary ───────────────────────────────────────────────────────────────
 
 console.log('\n────────────────────────────────────────');

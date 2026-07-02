@@ -152,6 +152,59 @@ section('mapAlertToChartPoint: no matching Binance candle -> null, not a guessed
   assert('unmatched alert timestamp maps to null', point === null);
 })();
 
+// ── findContainingCandleIndex / mapAlertToContainingChartPoint (4h chart) ──
+
+section('findContainingCandleIndex: 5m-aligned alert timestamp falls inside a 4h candle');
+(function () {
+  const FOUR_H = 4 * 60 * 60 * 1000;
+  const candles = [
+    { ts: T0, close: 100 },
+    { ts: T0 + FOUR_H, close: 101 },
+    { ts: T0 + 2 * FOUR_H, close: 102 },
+  ];
+  const alertTs = T0 + FOUR_H + 37 * FIVE_MIN; // well inside the second 4h candle
+  const idx = R.findContainingCandleIndex(alertTs, candles, FOUR_H);
+  assert('alert maps into the containing 4h candle, not the nearest boundary', idx === 1);
+})();
+
+section('findContainingCandleIndex: exact candle-open timestamp maps to that candle');
+(function () {
+  const FOUR_H = 4 * 60 * 60 * 1000;
+  const candles = [{ ts: T0, close: 100 }, { ts: T0 + FOUR_H, close: 101 }];
+  assert('exact open-time match', R.findContainingCandleIndex(T0 + FOUR_H, candles, FOUR_H) === 1);
+})();
+
+section('findContainingCandleIndex: timestamp before the first candle or in a trailing gap -> -1');
+(function () {
+  const FOUR_H = 4 * 60 * 60 * 1000;
+  const candles = [{ ts: T0, close: 100 }, { ts: T0 + FOUR_H, close: 101 }];
+  assert('before first candle -> -1', R.findContainingCandleIndex(T0 - FIVE_MIN, candles, FOUR_H) === -1);
+  assert('past the last candle\'s coverage window -> -1', R.findContainingCandleIndex(T0 + 2 * FOUR_H + FIVE_MIN, candles, FOUR_H) === -1);
+})();
+
+section('findContainingCandleIndex: empty candle array never throws');
+(function () {
+  assert('empty array -> -1', R.findContainingCandleIndex(T0, [], 1000) === -1);
+})();
+
+section('mapAlertToContainingChartPoint: uses the containing 4h candle\'s own timestamp and close, not the raw alert timestamp');
+(function () {
+  const FOUR_H = 4 * 60 * 60 * 1000;
+  const candles = [{ ts: T0, close: 100 }, { ts: T0 + FOUR_H, close: 150 }];
+  const alert = { timestamp: T0 + FOUR_H + 10 * FIVE_MIN, price: 999 }; // Bybit price, intentionally different
+  const point = R.mapAlertToContainingChartPoint(alert, candles, FOUR_H);
+  assert('point ts is the CANDLE open time, not the raw alert timestamp', point.ts === T0 + FOUR_H);
+  assert('chart price is the Binance candle close, not the Bybit alert price', point.chartPrice === 150);
+})();
+
+section('mapAlertToContainingChartPoint: alert outside fetched chart range maps to null');
+(function () {
+  const FOUR_H = 4 * 60 * 60 * 1000;
+  const candles = [{ ts: T0, close: 100 }];
+  const alert = { timestamp: T0 - FOUR_H };
+  assert('alert before chart data -> null', R.mapAlertToContainingChartPoint(alert, candles, FOUR_H) === null);
+})();
+
 // ── latestCompletedCandleStart ──────────────────────────────────────────
 
 section('latestCompletedCandleStart: excludes the still-forming current candle');

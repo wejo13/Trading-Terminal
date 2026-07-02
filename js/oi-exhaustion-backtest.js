@@ -35,7 +35,7 @@ const Engine = (typeof module !== 'undefined' && module.exports)
   ? require('./oi-exhaustion-engine.js')
   : window.OIExhaustionEngine;
 
-const HORIZONS_MINUTES = [15, 60, 240, 720, 1440]; // 15m, 1h, 4h, 12h, 24h
+const HORIZONS_MINUTES = [15, 60, 240, 720, 1440, 4320]; // 15m, 1h, 4h, 12h, 24h, 3d
 const FIVE_MIN_MS = 5 * 60 * 1000;
 
 // ── Alignment (causal-safe: just a join + gap flagging, no lookahead risk) ──

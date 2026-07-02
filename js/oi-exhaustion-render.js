@@ -104,16 +104,55 @@
   }
 
   /**
-   * Maps an alert (Bybit-timestamped) to the Binance candle used for chart
-   * display at that same timestamp. Returns null if no exact-timestamp
-   * Binance candle exists (chart simply won't plot that marker rather than
-   * guessing a position).
+   * Maps an alert (Bybit-timestamped, 5m-aligned) to the Binance candle used
+   * for chart display at that same timestamp. Returns null if no exact-
+   * timestamp Binance candle exists (chart simply won't plot that marker
+   * rather than guessing a position). Used when the chart candle interval
+   * matches the signal interval exactly (5m).
    */
   function mapAlertToChartPoint(alert, binanceCandlesByTs) {
     const candle = binanceCandlesByTs.get(alert.timestamp);
     if (!candle) return null;
     return {
       ts: alert.timestamp,
+      chartPrice: candle.close,
+      alert: alert,
+    };
+  }
+
+  /**
+   * Finds the index of the coarser-interval candle (e.g. 4h) that CONTAINS
+   * a given 5m-aligned alert timestamp — i.e. the last candle whose open
+   * time is <= alertTs and alertTs < that candle's open time + intervalMs.
+   * Used when the chart is displayed at a coarser interval than the signal
+   * (alert timestamps won't land on exact 4h boundaries). Binary search
+   * over ascending candle timestamps. Returns -1 if no containing candle
+   * exists (alert falls before the first candle or in a gap).
+   */
+  function findContainingCandleIndex(alertTs, sortedCandles, intervalMs) {
+    if (!sortedCandles.length) return -1;
+    let lo = 0, hi = sortedCandles.length - 1;
+    if (alertTs < sortedCandles[0].ts) return -1;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (sortedCandles[mid].ts <= alertTs) lo = mid; else hi = mid - 1;
+    }
+    const candle = sortedCandles[lo];
+    if (alertTs >= candle.ts && alertTs < candle.ts + intervalMs) return lo;
+    return -1; // fell in a gap between candles
+  }
+
+  /**
+   * Same as mapAlertToChartPoint but for a coarser chart interval — maps
+   * the alert onto its CONTAINING candle rather than requiring an exact
+   * timestamp match.
+   */
+  function mapAlertToContainingChartPoint(alert, sortedCandles, intervalMs) {
+    const idx = findContainingCandleIndex(alert.timestamp, sortedCandles, intervalMs);
+    if (idx === -1) return null;
+    const candle = sortedCandles[idx];
+    return {
+      ts: candle.ts,
       chartPrice: candle.close,
       alert: alert,
     };
@@ -131,10 +170,13 @@
     return currentCandleStart - FIVE_MIN_MS;
   }
 
+  const CHART_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4h chart candles (display only)
+
   const OIExhaustionRender = {
     DEFAULT_SETTINGS,
     SETTINGS_KEY,
     ZONES_KEY,
+    CHART_INTERVAL_MS,
     validateSettings,
     clampNumber,
     levelToBoundedZone,
@@ -142,6 +184,8 @@
     serializeZones,
     deserializeZones,
     mapAlertToChartPoint,
+    findContainingCandleIndex,
+    mapAlertToContainingChartPoint,
     buildBinanceCandleIndex,
     latestCompletedCandleStart,
   };
@@ -247,7 +291,7 @@
     let ts = startTime;
     let pageIndex = 0;
     while (ts <= endTime && pageIndex < MAX_PAGES) {
-      const url = `https://api.binance.com/api/v3/klines?symbol=${SYMBOL}&interval=5m&limit=1000&startTime=${ts}&endTime=${endTime}`;
+      const url = `https://api.binance.com/api/v3/klines?symbol=${SYMBOL}&interval=4h&limit=1000&startTime=${ts}&endTime=${endTime}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Binance candle fetch failed at page ${pageIndex}: httpStatus=${res.status} ${await res.text()}`);
       const list = await res.json();
@@ -259,7 +303,7 @@
       pageIndex++;
       const lastTs = list[list.length - 1][0];
       if (lastTs <= ts) break;
-      ts = lastTs + FIVE_MIN_MS;
+      ts = lastTs + CHART_INTERVAL_MS;
       await sleep(REQUEST_DELAY_MS);
     }
     return allCandles;
@@ -417,7 +461,7 @@
 
       const binanceIndex = buildBinanceCandleIndex(binanceCandles);
       const chartPoints = result.alerts
-        .map(a => mapAlertToChartPoint(a, binanceIndex))
+        .map(a => mapAlertToContainingChartPoint(a, binanceCandles, CHART_INTERVAL_MS))
         .filter(Boolean);
 
       state.lastRun = { result, binanceCandles, binanceIndex, chartPoints };
@@ -429,7 +473,7 @@
         `Baseline: ${result.meta.finalBaselineSize} (cap ${result.meta.baselineLookbackCandles}) &middot; ` +
         `Alerts: ${result.alerts.length} &middot; ` +
         `Chart-mapped: ${chartPoints.length}/${result.alerts.length}` +
-        (chartPoints.length < result.alerts.length ? ' <span style="color:var(--amber);">(some alerts had no matching Binance candle at that exact timestamp)</span>' : '')
+        (chartPoints.length < result.alerts.length ? ' <span style="color:var(--amber);">(some alerts fell outside the fetched Binance chart range)</span>' : '')
       );
 
       renderResultsTable();
@@ -465,23 +509,40 @@
     }
 
     const rows = run.result.alerts.slice().sort((a, b) => b.timestamp - a.timestamp);
+    const horizonCols = [
+      { key: '1h', label: '1h' },
+      { key: '4h', label: '4h' },
+      { key: '12h', label: '12h' },
+      { key: '24h', label: '24h' },
+      { key: '72h', label: '3d' },
+    ];
+    function horizonCell(a, key) {
+      const h = a.horizons && a.horizons[key];
+      if (!h || h.dataQuality !== 'ok') {
+        const reason = h ? h.dataQuality : 'n/a';
+        return `<span style="color:var(--text-faint);" title="${escapeHtml(reason)}">—</span>`;
+      }
+      const pct = h.forwardReturnPct;
+      const col = pct > 0 ? 'var(--green)' : (pct < 0 ? 'var(--red)' : 'var(--text-dim)');
+      return `<span style="color:${col};">${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</span>`;
+    }
     body.innerHTML = `
       <table class="oix-table">
         <thead><tr>
           <th>Time</th><th>Zone</th><th>Price</th>
-          <th>Context</th><th>Percentile</th>
-          <th>Z</th><th>OI 12h</th><th>Travel 12h</th>
+          <th>Percentile</th><th>Z</th><th>OI 12h</th><th>Travel 12h</th>
+          ${horizonCols.map(h => `<th>${h.label}</th>`).join('')}
         </tr></thead>
         <tbody>${rows.map((a) => `
           <tr onclick="OIExhaustionRender.focusChartOnAlert(${run.result.alerts.indexOf(a)})" style="cursor:pointer;">
             <td>${new Date(a.timestamp).toISOString().slice(0, 16).replace('T', ' ')}</td>
             <td>${escapeHtml(a.zoneBounds.label || a.zoneId)}</td>
             <td>$${a.price.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
-            <td><span class="oix-ctx-badge oix-ctx-${a.contextDirection}">${a.contextDirection.replace('-exhaustion', '')}</span></td>
             <td>${a.percentile != null ? a.percentile.toFixed(1) : '—'}</td>
             <td>${a.zScore != null ? a.zScore.toFixed(2) : '—'}</td>
             <td>${a.oiChange12hPct != null ? a.oiChange12hPct.toFixed(1) + '%' : '—'}</td>
             <td>${a.priceTravel12hAbsPct != null ? a.priceTravel12hAbsPct.toFixed(1) + '%' : '—'}</td>
+            ${horizonCols.map(h => `<td>${horizonCell(a, h.key)}</td>`).join('')}
           </tr>`).join('')}
         </tbody>
       </table>`;
@@ -498,7 +559,10 @@
     const newCanvas = canvas.cloneNode(false);
     wrap.replaceChild(newCanvas, canvas);
 
-    state.chart.scale = 0.3;
+    const run = state.lastRun;
+    state.chart.scale = run && run.binanceCandles && run.binanceCandles.length
+      ? Math.max(0.05, Math.min(1, OIX_BASE_VISIBLE / run.binanceCandles.length))
+      : 0.3;
     state.chart.offsetX = 0;
 
     newCanvas.addEventListener('wheel', chartWheel, { passive: false });
@@ -565,10 +629,8 @@
       const ci = run.binanceCandles.findIndex(c => c.ts === p.ts);
       if (ci < startIdx || ci > endIdx) continue;
       const x = padL + (ci - startIdx + 0.5) * candleW;
-      const y = cs._lastMarkerYByTs ? cs._lastMarkerYByTs[p.ts] : null;
-      const dx = mx - x, dy = y != null ? my - y : 0;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 14 && dist < nearestDist) { nearest = p; nearestDist = dist; }
+      const dist = Math.abs(mx - x);
+      if (dist < Math.max(6, candleW * 0.6) && dist < nearestDist) { nearest = p; nearestDist = dist; }
     }
     if (!nearest) { if (tooltip) tooltip.style.display = 'none'; return; }
 
@@ -678,22 +740,35 @@
       else ctx.strokeRect(x - bodyW / 2, yTop, bodyW, bodyH);
     });
 
-    // Alert markers
-    cs._lastMarkerYByTs = {};
+    // Alert markers — dashed vertical lines (easier to spot than dots on a
+    // compressed multi-day chart), colored by context direction.
+    cs._lastMarkerXByTs = {};
     run.chartPoints.forEach(p => {
       const ci = run.binanceCandles.findIndex(c => c.ts === p.ts);
       if (ci < startIdx || ci > endIdx) return;
       const i = ci - startIdx;
       const x = padL + (i + 0.5) * candleW;
-      const y = yOf(p.chartPrice);
-      cs._lastMarkerYByTs[p.ts] = y;
+      cs._lastMarkerXByTs[p.ts] = x;
       const isUp = p.alert.contextDirection === 'bearish-exhaustion'; // up-move-oi-expansion
-      const col = isUp ? '#e2645f' : '#3ddc97'; // up-move context in red (caution on up), down-move context in green
+      const col = isUp ? '#e2645f' : '#3ddc97';
+      ctx.save();
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 1.4;
+      ctx.setLineDash([4, 3]);
       ctx.beginPath();
-      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.moveTo(x, padT);
+      ctx.lineTo(x, padT + plotH);
+      ctx.stroke();
+      ctx.restore();
+      // small triangle flag at the top so the line is spottable even when
+      // several sit close together at this zoom level
+      ctx.beginPath();
+      ctx.moveTo(x - 4, padT);
+      ctx.lineTo(x + 4, padT);
+      ctx.lineTo(x, padT + 7);
+      ctx.closePath();
       ctx.fillStyle = col;
       ctx.fill();
-      ctx.strokeStyle = '#0a090f'; ctx.lineWidth = 1; ctx.stroke();
     });
   }
 

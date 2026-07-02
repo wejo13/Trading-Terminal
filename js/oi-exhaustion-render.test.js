@@ -4,6 +4,7 @@
 const R = require('./oi-exhaustion-render.js');
 
 let passed = 0, failed = 0;
+const asyncTests = []; // collects promises from async test IIFEs so the summary waits for them
 function assert(desc, cond) {
   if (cond) { console.log('  PASS ' + desc); passed++; }
   else       { console.error('  FAIL ' + desc); failed++; }
@@ -232,8 +233,247 @@ section('latestCompletedCandleStart: exactly on a candle boundary still excludes
   assert('at the exact boundary, the candle just starting is still excluded', result === boundary - FIVE_MIN);
 })();
 
+// ── Fetch reliability: rate-limit retry, backoff, cache ──────────────────
+
+function mockResponse({ status, retCode, retMsg, list, headers }) {
+  return {
+    status,
+    ok: status >= 200 && status < 300,
+    headers: { entries: () => (headers || []) },
+    json: async () => ({ retCode: retCode != null ? retCode : 0, retMsg: retMsg || '', result: { list: list || [], nextPageCursor: null } }),
+  };
+}
+
+section('isRateLimitedResponse: detects HTTP 429 and Bybit retCode 10006, nothing else');
+(function () {
+  assert('HTTP 429 is rate-limited', R.isRateLimitedResponse(429, null) === true);
+  assert('retCode 10006 is rate-limited', R.isRateLimitedResponse(200, { retCode: 10006 }) === true);
+  assert('normal 200/retCode 0 is not rate-limited', R.isRateLimitedResponse(200, { retCode: 0 }) === false);
+  assert('other error codes are not treated as rate-limited', R.isRateLimitedResponse(500, { retCode: 10001 }) === false);
+  assert('null json with non-429 status is not rate-limited', R.isRateLimitedResponse(200, null) === false);
+})();
+
+section('computeBackoffDelayMs: follows the 1s/2s/4s/8s/16s schedule, capped at 30s, with jitter bounded');
+(function () {
+  const noJitter = () => 0.5; // midpoint -> jitterFactor exactly 1.0
+  assert('attempt 0 -> 1000ms at no-jitter midpoint', R.computeBackoffDelayMs(0, noJitter) === 1000);
+  assert('attempt 1 -> 2000ms', R.computeBackoffDelayMs(1, noJitter) === 2000);
+  assert('attempt 2 -> 4000ms', R.computeBackoffDelayMs(2, noJitter) === 4000);
+  assert('attempt 3 -> 8000ms', R.computeBackoffDelayMs(3, noJitter) === 8000);
+  assert('attempt 4 -> 16000ms', R.computeBackoffDelayMs(4, noJitter) === 16000);
+  assert('attempt 5+ (beyond schedule) caps at 30000ms', R.computeBackoffDelayMs(5, noJitter) === 30000);
+  assert('attempt 10 still caps at 30000ms', R.computeBackoffDelayMs(10, noJitter) === 30000);
+
+  const maxJitter = () => 1; // jitterFactor = 1.25
+  assert('jitter never pushes attempt 4 (16s) past the 30s cap', R.computeBackoffDelayMs(4, maxJitter) <= 30000);
+  const minJitter = () => 0; // jitterFactor = 0.75
+  assert('jitter can reduce attempt 0 below 1000ms (0.75x)', R.computeBackoffDelayMs(0, minJitter) === 750);
+})();
+
+section('parseRateLimitResetWaitMs: case-insensitive header read, safety buffer applied');
+(function () {
+  const now = 1000000;
+  const headers = [['X-Bapi-Limit-Reset-Timestamp', String(now + 5000)]];
+  assert('exact-case header parsed correctly with buffer', R.parseRateLimitResetWaitMs(headers, now, 500) === 5500);
+
+  const lowerHeaders = [['x-bapi-limit-reset-timestamp', String(now + 2000)]];
+  assert('lowercase header still matches (case-insensitive)', R.parseRateLimitResetWaitMs(lowerHeaders, now, 500) === 2500);
+
+  const mixedHeaders = [['X-BAPI-Limit-Reset-Timestamp', String(now + 1000)]];
+  assert('mixed-case header still matches', R.parseRateLimitResetWaitMs(mixedHeaders, now, 500) === 1500);
+})();
+
+section('parseRateLimitResetWaitMs: absent/unparseable header returns null (caller falls back to backoff)');
+(function () {
+  assert('no headers at all -> null', R.parseRateLimitResetWaitMs(null, 1000, 500) === null);
+  assert('empty header list -> null', R.parseRateLimitResetWaitMs([], 1000, 500) === null);
+  assert('unrelated headers only -> null', R.parseRateLimitResetWaitMs([['Content-Type', 'application/json']], 1000, 500) === null);
+  assert('non-numeric header value -> null', R.parseRateLimitResetWaitMs([['X-Bapi-Limit-Reset-Timestamp', 'not-a-number']], 1000, 500) === null);
+})();
+
+section('parseRateLimitResetWaitMs: never returns negative — floors at 0 if reset time already passed');
+(function () {
+  const now = 1000000;
+  const headers = [['X-Bapi-Limit-Reset-Timestamp', String(now - 5000)]]; // already in the past
+  assert('past reset time floors to 0, not negative', R.parseRateLimitResetWaitMs(headers, now, 500) === 0);
+})();
+
+section('getCachedRawData: hit when lookbackDays matches and cache is still fresh');
+(function () {
+  const now = 1000000;
+  const cache = { lookbackDays: 90, startTime: 1, endTime: 2, oiRows: [1], bybitCandles: [2], binanceCandles: [3], cachedAt: now - 1000 };
+  assert('matching lookbackDays + fresh cache -> hit', R.getCachedRawData(cache, 90, now, 15 * 60 * 1000) === cache);
+  assert('different lookbackDays -> miss (null) even if fresh', R.getCachedRawData(cache, 30, now, 15 * 60 * 1000) === null);
+  assert('null cache -> miss', R.getCachedRawData(null, 90, now, 15 * 60 * 1000) === null);
+})();
+
+section('getCachedRawData: TTL freshness — expired cache misses even with matching lookbackDays');
+(function () {
+  const ttl = 15 * 60 * 1000;
+  const now = 1000000;
+  const freshCache = { lookbackDays: 90, cachedAt: now - (ttl - 1000) }; // 1s inside the window
+  const expiredCache = { lookbackDays: 90, cachedAt: now - (ttl + 1000) }; // 1s past the window
+  assert('just inside TTL -> hit', R.getCachedRawData(freshCache, 90, now, ttl) === freshCache);
+  assert('just past TTL -> miss', R.getCachedRawData(expiredCache, 90, now, ttl) === null);
+})();
+
+section('getCachedRawData: exact TTL boundary is inclusive (age === ttl still hits)');
+(function () {
+  const ttl = 15 * 60 * 1000;
+  const now = 1000000;
+  const boundaryCache = { lookbackDays: 90, cachedAt: now - ttl };
+  assert('age exactly equal to ttl still counts as fresh', R.getCachedRawData(boundaryCache, 90, now, ttl) === boundaryCache);
+})();
+
+section('getCachedRawData: missing cachedAt is treated as stale, not assumed fresh');
+(function () {
+  const now = 1000000;
+  const cache = { lookbackDays: 90 }; // no cachedAt at all
+  assert('no cachedAt -> always a miss', R.getCachedRawData(cache, 90, now, 15 * 60 * 1000) === null);
+})();
+
+section('getCachedRawData: defaults (no nowMs/ttlMs passed) use the real clock and 15-minute TTL');
+(function () {
+  const justFetched = { lookbackDays: 90, cachedAt: Date.now() - 1000 }; // 1s ago
+  assert('a cache from 1 second ago hits using real-clock defaults', R.getCachedRawData(justFetched, 90) === justFetched);
+  const longAgo = { lookbackDays: 90, cachedAt: Date.now() - 20 * 60 * 1000 }; // 20 min ago > default 15-min TTL
+  assert('a cache from 20 minutes ago misses using the default 15-minute TTL', R.getCachedRawData(longAgo, 90) === null);
+})();
+
+section('RAW_DATA_CACHE_TTL_MS: default constant is exactly 15 minutes');
+(function () {
+  assert('15 * 60 * 1000 ms', R.RAW_DATA_CACHE_TTL_MS === 15 * 60 * 1000);
+})();
+
+section('fetchWithRateLimitRetry: retCode 10006 retries the EXACT SAME url and eventually succeeds');
+asyncTests.push((async function () {
+  let calls = [];
+  let sleepCalls = [];
+  const fetchFn = async (url) => {
+    calls.push(url);
+    if (calls.length <= 2) return mockResponse({ status: 200, retCode: 10006, retMsg: 'Too many visits!' });
+    return mockResponse({ status: 200, retCode: 0, list: [{ ts: '1', openInterest: '100' }] });
+  };
+  const sleepFn = async (ms) => { sleepCalls.push(ms); };
+
+  const { res, json } = await R.fetchWithRateLimitRetry(fetchFn, sleepFn, 'https://example.com/page?cursor=abc', {
+    maxRetries: 6,
+  });
+
+  assert('fetch was called 3 times (2 rate-limited + 1 success)', calls.length === 3);
+  assert('every call used the IDENTICAL url (same page/cursor, not restarted)', calls.every(u => u === calls[0]));
+  assert('eventually returns the successful response', json.retCode === 0);
+  assert('slept between each retry (2 sleeps for 2 rate-limit hits)', sleepCalls.length === 2);
+})());
+
+section('fetchWithRateLimitRetry: HTTP 429 also triggers retry (not just retCode 10006)');
+asyncTests.push((async function () {
+  let calls = 0;
+  const fetchFn = async () => {
+    calls++;
+    if (calls === 1) return mockResponse({ status: 429, retCode: 0 });
+    return mockResponse({ status: 200, retCode: 0, list: [] });
+  };
+  const sleepFn = async () => {};
+  const { json } = await R.fetchWithRateLimitRetry(fetchFn, sleepFn, 'https://example.com/x', { maxRetries: 6 });
+  assert('recovered after a 429', json.retCode === 0);
+  assert('exactly 2 calls (1 rate-limited + 1 success)', calls === 2);
+})());
+
+section('fetchWithRateLimitRetry: exhausting retries throws cleanly, never returns partial data');
+asyncTests.push((async function () {
+  let calls = 0;
+  const fetchFn = async () => { calls++; return mockResponse({ status: 200, retCode: 10006, retMsg: 'Too many visits!' }); };
+  const sleepFn = async () => {};
+
+  let threw = false;
+  let result = undefined;
+  try {
+    result = await R.fetchWithRateLimitRetry(fetchFn, sleepFn, 'https://example.com/x', { maxRetries: 3 });
+  } catch (e) {
+    threw = true;
+    assert('error message mentions rate limiting', /rate-limited/i.test(e.message));
+  }
+  assert('throws rather than returning a value', threw === true);
+  assert('function never resolved a value', result === undefined);
+  assert('made exactly maxRetries+1 attempts (1 initial + 3 retries)', calls === 4);
+})());
+
+section('fetchWithRateLimitRetry: prefers the reset-timestamp header over backoff when present');
+asyncTests.push((async function () {
+  let sleepCalls = [];
+  let callCount = 0;
+  const now = 5000000;
+  const fetchFn = async () => {
+    callCount++;
+    if (callCount === 1) {
+      return mockResponse({
+        status: 200, retCode: 10006,
+        headers: [['X-Bapi-Limit-Reset-Timestamp', String(now + 3000)]],
+      });
+    }
+    return mockResponse({ status: 200, retCode: 0, list: [] });
+  };
+  const sleepFn = async (ms) => { sleepCalls.push(ms); };
+  await R.fetchWithRateLimitRetry(fetchFn, sleepFn, 'https://example.com/x', {
+    maxRetries: 6, nowFn: () => now,
+  });
+  assert('waited exactly the header-derived time (3000 + 500 safety buffer), not a generic backoff value', sleepCalls[0] === 3500);
+})());
+
+section('fetchBybitOI (integration): retries a rate-limited page via the shared retry path, does not restart pagination');
+asyncTests.push((async function () {
+  let pageRequests = [];
+  const fetchFn = async (url) => {
+    pageRequests.push(url);
+    const isFirstPageFirstAttempt = pageRequests.filter(u => !u.includes('cursor')).length === 1;
+    if (!url.includes('cursor') && isFirstPageFirstAttempt) {
+      return mockResponse({ status: 200, retCode: 10006, retMsg: 'Too many visits!' });
+    }
+    if (!url.includes('cursor')) {
+      return mockResponse({ status: 200, retCode: 0, list: [{ timestamp: '1000', openInterest: '50' }], });
+    }
+    return mockResponse({ status: 200, retCode: 0, list: [] }); // terminate pagination
+  };
+  const sleepFn = async () => {};
+  const progressEvents = [];
+
+  const rows = await R.fetchBybitOI(0, 1000, {
+    fetchFn, sleepFn,
+    onProgress: (evt) => progressEvents.push(evt),
+    pageDelayMs: 0,
+  });
+
+  assert('eventually returns rows despite the initial rate limit', rows.length === 1);
+  assert('a rate_limited progress event was reported', progressEvents.some(e => e.type === 'rate_limited'));
+  assert('a page progress event was also reported after recovery', progressEvents.some(e => e.type === 'page'));
+})());
+
+section('fetchBybitOI (integration): retry exhaustion throws before returning any rows — nothing downstream (e.g. the event-study report) can be built from partial data');
+asyncTests.push((async function () {
+  let callCount = 0;
+  const fetchFn = async () => {
+    callCount++;
+    return mockResponse({ status: 200, retCode: 10006, retMsg: 'Too many visits!' });
+  };
+  const sleepFn = async () => {};
+
+  let threw = false;
+  let rows = undefined;
+  try {
+    rows = await R.fetchBybitOI(0, 1000, { fetchFn, sleepFn, maxRetries: 3, pageDelayMs: 0 });
+  } catch (e) {
+    threw = true;
+  }
+  assert('fetchBybitOI throws on retry exhaustion rather than resolving with a (partial) array', threw === true);
+  assert('rows variable was never assigned — no partial data escapes to a caller that might build a report from it', rows === undefined);
+})());
+
 // ── summary ───────────────────────────────────────────────────────────────
 
-console.log('\n────────────────────────────────────────');
-console.log('oi-exhaustion-render: ' + passed + ' passed, ' + failed + ' failed');
-if (failed > 0) process.exit(1);
+(async () => {
+  await Promise.all(asyncTests);
+  console.log('\n────────────────────────────────────────');
+  console.log('oi-exhaustion-render: ' + passed + ' passed, ' + failed + ' failed');
+  if (failed > 0) process.exit(1);
+})();

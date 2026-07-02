@@ -38,6 +38,246 @@
   const VALID_ALERT_MODELS = ['strict', 'netProgress'];
   const VALID_OI_RECENCY_WINDOWS = ['30m', '1h', '2h', '4h'];
 
+  const Probe = (typeof module !== 'undefined' && module.exports)
+    ? require('./oi-exhaustion-probe.js')
+    : window.OIExhaustionProbe;
+
+  // ── Fetch reliability: rate-limit retry, backoff, and raw-data caching ──
+  // (all pure / dependency-injected so they're testable in Node without a
+  // real network or DOM — see fetchBybitOI/fetchBybitCandles below, which
+  // are built on top of these and accept injectable fetchFn/sleepFn.)
+
+  const SYMBOL = 'BTCUSDT';
+  const CATEGORY = 'linear';
+  const PAGE_LIMIT = 200;
+  const MAX_PAGES = 700;
+  const BYBIT_PAGE_DELAY_MS = 600; // conservative default, within the requested 500-750ms range
+  const RATE_LIMIT_RETCODE = 10006;
+  const DEFAULT_MAX_RATE_LIMIT_RETRIES = 6;
+  const RATE_LIMIT_SAFETY_BUFFER_MS = 500;
+  const BACKOFF_SCHEDULE_MS = [1000, 2000, 4000, 8000, 16000];
+  const BACKOFF_CAP_MS = 30000;
+
+  function realSleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+  /** HTTP 429 or Bybit retCode 10006 — the two rate-limit signals we retry on. */
+  function isRateLimitedResponse(httpStatus, json) {
+    return httpStatus === 429 || !!(json && json.retCode === RATE_LIMIT_RETCODE);
+  }
+
+  /**
+   * Exponential backoff with jitter: 1s, 2s, 4s, 8s, 16s, then capped at 30s
+   * for any further attempt. Jitter is +/-25% so simultaneous retries don't
+   * all land on the exact same instant. `randomFn` is injectable so tests
+   * can make this deterministic.
+   */
+  function computeBackoffDelayMs(attemptIndex, randomFn) {
+    randomFn = randomFn || Math.random;
+    const base = attemptIndex < BACKOFF_SCHEDULE_MS.length ? BACKOFF_SCHEDULE_MS[attemptIndex] : BACKOFF_CAP_MS;
+    const capped = Math.min(BACKOFF_CAP_MS, base);
+    const jitterFactor = 0.75 + randomFn() * 0.5; // 0.75x - 1.25x
+    return Math.round(Math.min(BACKOFF_CAP_MS, capped * jitterFactor));
+  }
+
+  /**
+   * Reads Bybit's `X-Bapi-Limit-Reset-Timestamp` header case-insensitively
+   * from a Headers-entries-like iterable of [key, value] pairs, and returns
+   * how long to wait (ms) until that reset time plus a small safety buffer.
+   * Returns null if the header is absent/unparseable, so the caller falls
+   * back to exponential backoff.
+   */
+  function parseRateLimitResetWaitMs(headerEntries, nowMs, safetyBufferMs) {
+    if (!headerEntries) return null;
+    let resetRaw = null;
+    for (const entry of headerEntries) {
+      const key = entry[0], value = entry[1];
+      if (String(key).toLowerCase() === 'x-bapi-limit-reset-timestamp') { resetRaw = value; break; }
+    }
+    if (resetRaw == null) return null;
+    const resetTs = parseInt(resetRaw, 10);
+    if (!isFinite(resetTs)) return null;
+    const buffer = safetyBufferMs != null ? safetyBufferMs : RATE_LIMIT_SAFETY_BUFFER_MS;
+    return Math.max(0, resetTs - nowMs + buffer);
+  }
+
+  /**
+   * Fetches a single URL, retrying the SAME url (same page/cursor — nothing
+   * about the request changes between attempts) whenever the response is
+   * rate-limited, up to `maxRetries` times. Prefers the server's own reset
+   * timestamp when present, falls back to exponential backoff+jitter.
+   * Throws (does not return partial/undefined data) once retries are
+   * exhausted — callers must not catch-and-continue with a missing page.
+   */
+  async function fetchWithRateLimitRetry(fetchFn, sleepFn, url, opts) {
+    opts = opts || {};
+    const maxRetries = opts.maxRetries != null ? opts.maxRetries : DEFAULT_MAX_RATE_LIMIT_RETRIES;
+    const onRetry = opts.onRetry || null;
+    const nowFn = opts.nowFn || (() => Date.now());
+    const randomFn = opts.randomFn || Math.random;
+
+    let attempt = 0;
+    while (true) {
+      const res = await fetchFn(url);
+      let json = null;
+      try { json = await res.json(); } catch (e) { /* leave json null, caller decides if that's fatal */ }
+
+      if (!isRateLimitedResponse(res.status, json)) {
+        return { res, json };
+      }
+
+      attempt++;
+      if (attempt > maxRetries) {
+        throw new Error(`Rate-limited (HTTP 429 / retCode ${RATE_LIMIT_RETCODE}) and exhausted ${maxRetries} retries`);
+      }
+
+      let waitMs = null;
+      if (res.headers && typeof res.headers.entries === 'function') {
+        waitMs = parseRateLimitResetWaitMs(Array.from(res.headers.entries()), nowFn(), RATE_LIMIT_SAFETY_BUFFER_MS);
+      }
+      if (waitMs === null) waitMs = computeBackoffDelayMs(attempt - 1, randomFn);
+
+      if (onRetry) onRetry(attempt, waitMs);
+      await sleepFn(waitMs);
+      // loop retries the exact same `url` — same page/cursor, nothing skipped
+    }
+  }
+
+  /**
+   * Lightweight in-memory raw-data cache, keyed only by lookbackDays (the
+   * one setting that actually changes the fetch window). A parameter-only
+   * change (percentile, rearm, alert model, OI recency filter/threshold,
+   * baseline settings) leaves lookbackDays untouched, so this returns the
+   * same cached candles/OI and the caller can rerun analysis without
+   * refetching. Returns null on any mismatch — caller then does a real fetch.
+   */
+  const RAW_DATA_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
+  /**
+   * Cache hit requires BOTH: matching lookbackDays AND still within the
+   * freshness TTL (default 15 minutes) measured from when it was fetched.
+   * `nowMs`/`ttlMs` are injectable for testing; in normal use they default
+   * to the real clock and the 15-minute default above. A cache with no
+   * `cachedAt` is treated as stale (never hits) rather than assumed fresh.
+   */
+  function getCachedRawData(cache, lookbackDays, nowMs, ttlMs) {
+    if (!cache || cache.lookbackDays !== lookbackDays) return null;
+    if (typeof cache.cachedAt !== 'number') return null;
+    const now = nowMs != null ? nowMs : Date.now();
+    const ttl = ttlMs != null ? ttlMs : RAW_DATA_CACHE_TTL_MS;
+    if (now - cache.cachedAt > ttl) return null; // expired
+    return cache;
+  }
+
+  function parseBybitKlineRow(raw) {
+    if (!Array.isArray(raw) || raw.length < 5) return null;
+    const ts = parseInt(raw[0], 10);
+    const open = parseFloat(raw[1]), high = parseFloat(raw[2]), low = parseFloat(raw[3]), close = parseFloat(raw[4]);
+    if (![ts, open, high, low, close].every(isFinite)) return null;
+    return { ts, open, high, low, close };
+  }
+
+  // ── Fetch: Bybit OI (signal source, public, no credentials) ────────────
+  // Built on fetchWithRateLimitRetry so a 429/10006 mid-pagination retries
+  // the SAME page rather than restarting the whole 90-day pull. fetchFn/
+  // sleepFn default to real fetch/setTimeout in the browser, but are
+  // injectable so this exact function is unit-testable in Node with mocks.
+
+  async function fetchBybitOI(startTime, endTime, options) {
+    options = options || {};
+    const fetchFn = options.fetchFn || (typeof fetch !== 'undefined' ? fetch : null);
+    const sleepFn = options.sleepFn || realSleep;
+    const onProgress = options.onProgress || null;
+    const pageDelayMs = options.pageDelayMs != null ? options.pageDelayMs : BYBIT_PAGE_DELAY_MS;
+    const maxRetries = options.maxRetries != null ? options.maxRetries : DEFAULT_MAX_RATE_LIMIT_RETRIES;
+
+    const base = 'https://api.bybit.com/v5/market/open-interest';
+    let cursor, pageIndex = 0;
+    const pagesOfRows = [];
+    let rowsSoFar = 0;
+
+    while (pageIndex < MAX_PAGES) {
+      const params = new URLSearchParams({
+        category: CATEGORY, symbol: SYMBOL, intervalTime: '5min',
+        limit: String(PAGE_LIMIT), startTime: String(startTime), endTime: String(endTime),
+      });
+      if (cursor) params.set('cursor', cursor);
+      const url = `${base}?${params.toString()}`;
+
+      const { res, json } = await fetchWithRateLimitRetry(fetchFn, sleepFn, url, {
+        maxRetries,
+        onRetry: (attempt, waitMs) => {
+          if (onProgress) onProgress({ type: 'rate_limited', source: 'oi', page: pageIndex, attempt, maxRetries, waitMs });
+        },
+      });
+
+      if (!res.ok || !json || json.retCode !== 0) {
+        throw new Error(`Bybit OI fetch failed at page ${pageIndex}: httpStatus=${res.status} retCode=${json && json.retCode} retMsg=${json && json.retMsg}`);
+      }
+      const list = (json.result && json.result.list) || [];
+      const rows = list.map(Probe.parseRow).filter(Boolean);
+      pagesOfRows.push(rows);
+      rowsSoFar += rows.length;
+      if (onProgress) onProgress({ type: 'page', source: 'oi', page: pageIndex, rowsThisPage: rows.length, rowsSoFar });
+
+      pageIndex++;
+      const nextCursor = json.result && json.result.nextPageCursor;
+      if (!nextCursor || rows.length === 0) break;
+      cursor = nextCursor;
+      await sleepFn(pageDelayMs);
+    }
+    return Probe.mergeDedupe(pagesOfRows).rows;
+  }
+
+  // ── Fetch: Bybit candles (signal source, paired with OI) ────────────────
+
+  async function fetchBybitCandles(startTime, endTime, options) {
+    options = options || {};
+    const fetchFn = options.fetchFn || (typeof fetch !== 'undefined' ? fetch : null);
+    const sleepFn = options.sleepFn || realSleep;
+    const onProgress = options.onProgress || null;
+    const pageDelayMs = options.pageDelayMs != null ? options.pageDelayMs : BYBIT_PAGE_DELAY_MS;
+    const maxRetries = options.maxRetries != null ? options.maxRetries : DEFAULT_MAX_RATE_LIMIT_RETRIES;
+
+    const base = 'https://api.bybit.com/v5/market/kline';
+    let currentEnd = endTime, pageIndex = 0;
+    const pagesOfRows = [];
+    let rowsSoFar = 0;
+
+    while (pageIndex < MAX_PAGES && currentEnd > startTime) {
+      const params = new URLSearchParams({
+        category: CATEGORY, symbol: SYMBOL, interval: '5',
+        start: String(startTime), end: String(currentEnd), limit: String(PAGE_LIMIT),
+      });
+      const url = `${base}?${params.toString()}`;
+
+      const { res, json } = await fetchWithRateLimitRetry(fetchFn, sleepFn, url, {
+        maxRetries,
+        onRetry: (attempt, waitMs) => {
+          if (onProgress) onProgress({ type: 'rate_limited', source: 'bybit-candles', page: pageIndex, attempt, maxRetries, waitMs });
+        },
+      });
+
+      if (!res.ok || !json || json.retCode !== 0) {
+        throw new Error(`Bybit candle fetch failed at page ${pageIndex}: httpStatus=${res.status} retCode=${json && json.retCode} retMsg=${json && json.retMsg}`);
+      }
+      const list = (json.result && json.result.list) || [];
+      const rows = list.map(parseBybitKlineRow).filter(Boolean);
+      pagesOfRows.push(rows);
+      rowsSoFar += rows.length;
+      if (onProgress) onProgress({ type: 'page', source: 'bybit-candles', page: pageIndex, rowsThisPage: rows.length, rowsSoFar });
+
+      pageIndex++;
+      if (rows.length === 0) break;
+      const minTs = Math.min(...rows.map(r => r.ts));
+      if (minTs <= startTime) break;
+      currentEnd = minTs - 1;
+      await sleepFn(pageDelayMs);
+    }
+    const byTs = new Map();
+    for (const page of pagesOfRows) for (const r of page) byTs.set(r.ts, r);
+    return Array.from(byTs.values()).sort((a, b) => a.ts - b.ts);
+  }
+
   // ── Pure logic (no DOM) — exported for Node tests ───────────────────────
 
   /** Fills in any missing fields with defaults; clamps obviously invalid values. */
@@ -199,6 +439,20 @@
     mapAlertToContainingChartPoint,
     buildBinanceCandleIndex,
     latestCompletedCandleStart,
+    // Fetch reliability — exported for Node testing (all dependency-injected,
+    // no real network/DOM required to exercise them).
+    RATE_LIMIT_RETCODE,
+    DEFAULT_MAX_RATE_LIMIT_RETRIES,
+    BYBIT_PAGE_DELAY_MS,
+    isRateLimitedResponse,
+    computeBackoffDelayMs,
+    parseRateLimitResetWaitMs,
+    fetchWithRateLimitRetry,
+    RAW_DATA_CACHE_TTL_MS,
+    getCachedRawData,
+    fetchBybitOI,
+    fetchBybitCandles,
+    parseBybitKlineRow,
   };
 
   if (typeof module !== 'undefined' && module.exports) {
@@ -210,90 +464,11 @@
 
   const Engine = window.OIExhaustionEngine;
   const Backtest = window.OIExhaustionBacktest;
-  const Probe = window.OIExhaustionProbe; // parseRow/mergeDedupe reuse for OI
+  // Probe, fetchBybitOI, fetchBybitCandles, parseBybitKlineRow, SYMBOL,
+  // CATEGORY, PAGE_LIMIT, MAX_PAGES are all defined above (shared/testable
+  // section) and already in scope here via closure — not redeclared.
 
-  const SYMBOL = 'BTCUSDT';
-  const CATEGORY = 'linear';
-  const PAGE_LIMIT = 200;
-  const REQUEST_DELAY_MS = 200;
-  const MAX_PAGES = 700;
-
-  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-  // ── Fetch: Bybit OI (signal source, public, no credentials) ────────────
-
-  async function fetchBybitOI(startTime, endTime, onProgress) {
-    const base = 'https://api.bybit.com/v5/market/open-interest';
-    let cursor, pageIndex = 0;
-    const pagesOfRows = [];
-
-    while (pageIndex < MAX_PAGES) {
-      const params = new URLSearchParams({
-        category: CATEGORY, symbol: SYMBOL, intervalTime: '5min',
-        limit: String(PAGE_LIMIT), startTime: String(startTime), endTime: String(endTime),
-      });
-      if (cursor) params.set('cursor', cursor);
-
-      const res = await fetch(`${base}?${params.toString()}`);
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json || json.retCode !== 0) {
-        throw new Error(`Bybit OI fetch failed at page ${pageIndex}: httpStatus=${res.status} retCode=${json && json.retCode} retMsg=${json && json.retMsg}`);
-      }
-      const list = (json.result && json.result.list) || [];
-      const rows = list.map(Probe.parseRow).filter(Boolean);
-      pagesOfRows.push(rows);
-      if (onProgress) onProgress('oi', pageIndex, rows.length);
-
-      pageIndex++;
-      const nextCursor = json.result && json.result.nextPageCursor;
-      if (!nextCursor || rows.length === 0) break;
-      cursor = nextCursor;
-      await sleep(REQUEST_DELAY_MS);
-    }
-    return Probe.mergeDedupe(pagesOfRows).rows;
-  }
-
-  // ── Fetch: Bybit candles (signal source, paired with OI) ────────────────
-
-  function parseBybitKlineRow(raw) {
-    if (!Array.isArray(raw) || raw.length < 5) return null;
-    const ts = parseInt(raw[0], 10);
-    const open = parseFloat(raw[1]), high = parseFloat(raw[2]), low = parseFloat(raw[3]), close = parseFloat(raw[4]);
-    if (![ts, open, high, low, close].every(isFinite)) return null;
-    return { ts, open, high, low, close };
-  }
-
-  async function fetchBybitCandles(startTime, endTime, onProgress) {
-    const base = 'https://api.bybit.com/v5/market/kline';
-    let currentEnd = endTime, pageIndex = 0;
-    const pagesOfRows = [];
-
-    while (pageIndex < MAX_PAGES && currentEnd > startTime) {
-      const params = new URLSearchParams({
-        category: CATEGORY, symbol: SYMBOL, interval: '5',
-        start: String(startTime), end: String(currentEnd), limit: String(PAGE_LIMIT),
-      });
-      const res = await fetch(`${base}?${params.toString()}`);
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json || json.retCode !== 0) {
-        throw new Error(`Bybit candle fetch failed at page ${pageIndex}: httpStatus=${res.status} retCode=${json && json.retCode} retMsg=${json && json.retMsg}`);
-      }
-      const list = (json.result && json.result.list) || [];
-      const rows = list.map(parseBybitKlineRow).filter(Boolean);
-      pagesOfRows.push(rows);
-      if (onProgress) onProgress('bybit-candles', pageIndex, rows.length);
-
-      pageIndex++;
-      if (rows.length === 0) break;
-      const minTs = Math.min(...rows.map(r => r.ts));
-      if (minTs <= startTime) break;
-      currentEnd = minTs - 1;
-      await sleep(REQUEST_DELAY_MS);
-    }
-    const byTs = new Map();
-    for (const page of pagesOfRows) for (const r of page) byTs.set(r.ts, r);
-    return Array.from(byTs.values()).sort((a, b) => a.ts - b.ts);
-  }
+  function sleep(ms) { return realSleep(ms); }
 
   // ── Fetch: Binance candles (chart display only) ─────────────────────────
 
@@ -326,6 +501,9 @@
     settings: DEFAULT_SETTINGS,
     zones: [],
     lastRun: null, // { result, binanceCandles, binanceIndex, chartPoints }
+    lastRunAt: null, // Date.now() of the last SUCCESSFUL run, for the stale-results banner
+    lastRunFailed: false, // true when the most recent attempt failed — results shown (if any) are from an earlier run
+    rawDataCache: null, // { lookbackDays, startTime, endTime, bybitCandles, oiRows, binanceCandles }
     chart: { scale: 0.3, offsetX: 0, dragging: false },
   };
 
@@ -438,29 +616,62 @@
     if (el) el.innerHTML = html;
   }
 
-  async function runAnalysis() {
+  async function runAnalysis(opts) {
+    opts = opts || {};
+    const forceRefresh = opts.forceRefresh === true;
     readSettingsFromForm();
     const s = state.settings;
     const runBtn = document.getElementById('oix-run-btn');
+    const refreshBtn = document.getElementById('oix-refresh-btn');
     if (runBtn) runBtn.disabled = true;
+    if (refreshBtn) refreshBtn.disabled = true;
 
     try {
       const endTime = latestCompletedCandleStart(Date.now());
       const startTime = endTime - s.lookbackDays * 24 * 3600 * 1000;
 
-      setStatus('Fetching Bybit OI + candles, and Binance candles for chart…');
-      const progress = (source, page, rows) => {
-        setStatus(`Fetching… ${source} page ${page} (${rows} rows)`);
+      const progress = (evt) => {
+        if (evt.type === 'rate_limited') {
+          setStatus(
+            `<span style="color:var(--amber);">Rate limited</span> on ${escapeHtml(evt.source)} ` +
+            `(page ${evt.page}) — retrying in ${Math.round(evt.waitMs / 1000)}s ` +
+            `(attempt ${evt.attempt}/${evt.maxRetries})…`
+          );
+        } else {
+          setStatus(`Fetching… ${escapeHtml(evt.source)} page ${evt.page} (${evt.rowsSoFar.toLocaleString()} rows collected)`);
+        }
       };
 
-      const [oiRows, bybitCandles, binanceCandles] = await Promise.all([
-        fetchBybitOI(startTime, endTime, progress),
-        fetchBybitCandles(startTime, endTime, progress),
-        fetchBinanceCandles(startTime, endTime, progress),
-      ]);
+      let oiRows, bybitCandles, binanceCandles;
+      const cached = forceRefresh ? null : getCachedRawData(state.rawDataCache, s.lookbackDays);
 
-      if (oiRows.length === 0 || bybitCandles.length === 0) {
-        throw new Error('Zero rows returned for Bybit OI and/or candles — aborting rather than running on partial data.');
+      if (cached) {
+        const cachedWindow = `${new Date(cached.startTime).toISOString().slice(0, 16).replace('T', ' ')} → ${new Date(cached.endTime).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+        const cachedAtStr = new Date(cached.cachedAt).toISOString().slice(0, 16).replace('T', ' ');
+        setStatus(
+          `Reusing already-downloaded raw data (lookback days unchanged, cache still fresh) — rerunning analysis with current parameters, no new fetch. ` +
+          `Cached window: ${cachedWindow} &middot; fetched at ${cachedAtStr} UTC.`
+        );
+        ({ oiRows, bybitCandles, binanceCandles } = cached);
+      } else {
+        setStatus('Fetching Bybit OI + candles (sequential, one Bybit request stream at a time), and Binance candles for chart (concurrent)…');
+
+        // Binance is a separate exchange/rate-limit domain, so it's fine to
+        // run alongside the Bybit pull. The two BYBIT fetches, however, are
+        // deliberately sequential — OI fully finishes before candles start —
+        // so there is only ever one Bybit pagination stream in flight.
+        const binancePromise = fetchBinanceCandles(startTime, endTime, progress);
+        oiRows = await fetchBybitOI(startTime, endTime, { onProgress: progress });
+        bybitCandles = await fetchBybitCandles(startTime, endTime, { onProgress: progress });
+        binanceCandles = await binancePromise;
+
+        if (oiRows.length === 0 || bybitCandles.length === 0) {
+          throw new Error('Zero rows returned for Bybit OI and/or candles — aborting rather than running on partial data.');
+        }
+
+        // Only cache on a fully successful fetch — a failed/partial attempt
+        // must never poison the cache with incomplete data.
+        state.rawDataCache = { lookbackDays: s.lookbackDays, startTime, endTime, oiRows, bybitCandles, binanceCandles, cachedAt: Date.now() };
       }
 
       const zones = state.zones.map(normalizeZone).filter(z => isFinite(z.top) && isFinite(z.bottom));
@@ -483,7 +694,12 @@
         .map(a => mapAlertToContainingChartPoint(a, binanceCandles, CHART_INTERVAL_MS))
         .filter(Boolean);
 
+      // Only now — after everything above succeeded — do we touch the
+      // rendered state. Nothing partial ever reaches state.lastRun.
       state.lastRun = { result, binanceCandles, binanceIndex, chartPoints };
+      state.lastRunAt = Date.now();
+      state.lastRunFailed = false;
+      renderStaleBanner();
 
       setStatus(
         `<span style="color:var(--teal);">Done.</span> ` +
@@ -501,10 +717,33 @@
       renderDiagnostics();
       initChart();
     } catch (err) {
-      setStatus(`<span style="color:var(--red);">Error:</span> ${escapeHtml(err.message || String(err))}`);
+      // Terminal failure: mark it clearly, do NOT touch state.lastRun (so
+      // no partial/new data ever gets rendered), and if a prior successful
+      // run exists, make sure it's visibly labeled as stale rather than
+      // silently looking like it came from this failed attempt.
+      state.lastRunFailed = true;
+      renderStaleBanner();
+      setStatus(`<span style="color:var(--red);">Run failed:</span> ${escapeHtml(err.message || String(err))}`);
       console.error(err);
     } finally {
       if (runBtn) runBtn.disabled = false;
+      if (refreshBtn) refreshBtn.disabled = false;
+    }
+  }
+
+  function renderStaleBanner() {
+    const el = document.getElementById('oix-stale-banner');
+    if (!el) return;
+    if (state.lastRunFailed && state.lastRun) {
+      const when = state.lastRunAt ? new Date(state.lastRunAt).toISOString().slice(0, 16).replace('T', ' ') : 'unknown time';
+      el.style.display = 'block';
+      el.innerHTML = `<i class="ti ti-alert-triangle" style="margin-right:6px;"></i>Most recent run failed. Showing <b>previous successful run</b> from ${when} UTC — not the result of your latest parameter/fetch attempt.`;
+    } else if (state.lastRunFailed && !state.lastRun) {
+      el.style.display = 'block';
+      el.innerHTML = `<i class="ti ti-alert-triangle" style="margin-right:6px;"></i>Run failed and no prior successful run exists — no results to show.`;
+    } else {
+      el.style.display = 'none';
+      el.innerHTML = '';
     }
   }
 
@@ -852,11 +1091,16 @@
     loadZones();
     renderSettingsForm();
     renderZoneEditor();
+    renderStaleBanner();
     setStatus('Not yet run. Configure zones/parameters above, then Fetch data &amp; run analysis.');
   }
 
+  function refreshRawData() {
+    return runAnalysis({ forceRefresh: true });
+  }
+
   Object.assign(OIExhaustionRender, {
-    init, runAnalysis, addZoneRow, removeZone, updateZoneField, readSettingsFromForm,
+    init, runAnalysis, refreshRawData, addZoneRow, removeZone, updateZoneField, readSettingsFromForm,
     focusChartOnAlert,
     fetchBybitOI, fetchBybitCandles, fetchBinanceCandles, // exposed for console debugging
   });

@@ -30,9 +30,13 @@
     entryPercentile: 95,
     rearmPercentile: 80,
     alertModel: 'netProgress', // UI default per explicit request; engine/backtest default independently to 'strict' for backward compatibility
+    oiRecencyFilterEnabled: false, // disabled by default, per explicit request — not auto-tuned
+    minimumRecentOIChangePct: 0,
+    oiRecencyWindow: '1h',
   };
 
   const VALID_ALERT_MODELS = ['strict', 'netProgress'];
+  const VALID_OI_RECENCY_WINDOWS = ['30m', '1h', '2h', '4h'];
 
   // ── Pure logic (no DOM) — exported for Node tests ───────────────────────
 
@@ -46,6 +50,9 @@
     s.entryPercentile = clampNumber(s.entryPercentile, 50, 100, DEFAULT_SETTINGS.entryPercentile);
     s.rearmPercentile = clampNumber(s.rearmPercentile, 0, s.entryPercentile, DEFAULT_SETTINGS.rearmPercentile);
     s.alertModel = VALID_ALERT_MODELS.indexOf(s.alertModel) !== -1 ? s.alertModel : DEFAULT_SETTINGS.alertModel;
+    s.oiRecencyFilterEnabled = s.oiRecencyFilterEnabled === true || s.oiRecencyFilterEnabled === 'true';
+    s.minimumRecentOIChangePct = clampNumber(s.minimumRecentOIChangePct, -1000, 1000, DEFAULT_SETTINGS.minimumRecentOIChangePct);
+    s.oiRecencyWindow = VALID_OI_RECENCY_WINDOWS.indexOf(s.oiRecencyWindow) !== -1 ? s.oiRecencyWindow : DEFAULT_SETTINGS.oiRecencyWindow;
     return s;
   }
 
@@ -341,20 +348,24 @@
 
   function renderSettingsForm() {
     const s = state.settings;
-    const ids = ['lookbackDays', 'signalWindow', 'baselineLookbackCandles', 'minBaselineSamples', 'entryPercentile', 'rearmPercentile', 'alertModel'];
+    const ids = ['lookbackDays', 'signalWindow', 'baselineLookbackCandles', 'minBaselineSamples', 'entryPercentile', 'rearmPercentile', 'alertModel', 'minimumRecentOIChangePct', 'oiRecencyWindow'];
     ids.forEach(id => {
       const el = document.getElementById('oix-' + id);
       if (el) el.value = s[id];
     });
+    const filterEl = document.getElementById('oix-oiRecencyFilterEnabled');
+    if (filterEl) filterEl.checked = s.oiRecencyFilterEnabled;
   }
 
   function readSettingsFromForm() {
-    const ids = ['lookbackDays', 'signalWindow', 'baselineLookbackCandles', 'minBaselineSamples', 'entryPercentile', 'rearmPercentile', 'alertModel'];
+    const ids = ['lookbackDays', 'signalWindow', 'baselineLookbackCandles', 'minBaselineSamples', 'entryPercentile', 'rearmPercentile', 'alertModel', 'minimumRecentOIChangePct', 'oiRecencyWindow'];
     const raw = {};
     ids.forEach(id => {
       const el = document.getElementById('oix-' + id);
       if (el) raw[id] = el.value;
     });
+    const filterEl = document.getElementById('oix-oiRecencyFilterEnabled');
+    raw.oiRecencyFilterEnabled = filterEl ? filterEl.checked : false;
     state.settings = validateSettings(raw);
     saveSettings();
     renderSettingsForm(); // reflect clamped values back
@@ -462,6 +473,9 @@
         minBaselineSamples: s.minBaselineSamples,
         baselineLookbackCandles: s.baselineLookbackCandles,
         alertModel: s.alertModel,
+        oiRecencyFilterEnabled: s.oiRecencyFilterEnabled,
+        minimumRecentOIChangePct: s.minimumRecentOIChangePct,
+        oiRecencyWindow: s.oiRecencyWindow,
       });
 
       const binanceIndex = buildBinanceCandleIndex(binanceCandles);
@@ -577,7 +591,7 @@
       <table class="oix-table">
         <thead><tr>
           <th>Time</th><th>Zone</th><th>Model</th><th>Price</th>
-          <th>Percentile</th><th>Z</th><th>OI 12h</th><th>Travel 12h</th>
+          <th>Percentile</th><th>Z</th><th>OI 12h</th><th>OI 1h</th><th>OI slope 1h</th><th>Travel 12h</th>
           ${horizonCols.map(h => `<th>${h.label}</th>`).join('')}
         </tr></thead>
         <tbody>${rows.map((a) => `
@@ -589,6 +603,8 @@
             <td>${a.percentile != null ? a.percentile.toFixed(1) : '—'}</td>
             <td>${a.zScore != null ? a.zScore.toFixed(2) : '—'}</td>
             <td>${a.oiChange12hPct != null ? a.oiChange12hPct.toFixed(1) + '%' : '—'}</td>
+            <td>${a.oiChange1hPct != null ? a.oiChange1hPct.toFixed(2) + '%' : '—'}</td>
+            <td style="color:${a.oiSlopeRecent != null ? (a.oiSlopeRecent >= 0 ? 'var(--green)' : 'var(--red)') : 'inherit'};">${a.oiSlopeRecent != null ? a.oiSlopeRecent.toFixed(2) : '—'}</td>
             <td>${a.priceTravel12hAbsPct != null ? a.priceTravel12hAbsPct.toFixed(1) + '%' : '—'}</td>
             ${horizonCols.map(h => `<td>${horizonCell(a, h.key)}</td>`).join('')}
           </tr>`).join('')}
@@ -691,9 +707,17 @@
       <span style="color:var(--text-faint);">Percentile</span><span>${a.percentile != null ? a.percentile.toFixed(1) : '—'}</span>
       <span style="color:var(--text-faint);">Z-score</span><span>${a.zScore != null ? a.zScore.toFixed(2) : '—'}</span>
       <span style="color:var(--text-faint);">OI Δ12h</span><span>${a.oiChange12hPct != null ? a.oiChange12hPct.toFixed(1) + '%' : '—'}</span>
+      <span style="color:var(--text-faint);">OI Δ1h</span><span>${a.oiChange1hPct != null ? a.oiChange1hPct.toFixed(2) + '%' : '—'}</span>
+      <span style="color:var(--text-faint);">OI Δ2h</span><span>${a.oiChange2hPct != null ? a.oiChange2hPct.toFixed(2) + '%' : '—'}</span>
+      <span style="color:var(--text-faint);">OI Δ4h</span><span>${a.oiChange4hPct != null ? a.oiChange4hPct.toFixed(2) + '%' : '—'}</span>
+      <span style="color:var(--text-faint);">OI Δ last 3 candles</span><span>${a.oiChangeLast3CandlesPct != null ? a.oiChangeLast3CandlesPct.toFixed(2) + '%' : '—'}</span>
+      <span style="color:var(--text-faint);">OI slope (1h)</span><span style="color:${a.oiSlopeRecent != null ? (a.oiSlopeRecent >= 0 ? 'var(--green)' : 'var(--red)') : 'inherit'};">${a.oiSlopeRecent != null ? a.oiSlopeRecent.toFixed(2) : '—'}</span>
+      <span style="color:var(--text-faint);">Price Δ1h</span><span>${a.priceChange1hPct != null ? a.priceChange1hPct.toFixed(2) + '%' : '—'}</span>
+      <span style="color:var(--text-faint);">Price Δ4h</span><span>${a.priceChange4hPct != null ? a.priceChange4hPct.toFixed(2) + '%' : '—'}</span>
       <span style="color:var(--text-faint);">Travel 12h</span><span>${a.priceTravel12hAbsPct != null ? a.priceTravel12hAbsPct.toFixed(1) + '%' : '—'}</span>
       <span style="color:var(--text-faint);">Context</span><span>${a.contextDirection}</span>
       <span style="color:var(--text-faint);">Zone</span><span>${escapeHtml(a.zoneBounds.label || a.zoneId)}</span>
+      ${a.oiRecencyFilter ? `<span style="color:var(--text-faint);">Recency filter</span><span>${escapeHtml(a.oiRecencyFilter.window)} window, min ${a.oiRecencyFilter.minimumRecentOIChangePct}%</span>` : ''}
     </div>`;
     tooltip.innerHTML = html;
     tooltip.style.display = 'block';

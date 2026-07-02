@@ -75,6 +75,59 @@
   var DIAGNOSTIC_SMALL_EPSILON = 1e-6; // floor for priceChopRatio's denominator, avoids /~0 blowups on a truly flat 12h window
   var DIAGNOSTIC_CHOP_RATIO_THRESHOLD = 2; // "choppy" == cumulative path length at least 2x net displacement
 
+  // OI-recency filter (V2/netProgress only — see stepZoneState's
+  // additionalEntryGate and getOIRecencyValue below). Candle counts assume
+  // 5m candles: 30m=6, 1h=12, 2h=24, 4h=48. Single source of truth shared
+  // by the recency filter (backtest.js) and the settings dropdown (render.js).
+  var OI_RECENCY_WINDOWS = ['30m', '1h', '2h', '4h'];
+  var DEFAULT_OI_RECENCY_WINDOW = '1h';
+  var OI_RECENCY_WINDOW_CANDLES = { '30m': 6, '1h': 12, '2h': 24, '4h': 48 };
+  var OI_RECENCY_WINDOW_FIELD = { '30m': 'oiChange30mPct', '1h': 'oiChange1hPct', '2h': 'oiChange2hPct', '4h': 'oiChange4hPct' };
+
+  /**
+   * Signed percent change of `values[t]` vs `values[t - candleCount]`.
+   * Returns null if the lookback index is out of range or the base value
+   * is zero/non-finite (guards div-by-zero rather than fabricating a spike).
+   */
+  function computeChangeOverCandles(values, t, candleCount) {
+    var baseIdx = t - candleCount;
+    if (baseIdx < 0) return null;
+    var base = values[baseIdx];
+    if (!isFinite(base) || base === 0) return null;
+    var current = values[t];
+    if (!isFinite(current)) return null;
+    return ((current - base) / base) * 100;
+  }
+
+  /**
+   * Least-squares linear regression slope of `values` over the most recent
+   * `windowCandles` points ending at index t (points t-windowCandles+1..t),
+   * x = 0..windowCandles-1. Units are raw value-per-candle (e.g. OI per 5m
+   * step), not a percentage — only the SIGN is used by the recency filter,
+   * so normalization doesn't matter for that purpose. Returns null if the
+   * window doesn't fully fit or is degenerate.
+   */
+  function linearRegressionSlope(values, t, windowCandles) {
+    var startIdx = t - windowCandles + 1;
+    if (startIdx < 0) return null;
+    var n = windowCandles;
+    var sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+    for (var i = 0; i < n; i++) {
+      var x = i, y = values[startIdx + i];
+      if (!isFinite(y)) return null;
+      sumX += x; sumY += y; sumXY += x * y; sumXX += x * x;
+    }
+    var denom = n * sumXX - sumX * sumX;
+    if (denom === 0) return null;
+    return (n * sumXY - sumX * sumY) / denom;
+  }
+
+  /** Reads the OI-recency value corresponding to a dropdown window selection from a series entry. */
+  function getOIRecencyValue(entry, window) {
+    var field = OI_RECENCY_WINDOW_FIELD[window] || OI_RECENCY_WINDOW_FIELD[DEFAULT_OI_RECENCY_WINDOW];
+    return entry ? entry[field] : null;
+  }
+
   // ── Core math ──────────────────────────────────────────────────────────
 
   /**
@@ -162,6 +215,20 @@
         ? null
         : travelSum / Math.max(netPriceMove12hPct, DIAGNOSTIC_SMALL_EPSILON);
 
+      // ── OI-recency diagnostics, added to distinguish "OI built earlier
+      // but is no longer expanding" from "OI is still actively expanding
+      // right now." Purely additive — does not change strictPathScore or
+      // netProgressScore themselves, only feeds the optional recency
+      // eligibility filter applied downstream (backtest.js).
+      var oiChange30mPct = computeChangeOverCandles(ois, t, 6);
+      var oiChange1hPct = computeChangeOverCandles(ois, t, 12);
+      var oiChange2hPct = computeChangeOverCandles(ois, t, 24);
+      var oiChange4hPct = computeChangeOverCandles(ois, t, 48);
+      var oiChangeLast3CandlesPct = computeChangeOverCandles(ois, t, 3);
+      var oiSlopeRecent = linearRegressionSlope(ois, t, 12); // last 1h, raw OI-units-per-candle
+      var priceChange1hPct = computeChangeOverCandles(closes, t, 12);
+      var priceChange4hPct = computeChangeOverCandles(closes, t, 48);
+
       out[t] = {
         valid: true,
         score: score, // strictPathScore — unchanged, still the only score that gates alerts
@@ -172,6 +239,14 @@
         netPriceMove12hPct: netPriceMove12hPct,
         netProgressScore: netProgressScore,
         priceChopRatio: priceChopRatio,
+        oiChange30mPct: oiChange30mPct,
+        oiChange1hPct: oiChange1hPct,
+        oiChange2hPct: oiChange2hPct,
+        oiChange4hPct: oiChange4hPct,
+        oiChangeLast3CandlesPct: oiChangeLast3CandlesPct,
+        oiSlopeRecent: oiSlopeRecent,
+        priceChange1hPct: priceChange1hPct,
+        priceChange4hPct: priceChange4hPct,
       };
     }
 
@@ -310,11 +385,19 @@
    * gate, a flat/negative baseline can rank a non-positive score at a high
    * percentile purely by relative comparison, which is not the condition
    * the strategy describes.
+   *
+   * opts.additionalGatePassed (optional, default true): an extra caller-
+   * supplied eligibility condition ANDed into arming only — never affects
+   * rearm/exit. Used by the OI-recency filter (backtest.js) to require OI
+   * still actively expanding right now, not just earlier in the window.
+   * Defaulting to true means every existing caller that doesn't pass this
+   * is completely unaffected — V1 and unfiltered V2 behavior is unchanged.
    */
   function stepZoneState(prevArmed, inZone, percentile, warmingUp, score, opts) {
     opts = opts || {};
     var entryPct = opts.entryPercentile || DEFAULT_ENTRY_PERCENTILE;
     var exitPct = opts.rearmPercentile || DEFAULT_REARM_PERCENTILE;
+    var additionalGatePassed = opts.additionalGatePassed !== undefined ? opts.additionalGatePassed : true;
 
     if (!inZone) {
       return { armed: false, alertFired: false };
@@ -322,7 +405,7 @@
     if (warmingUp || percentile === null || percentile === undefined) {
       return { armed: !!prevArmed, alertFired: false };
     }
-    var qualifies = (typeof score === 'number') && score > 0 && percentile >= entryPct;
+    var qualifies = (typeof score === 'number') && score > 0 && percentile >= entryPct && additionalGatePassed;
     if (!prevArmed && qualifies) {
       return { armed: true, alertFired: true };
     }
@@ -349,6 +432,15 @@
       oiChange12hPct: fields.oiChange12hPct,
       priceTravel12hAbsPct: fields.priceTravel12hAbsPct,
       direction12h: fields.direction12h,
+      oiChange30mPct: fields.oiChange30mPct,
+      oiChange1hPct: fields.oiChange1hPct,
+      oiChange2hPct: fields.oiChange2hPct,
+      oiChange4hPct: fields.oiChange4hPct,
+      oiChangeLast3CandlesPct: fields.oiChangeLast3CandlesPct,
+      oiSlopeRecent: fields.oiSlopeRecent,
+      priceChange1hPct: fields.priceChange1hPct,
+      priceChange4hPct: fields.priceChange4hPct,
+      oiRecencyFilter: fields.oiRecencyFilter != null ? fields.oiRecencyFilter : null,
       contextDirection: fields.contextDirection,
       rangeThird: fields.rangeThird,
       baselineSampleCount: fields.baselineSampleCount,
@@ -365,6 +457,13 @@
     DEFAULT_REARM_PERCENTILE: DEFAULT_REARM_PERCENTILE,
     DIAGNOSTIC_SMALL_EPSILON: DIAGNOSTIC_SMALL_EPSILON,
     DIAGNOSTIC_CHOP_RATIO_THRESHOLD: DIAGNOSTIC_CHOP_RATIO_THRESHOLD,
+    OI_RECENCY_WINDOW_CANDLES: OI_RECENCY_WINDOW_CANDLES,
+    OI_RECENCY_WINDOWS: OI_RECENCY_WINDOWS,
+    DEFAULT_OI_RECENCY_WINDOW: DEFAULT_OI_RECENCY_WINDOW,
+    OI_RECENCY_WINDOW_FIELD: OI_RECENCY_WINDOW_FIELD,
+    getOIRecencyValue: getOIRecencyValue,
+    computeChangeOverCandles: computeChangeOverCandles,
+    linearRegressionSlope: linearRegressionSlope,
     ALERT_MODEL_STRICT: ALERT_MODEL_STRICT,
     ALERT_MODEL_NET_PROGRESS: ALERT_MODEL_NET_PROGRESS,
     DEFAULT_ALERT_MODEL: DEFAULT_ALERT_MODEL,

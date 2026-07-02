@@ -535,6 +535,142 @@ section('Alert model: unrecognized alertModel value falls back to strict rather 
   );
 })();
 
+// ── OI-recency filter: end-to-end regression (the June 30 00:40 case) ──────
+
+section('OI-RECENCY FILTER REGRESSION: alert fires under unfiltered V2, but is rejected once the recency filter is enabled');
+(function () {
+  // Same fixture pattern as the engine-level regression test: OI builds
+  // strongly for ~11h then stalls/declines in the final hour while price
+  // breaks lower — netProgressScore stays positive throughout that whole
+  // stretch (since the huge early OI build dominates the net-12h view),
+  // so unfiltered V2 should arm and fire somewhere in that window. With
+  // the recency filter enabled, the specific candles where OI has already
+  // stalled must NOT fire, even though their netProgressScore/percentile
+  // still qualify.
+  const n = 800;
+  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIVE_MIN);
+  const closes = [];
+  const ois = [];
+  let close = 100, oi = 1000;
+  for (let i = 0; i < n; i++) {
+    closes.push(close);
+    ois.push(oi);
+    // Repeat the build-then-stall pattern every 144 candles so it's visible
+    // inside the rolling window at multiple points, giving the baseline
+    // room to warm up first.
+    const phase = i % 144;
+    if (phase < 132) {
+      oi *= 1.0015;
+      close *= 1.00005;
+    } else {
+      oi *= 0.9995; // stall/decline in the "final hour" of each cycle
+      close *= 0.999; // price breaks lower in that same stretch
+    }
+  }
+  const candles = timestamps.map((ts, i) => ({ ts, close: closes[i] }));
+  const oiRows = timestamps.map((ts, i) => ({ ts, oi: ois[i] }));
+  const zones = [{ id: 'z1', label: 'wide', type: 'range', top: 1e12, bottom: 0, active: true }];
+
+  const unfiltered = runEventStudy(candles, oiRows, zones, { minBaselineSamples: 50, alertModel: 'netProgress' });
+  const filtered = runEventStudy(candles, oiRows, zones, {
+    minBaselineSamples: 50, alertModel: 'netProgress',
+    oiRecencyFilterEnabled: true, minimumRecentOIChangePct: 0, oiRecencyWindow: '1h',
+  });
+
+  assert('unfiltered V2 fires at least one alert on this build-then-stall pattern', unfiltered.alerts.length > 0);
+
+  // Every alert that DOES fire under the filter must have a genuinely
+  // non-negative recent OI slope and positive recent OI change — the
+  // filter must never let a stalled-OI candle through.
+  filtered.alerts.forEach(a => {
+    assert(`filtered alert has oiRecencyFilter metadata attached`, a.oiRecencyFilter && a.oiRecencyFilter.enabled === true);
+    assert(`filtered alert's oiSlopeRecent is non-negative (${a.oiRecencyFilter.oiSlopeRecent})`, a.oiRecencyFilter.oiSlopeRecent >= 0);
+    assert(`filtered alert's recentOIChangePct exceeds the minimum (${a.oiRecencyFilter.recentOIChangePct})`, a.oiRecencyFilter.recentOIChangePct > 0);
+  });
+
+  assert('filtering produces no MORE alerts than unfiltered (filter only restricts, never adds)', filtered.alerts.length <= unfiltered.alerts.length);
+})();
+
+section('OI-recency filter: deterministic proof of rejection — the exact candle that would otherwise fire is blocked when OI has stalled');
+(function () {
+  // Isolate the decision the filter makes, independent of hysteresis/
+  // baseline-warmup timing dynamics in a full multi-cycle run (which the
+  // test above showed can shift exactly which candle first crosses the
+  // arming threshold). Build the same "OI built earlier, stalled in the
+  // final hour, price broke lower late" shape used in the engine-level
+  // regression fixture, get its real computed fields, then drive
+  // stepZoneState directly with a baseline that ranks it at a high
+  // percentile — the same mechanics runEventStudy itself uses internally.
+  const n = 145;
+  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIVE_MIN);
+  const closes = [];
+  const ois = [];
+  let close = 100, oi = 1000;
+  for (let i = 0; i < n; i++) {
+    closes.push(close);
+    ois.push(oi);
+    if (i < 132) { oi *= 1.01; close *= 1.0002; }
+    else { oi *= 0.999; close *= 0.9975; }
+  }
+  const Engine = require('./oi-exhaustion-engine.js');
+  const series = Engine.computeExhaustionSeries(timestamps, closes, ois);
+  const entry = series[144];
+
+  assert('fixture sanity: netProgressScore positive', entry.netProgressScore > 0);
+  assert('fixture sanity: oiSlopeRecent negative (OI stalled in the final hour)', entry.oiSlopeRecent < 0);
+
+  const baseline = Engine.createBaselineLog();
+  for (let i = 0; i < 500; i++) baseline.insert(-1 - Math.random()); // low, negative baseline so entry ranks near 100th percentile
+  const percentile = baseline.percentileRank(entry.netProgressScore);
+  assert('entry ranks at a qualifying high percentile against this baseline', percentile >= 95);
+
+  // Without the recency filter: this candle WOULD arm/fire.
+  const withoutFilter = Engine.stepZoneState(false, true, percentile, false, entry.netProgressScore, { entryPercentile: 95, rearmPercentile: 80 });
+  assert('without the recency filter, this exact candle fires', withoutFilter.alertFired === true);
+
+  // With the recency filter applied (as runEventStudy would compute it):
+  const slopeOk = entry.oiSlopeRecent !== null && entry.oiSlopeRecent >= 0;
+  const recentChangeOk = entry.oiChange1hPct !== null && entry.oiChange1hPct > 0;
+  const additionalGatePassed = slopeOk && recentChangeOk;
+  assert('the computed recency gate correctly evaluates to false for this fixture', additionalGatePassed === false);
+
+  const withFilter = Engine.stepZoneState(false, true, percentile, false, entry.netProgressScore, { entryPercentile: 95, rearmPercentile: 80, additionalGatePassed });
+  assert('WITH the recency filter, the identical candle is rejected — this is the June 30 00:40 case', withFilter.alertFired === false);
+})();
+
+section('OI-recency filter: never applies to V1 (strict), even if the flags are passed');
+(function () {
+  const n = 700;
+  const { timestamps, closes, ois } = buildSyntheticSeries(n, { spikeAt: 600 });
+  const candles = timestamps.map((ts, i) => ({ ts, close: closes[i] }));
+  const oiRows = timestamps.map((ts, i) => ({ ts, oi: ois[i] }));
+  const zones = [{ id: 'z1', label: 'wide', type: 'range', top: 1e12, bottom: 0, active: true }];
+
+  const strictNoFilter = runEventStudy(candles, oiRows, zones, { minBaselineSamples: 50, alertModel: 'strict' });
+  const strictWithFilterFlags = runEventStudy(candles, oiRows, zones, {
+    minBaselineSamples: 50, alertModel: 'strict',
+    oiRecencyFilterEnabled: true, minimumRecentOIChangePct: 100, oiRecencyWindow: '4h', // deliberately extreme, would reject everything under V2
+  });
+
+  assert('V1 alerts are byte-identical whether or not recency filter flags are passed', JSON.stringify(strictNoFilter.alerts) === JSON.stringify(strictWithFilterFlags.alerts));
+  assert('meta.oiRecencyFilterEnabled reports false for strict runs regardless of the requested flag', strictWithFilterFlags.meta.oiRecencyFilterEnabled === false);
+})();
+
+section('OI-recency filter: disabled by default — omitting the option changes nothing for V2');
+(function () {
+  const n = 700;
+  const { timestamps, closes, ois } = buildSyntheticSeries(n, { spikeAt: 600 });
+  const candles = timestamps.map((ts, i) => ({ ts, close: closes[i] }));
+  const oiRows = timestamps.map((ts, i) => ({ ts, oi: ois[i] }));
+  const zones = [{ id: 'z1', label: 'wide', type: 'range', top: 1e12, bottom: 0, active: true }];
+
+  const noOptionPassed = runEventStudy(candles, oiRows, zones, { minBaselineSamples: 50, alertModel: 'netProgress' });
+  const explicitlyDisabled = runEventStudy(candles, oiRows, zones, { minBaselineSamples: 50, alertModel: 'netProgress', oiRecencyFilterEnabled: false });
+
+  assert('omitting the flag matches explicitly disabling it', JSON.stringify(noOptionPassed.alerts) === JSON.stringify(explicitlyDisabled.alerts));
+  assert('meta.oiRecencyFilterEnabled is false by default', noOptionPassed.meta.oiRecencyFilterEnabled === false);
+})();
+
 // ── summary ───────────────────────────────────────────────────────────────
 
 console.log('\n────────────────────────────────────────');

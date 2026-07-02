@@ -192,6 +192,16 @@ function runEventStudy(candles, oiRows, zones, opts) {
   // strict-score behavior, unchanged.
   const alertModel = opts.alertModel || Engine.DEFAULT_ALERT_MODEL;
 
+  // OI-recency eligibility filter — V2-only, optional, disabled by default.
+  // When enabled, an alert may only ARM if OI is still actively expanding
+  // right now (not just earlier in the 12h window) — see the June 30 00:40
+  // case that motivated this. Never applies to V1 (strict), regardless of
+  // these settings, and never affects rearm/exit — only new arming.
+  const oiRecencyFilterEnabled = opts.oiRecencyFilterEnabled === true && alertModel === Engine.ALERT_MODEL_NET_PROGRESS;
+  const minimumRecentOIChangePct = opts.minimumRecentOIChangePct !== undefined ? opts.minimumRecentOIChangePct : 0;
+  const oiRecencyWindow = Engine.OI_RECENCY_WINDOW_CANDLES[opts.oiRecencyWindow] ? opts.oiRecencyWindow : '1h';
+  const oiRecencyWindowCandles = Engine.OI_RECENCY_WINDOW_CANDLES[oiRecencyWindow];
+
   const { timestamps, closes, ois, highs, lows, hasOHLC, validFlags } = alignCandlesAndOI(candles, oiRows);
   const series = Engine.computeExhaustionSeries(timestamps, closes, ois, { validFlags });
 
@@ -242,11 +252,30 @@ function runEventStudy(candles, oiRows, zones, opts) {
         const percentile = warmingUp ? null : baseline.percentileRank(selectedScore);
         const zScore = warmingUp ? null : baseline.zScore(selectedScore);
 
+        // OI-recency gate — computed once per candle (same for every zone),
+        // not tied to any particular zone's state.
+        let additionalGatePassed = true;
+        let recentOIChangePct = null;
+        let oiRecencyFilterMeta = null;
+        if (oiRecencyFilterEnabled) {
+          recentOIChangePct = Engine.computeChangeOverCandles(ois, t, oiRecencyWindowCandles);
+          const slopeOk = entry.oiSlopeRecent !== null && entry.oiSlopeRecent >= 0;
+          const recentChangeOk = recentOIChangePct !== null && recentOIChangePct > minimumRecentOIChangePct;
+          additionalGatePassed = slopeOk && recentChangeOk;
+          oiRecencyFilterMeta = {
+            enabled: true,
+            window: oiRecencyWindow,
+            minimumRecentOIChangePct,
+            recentOIChangePct,
+            oiSlopeRecent: entry.oiSlopeRecent,
+          };
+        }
+
         for (const zone of zones) {
           const inZone = Engine.isPriceInZone(price, zone) && Engine.isZoneTemporallyActive(zone, ts);
           const prevArmed = zoneStates.get(zone.id);
           const step = Engine.stepZoneState(prevArmed, inZone, percentile, warmingUp, selectedScore, {
-            entryPercentile, rearmPercentile,
+            entryPercentile, rearmPercentile, additionalGatePassed,
           });
           zoneStates.set(zone.id, step.armed);
 
@@ -262,6 +291,15 @@ function runEventStudy(candles, oiRows, zones, opts) {
               oiChange12hPct: entry.oiChange12hPct,
               priceTravel12hAbsPct: entry.priceTravel12hAbsPct,
               direction12h: entry.direction12h,
+              oiChange30mPct: entry.oiChange30mPct,
+              oiChange1hPct: entry.oiChange1hPct,
+              oiChange2hPct: entry.oiChange2hPct,
+              oiChange4hPct: entry.oiChange4hPct,
+              oiChangeLast3CandlesPct: entry.oiChangeLast3CandlesPct,
+              oiSlopeRecent: entry.oiSlopeRecent,
+              priceChange1hPct: entry.priceChange1hPct,
+              priceChange4hPct: entry.priceChange4hPct,
+              oiRecencyFilter: oiRecencyFilterMeta,
               contextDirection, rangeThird,
               baselineSampleCount: baseline.size(),
             });
@@ -312,6 +350,9 @@ function runEventStudy(candles, oiRows, zones, opts) {
     meta: {
       totalCandles: timestamps.length,
       alertModel,
+      oiRecencyFilterEnabled,
+      minimumRecentOIChangePct,
+      oiRecencyWindow,
       validScoreCount,
       positiveScoreCount,
       positiveScorePct: validScoreCount > 0 ? (positiveScoreCount / validScoreCount) * 100 : null,
@@ -452,6 +493,9 @@ if (typeof require !== 'undefined' && typeof module !== 'undefined' && require.m
     rearmPercentile: args.rearmPercentile !== undefined ? Number(args.rearmPercentile) : undefined,
     minBaselineSamples: args.minBaselineSamples !== undefined ? Number(args.minBaselineSamples) : undefined,
     baselineLookbackCandles: args.baselineLookbackCandles !== undefined ? Number(args.baselineLookbackCandles) : undefined,
+    oiRecencyFilterEnabled: args.oiRecencyFilterEnabled === 'true',
+    minimumRecentOIChangePct: args.minimumRecentOIChangePct !== undefined ? Number(args.minimumRecentOIChangePct) : undefined,
+    oiRecencyWindow: args.oiRecencyWindow,
   });
   const outPath = args.out || path.join(__dirname, 'oi-exhaustion-backtest-report.json');
   fs.writeFileSync(outPath, JSON.stringify(result, null, 2));

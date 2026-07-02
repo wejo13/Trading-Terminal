@@ -88,6 +88,90 @@ section('computeExhaustionSeries: invalid candle inside window invalidates whole
   assert('score at 215 valid again once gap has rolled out', series[215].valid === true);
 })();
 
+// ── computeChangeOverCandles / linearRegressionSlope (pure helpers) ────────
+
+section('computeChangeOverCandles: hand-computed signed percent change');
+(function () {
+  const values = [100, 100, 100, 100, 100, 110]; // index 5 vs index 0 (5 candles back)
+  assert('5-candle-back change = +10%', approx(E.computeChangeOverCandles(values, 5, 5), 10, 1e-9));
+})();
+
+section('computeChangeOverCandles: guards out-of-range lookback and zero base');
+(function () {
+  assert('lookback before array start -> null', E.computeChangeOverCandles([1, 2, 3], 1, 5) === null);
+  assert('zero base value -> null', E.computeChangeOverCandles([0, 5], 1, 1) === null);
+})();
+
+section('linearRegressionSlope: perfectly linear series gives exact slope');
+(function () {
+  const values = [10, 20, 30, 40, 50, 60]; // slope = 10 per step
+  assert('slope over full 6-point window = 10', approx(E.linearRegressionSlope(values, 5, 6), 10, 1e-9));
+})();
+
+section('linearRegressionSlope: flat series gives slope 0; declining series gives negative slope');
+(function () {
+  const flat = [5, 5, 5, 5, 5];
+  assert('flat series slope = 0', approx(E.linearRegressionSlope(flat, 4, 5), 0, 1e-9));
+  const declining = [50, 40, 30, 20, 10];
+  assert('declining series slope < 0', E.linearRegressionSlope(declining, 4, 5) < 0);
+})();
+
+section('linearRegressionSlope: window not fully available -> null');
+(function () {
+  assert('insufficient history -> null', E.linearRegressionSlope([1, 2, 3], 2, 5) === null);
+})();
+
+// ── OI-recency diagnostic fields on computeExhaustionSeries ────────────────
+
+section('computeExhaustionSeries: OI-recency fields computed correctly (hand-checked)');
+(function () {
+  const n = 150;
+  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIVE_MIN);
+  const closes = Array.from({ length: n }, () => 100);
+  const ois = Array.from({ length: n }, (_, i) => 1000 + i * 2); // steady linear OI growth, +2/candle
+  const series = E.computeExhaustionSeries(timestamps, closes, ois);
+  const s = series[144];
+
+  assert('oiChange1hPct positive on rising OI', s.oiChange1hPct > 0);
+  assert('oiChange4hPct > oiChange1hPct in magnitude (longer window, same steady growth)', s.oiChange4hPct > s.oiChange1hPct);
+  assert('oiSlopeRecent is positive and close to the known per-candle increment (2)', approx(s.oiSlopeRecent, 2, 1e-9));
+  assert('priceChange1hPct is 0 on flat price', approx(s.priceChange1hPct, 0, 1e-9));
+})();
+
+// ── REGRESSION FIXTURE: OI built earlier, stalled/declining in the final
+// hour, price breaks lower late — netProgressScore stays positive, but the
+// OI-recency filter must reject it (this is exactly the June 30 00:40 case).
+
+section('OI-RECENCY REGRESSION FIXTURE: netProgressScore positive, but recent OI has stalled/declined and price just broke lower');
+(function () {
+  const n = 145;
+  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIVE_MIN);
+  const closes = [];
+  const ois = [];
+  let close = 100, oi = 1000;
+  for (let i = 0; i < n; i++) {
+    closes.push(close);
+    ois.push(oi);
+    if (i < 132) {
+      // first ~11h: OI builds strongly, price drifts gently
+      oi *= 1.01;
+      close *= 1.0002;
+    } else {
+      // final 1h (last 12 candles): OI stalls/declines, price breaks lower
+      oi *= 0.999;
+      close *= 0.9975; // ~-3% per candle compounding over the final hour
+    }
+  }
+  const series = E.computeExhaustionSeries(timestamps, closes, ois);
+  const s = series[144];
+
+  assert('netProgressScore is positive (large earlier OI build still dominates net-12h view)', s.netProgressScore > 0);
+  assert('oiSlopeRecent (last 1h) is negative — OI is no longer expanding right now', s.oiSlopeRecent < 0);
+  assert('oiChange1hPct is negative — OI declined over the last hour specifically', s.oiChange1hPct < 0);
+  assert('priceChange1hPct is negative — price broke lower in that same final hour', s.priceChange1hPct < 0);
+  assert('oiChange12hPct (whole window) is still strongly positive, unlike the last-hour view', s.oiChange12hPct > 0);
+})();
+
 section('computeExhaustionSeries: 12h diagnostics computed correctly');
 (function () {
   const n = 145;
@@ -334,6 +418,33 @@ section('isZoneTemporallyActive: zones with no temporal bounds are always active
   const zone = { active: true };
   assert('no bounds set -> always active', E.isZoneTemporallyActive(zone, T0) === true && E.isZoneTemporallyActive(zone, T0 + 999999) === true);
   assert('active:false overrides regardless of temporal bounds', E.isZoneTemporallyActive({ active: false }, T0) === false);
+})();
+
+section('stepZoneState: additionalGatePassed=false blocks arming even when score/percentile otherwise qualify');
+(function () {
+  const blocked = E.stepZoneState(false, true, 99, false, 5, { additionalGatePassed: false });
+  assert('arming blocked when additionalGatePassed is explicitly false', blocked.alertFired === false && blocked.armed === false);
+
+  const allowed = E.stepZoneState(false, true, 99, false, 5, { additionalGatePassed: true });
+  assert('arming proceeds when additionalGatePassed is explicitly true', allowed.alertFired === true);
+})();
+
+section('stepZoneState: additionalGatePassed defaults to true when omitted — no behavior change for existing callers');
+(function () {
+  const noOptsAtAll = E.stepZoneState(false, true, 99, false, 5);
+  assert('omitting opts entirely still fires (default true)', noOptsAtAll.alertFired === true);
+
+  const optsWithoutFlag = E.stepZoneState(false, true, 99, false, 5, { entryPercentile: 95, rearmPercentile: 80 });
+  assert('opts present but flag omitted still fires (default true)', optsWithoutFlag.alertFired === true);
+})();
+
+section('stepZoneState: additionalGatePassed does not affect rearm/exit logic, only arming');
+(function () {
+  // Already armed, percentile drops below rearm threshold — should still
+  // rearm normally regardless of additionalGatePassed, since that gate
+  // only restricts NEW arming, not exit.
+  const rearmed = E.stepZoneState(true, true, 70, false, 5, { rearmPercentile: 80, additionalGatePassed: false });
+  assert('rearm still happens even with additionalGatePassed false', rearmed.armed === false);
 })();
 
 // ── summary ───────────────────────────────────────────────────────────────

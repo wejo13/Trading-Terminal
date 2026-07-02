@@ -469,6 +469,81 @@ asyncTests.push((async function () {
   assert('rows variable was never assigned — no partial data escapes to a caller that might build a report from it', rows === undefined);
 })());
 
+// ── Safe formatting (defense against undefined/missing values in status/UI) ──
+
+section('safeNumber: valid finite numbers format normally');
+(function () {
+  assert('plain integer', R.safeNumber(1234) === (1234).toLocaleString());
+  assert('with options (maximumFractionDigits)', R.safeNumber(1234.5, { maximumFractionDigits: 0 }) === (1234.5).toLocaleString(undefined, { maximumFractionDigits: 0 }));
+})();
+
+section('safeNumber: undefined/null/NaN/non-number all return "unknown" instead of throwing');
+(function () {
+  assert('undefined -> unknown', R.safeNumber(undefined) === 'unknown');
+  assert('null -> unknown', R.safeNumber(null) === 'unknown');
+  assert('NaN -> unknown', R.safeNumber(NaN) === 'unknown');
+  assert('Infinity -> unknown', R.safeNumber(Infinity) === 'unknown');
+  assert('a string -> unknown (never calls toLocaleString on a non-number)', R.safeNumber('binance-candles') === 'unknown');
+  assert('an object -> unknown', R.safeNumber({}) === 'unknown');
+})();
+
+section('safeUtcDateString: valid epoch-ms timestamp formats correctly');
+(function () {
+  const ts = Date.UTC(2026, 5, 30, 0, 40); // 2026-06-30 00:40 UTC
+  assert('formats as YYYY-MM-DD HH:MM UTC', R.safeUtcDateString(ts) === '2026-06-30 00:40 UTC');
+})();
+
+section('safeUtcDateString: missing/invalid input returns "unknown", never throws or renders "Invalid Date"');
+(function () {
+  assert('undefined -> unknown', R.safeUtcDateString(undefined) === 'unknown');
+  assert('null -> unknown', R.safeUtcDateString(null) === 'unknown');
+  assert('NaN -> unknown', R.safeUtcDateString(NaN) === 'unknown');
+  assert('a string -> unknown', R.safeUtcDateString('2026-06-30') === 'unknown');
+})();
+
+section('REGRESSION: a wrong-shaped progress event (old positional-args style) does not crash — this was the actual June/July bug');
+(function () {
+  // This mirrors exactly what happened: fetchBinanceCandles used to call
+  // onProgress('binance-candles', pageIndex, rows) — a bare string, not the
+  // {type, source, page, rowsSoFar} object every other caller sends. The
+  // status formatter did `evt.rowsSoFar.toLocaleString()` and blew up on
+  // undefined the instant Binance's concurrent fetch reported progress
+  // before Bybit even started. Simulates that exact malformed event shape
+  // reaching the safe formatter and confirms it degrades gracefully.
+  const malformedEvent = 'binance-candles'; // what the old buggy call effectively passed as "evt"
+  let threw = false;
+  let formatted = null;
+  try {
+    // this is the same expression pattern used in the status formatter
+    formatted = `rows collected: ${R.safeNumber(malformedEvent.rowsSoFar)}`;
+  } catch (e) {
+    threw = true;
+  }
+  assert('does not throw on a malformed/string event', threw === false);
+  assert('renders "unknown" rather than a number', formatted === 'rows collected: unknown');
+})();
+
+// ── REGRESSION: empty initial state / failed first run with no cache ────
+
+section('REGRESSION: initial empty state — no cache, no prior run — cache lookup is a clean miss and touches no formatting');
+(function () {
+  // Mirrors app startup / a first run that fails before any successful
+  // fetch ever completed: state.rawDataCache is null, so getCachedRawData
+  // must return null cleanly (no cache-window/timestamp formatting is ever
+  // attempted, since that code path is gated behind a truthy cache).
+  const emptyCache = null;
+  const result = R.getCachedRawData(emptyCache, 90, Date.now(), R.RAW_DATA_CACHE_TTL_MS);
+  assert('null cache -> clean miss, not a throw', result === null);
+
+  // Even if some future caller mistakenly tried to format an empty cache's
+  // fields directly, the safe formatters must degrade rather than crash —
+  // this is the actual guarantee requirement #4 depends on.
+  const fakeEmptyCacheFields = { startTime: undefined, endTime: undefined, cachedAt: undefined };
+  assert('startTime on an empty cache formats as unknown, not a throw', R.safeUtcDateString(fakeEmptyCacheFields.startTime) === 'unknown');
+  assert('endTime on an empty cache formats as unknown, not a throw', R.safeUtcDateString(fakeEmptyCacheFields.endTime) === 'unknown');
+  assert('cachedAt on an empty cache formats as unknown, not a throw', R.safeUtcDateString(fakeEmptyCacheFields.cachedAt) === 'unknown');
+})();
+
 // ── summary ───────────────────────────────────────────────────────────────
 
 (async () => {

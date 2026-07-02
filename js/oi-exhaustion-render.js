@@ -159,6 +159,31 @@
    * to the real clock and the 15-minute default above. A cache with no
    * `cachedAt` is treated as stale (never hits) rather than assumed fresh.
    */
+  /**
+   * Safe wrapper around Number.prototype.toLocaleString — any non-finite
+   * or non-numeric input (undefined, null, NaN, a wrong-shaped progress
+   * event, a missing cache field) returns the literal string 'unknown'
+   * instead of throwing. `opts` is passed through to toLocaleString for
+   * numeric formatting (e.g. { maximumFractionDigits: 0 }).
+   */
+  function safeNumber(value, opts) {
+    if (typeof value !== 'number' || !isFinite(value)) return 'unknown';
+    return value.toLocaleString(undefined, opts);
+  }
+
+  /**
+   * Safe UTC-date formatter for optional timestamp fields (cachedAt,
+   * window start/end, etc). Returns 'unknown' for anything that isn't a
+   * finite epoch-ms number or produces an invalid Date, rather than
+   * throwing or silently rendering "Invalid Date".
+   */
+  function safeUtcDateString(ts) {
+    if (typeof ts !== 'number' || !isFinite(ts)) return 'unknown';
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return 'unknown';
+    return d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+  }
+
   function getCachedRawData(cache, lookbackDays, nowMs, ttlMs) {
     if (!cache || cache.lookbackDays !== lookbackDays) return null;
     if (typeof cache.cachedAt !== 'number') return null;
@@ -450,6 +475,8 @@
     fetchWithRateLimitRetry,
     RAW_DATA_CACHE_TTL_MS,
     getCachedRawData,
+    safeNumber,
+    safeUtcDateString,
     fetchBybitOI,
     fetchBybitCandles,
     parseBybitKlineRow,
@@ -485,7 +512,7 @@
       for (const c of list) {
         allCandles.push({ ts: c[0], open: parseFloat(c[1]), high: parseFloat(c[2]), low: parseFloat(c[3]), close: parseFloat(c[4]) });
       }
-      if (onProgress) onProgress('binance-candles', pageIndex, list.length);
+      if (onProgress) onProgress({ type: 'page', source: 'binance-candles', page: pageIndex, rowsThisPage: list.length, rowsSoFar: allCandles.length });
       pageIndex++;
       const lastTs = list[list.length - 1][0];
       if (lastTs <= ts) break;
@@ -638,7 +665,7 @@
             `(attempt ${evt.attempt}/${evt.maxRetries})…`
           );
         } else {
-          setStatus(`Fetching… ${escapeHtml(evt.source)} page ${evt.page} (${evt.rowsSoFar.toLocaleString()} rows collected)`);
+          setStatus(`Fetching… ${escapeHtml(evt.source)} page ${evt.page} (${safeNumber(evt.rowsSoFar)} rows collected)`);
         }
       };
 
@@ -646,11 +673,11 @@
       const cached = forceRefresh ? null : getCachedRawData(state.rawDataCache, s.lookbackDays);
 
       if (cached) {
-        const cachedWindow = `${new Date(cached.startTime).toISOString().slice(0, 16).replace('T', ' ')} → ${new Date(cached.endTime).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
-        const cachedAtStr = new Date(cached.cachedAt).toISOString().slice(0, 16).replace('T', ' ');
+        const cachedWindow = `${safeUtcDateString(cached.startTime)} → ${safeUtcDateString(cached.endTime)}`;
+        const cachedAtStr = safeUtcDateString(cached.cachedAt);
         setStatus(
           `Reusing already-downloaded raw data (lookback days unchanged, cache still fresh) — rerunning analysis with current parameters, no new fetch. ` +
-          `Cached window: ${cachedWindow} &middot; fetched at ${cachedAtStr} UTC.`
+          `Cached window: ${cachedWindow} &middot; fetched at ${cachedAtStr}.`
         );
         ({ oiRows, bybitCandles, binanceCandles } = cached);
       } else {
@@ -760,7 +787,7 @@
       if (!dist.count) return `<tr><td>${escapeHtml(label)}</td><td colspan="6" style="color:var(--text-faint);">No valid samples</td></tr>`;
       return `<tr>
         <td>${escapeHtml(label)}</td>
-        <td>${dist.count.toLocaleString()}</td>
+        <td>${safeNumber(dist.count)}</td>
         <td>${dist.positiveRatePct.toFixed(1)}%</td>
         <td>${dist.p50.toFixed(4)}</td>
         <td>${dist.p90.toFixed(4)}</td>
@@ -781,7 +808,7 @@
         </tbody>
       </table>
       <div style="font-size:11px;color:var(--text-dim);">
-        <b style="color:var(--text);">Choppy-but-flat count:</b> ${d.choppyButFlatCount.toLocaleString()} candles
+        <b style="color:var(--text);">Choppy-but-flat count:</b> ${safeNumber(d.choppyButFlatCount)} candles
         <span style="color:var(--text-faint);"> — ${escapeHtml(d.choppyButFlatDefinition)}</span>
       </div>`;
   }
@@ -838,7 +865,7 @@
             <td>${new Date(a.timestamp).toISOString().slice(0, 16).replace('T', ' ')}</td>
             <td>${escapeHtml(a.zoneBounds.label || a.zoneId)}</td>
             <td><span class="oix-model-badge">${a.alertModel === 'netProgress' ? 'V2' : 'V1'}</span></td>
-            <td>$${a.price.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+            <td>$${safeNumber(a.price, { maximumFractionDigits: 0 })}</td>
             <td>${a.percentile != null ? a.percentile.toFixed(1) : '—'}</td>
             <td>${a.zScore != null ? a.zScore.toFixed(2) : '—'}</td>
             <td>${a.oiChange12hPct != null ? a.oiChange12hPct.toFixed(1) + '%' : '—'}</td>
@@ -941,7 +968,7 @@
     const html = `<div style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:11px;">
       <span style="color:var(--text-faint);">Date</span><span>${new Date(a.timestamp).toISOString().slice(0, 16).replace('T', ' ')}</span>
       <span style="color:var(--text-faint);">Model</span><span>${a.alertModel === 'netProgress' ? 'Net progress score (V2)' : 'Strict path score (V1)'}</span>
-      <span style="color:var(--text-faint);">Price</span><span>$${a.price.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+      <span style="color:var(--text-faint);">Price</span><span>$${safeNumber(a.price, { maximumFractionDigits: 0 })}</span>
       <span style="color:var(--text-faint);">Score</span><span>${a.score.toFixed(6)}</span>
       <span style="color:var(--text-faint);">Percentile</span><span>${a.percentile != null ? a.percentile.toFixed(1) : '—'}</span>
       <span style="color:var(--text-faint);">Z-score</span><span>${a.zScore != null ? a.zScore.toFixed(2) : '—'}</span>
@@ -1036,7 +1063,7 @@
       ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.lineWidth = 0.5;
       ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
       ctx.fillStyle = 'rgba(155,160,166,0.5)'; ctx.font = '9px Inter,sans-serif'; ctx.textAlign = 'left';
-      ctx.fillText('$' + p.toLocaleString(undefined, { maximumFractionDigits: 0 }), W - padR + 4, y + 3);
+      ctx.fillText('$' + safeNumber(p, { maximumFractionDigits: 0 }), W - padR + 4, y + 3);
     }
 
     // Candles

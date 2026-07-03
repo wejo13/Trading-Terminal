@@ -2536,56 +2536,80 @@
           OI source: CryptoHFT major-venue aggregate &middot; 15m
         </div>
 
-        <!-- Strategy explanation -->
-        <div style="background:var(--card);border-radius:var(--radius-card);padding:14px 16px;margin-bottom:16px;border:0.5px solid var(--line-old);">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-            <i class="ti ti-info-circle" style="color:var(--teal);font-size:15px;"></i>
-            <span style="font-size:12px;font-weight:600;color:var(--text);">How this signal works</span>
+        <!-- How this signal works (collapsible — collapsed by default) -->
+        <div class="grid-docs" id="oix-explainer-accordion" style="margin-top:0;margin-bottom:16px;">
+          <div class="grid-docs-trigger" id="oix-explainer-trigger" role="button" tabindex="0"
+               aria-expanded="false" aria-controls="oix-explainer-body"
+               onclick="var acc=document.getElementById('oix-explainer-accordion');var isOpen=acc.classList.toggle('open');this.setAttribute('aria-expanded', isOpen ? 'true' : 'false');"
+               onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">
+            <div class="grid-docs-trigger-left">
+              <i class="ti ti-info-circle"></i>
+              <div>
+                <div class="grid-docs-title">How this signal works</div>
+                <div style="font-size:11px;font-weight:400;color:var(--text-faint);margin-top:2px;">Understand what the OI alert is measuring and how to use it.</div>
+              </div>
+            </div>
+            <i class="ti ti-chevron-down grid-docs-chevron"></i>
           </div>
-          <div style="font-size:12px;color:var(--text-dim);line-height:1.7;">
-            The signal only evaluates while price is inside an active HTF range or level zone — outside a zone it produces no score and no alert.<br>
-            For every completed 15-minute candle it compares how much open interest expanded against how far price actually moved:
-            <div style="margin:8px 0;padding:8px 12px;background:var(--bg2);border-radius:6px;font-family:var(--font);font-size:11px;color:var(--text);">
-              priceMovePct = abs((close − prevClose) / prevClose) × 100<br>
-              oiChangePct = (oi − prevOI) / prevOI × 100<br>
-              exhaustionReading = oiChangePct − priceMovePct<br>
-              score = mean(exhaustionReading) over the trailing 48 candles (12h at 15m)
+          <div class="grid-docs-body" id="oix-explainer-body">
+
+            <h3>What this tool is looking for</h3>
+            <p>Open interest tells us how much leveraged positioning is entering the market.</p>
+            <p>Normally, when a lot of new leverage enters, price should make meaningful progress in one direction. When open interest keeps growing but price barely moves, chops around, or starts losing momentum, it can mean the market is becoming crowded.</p>
+            <p>That does not automatically mean price will reverse. It means there may now be enough trapped or over-positioned traders for a sharp reaction, liquidation move, squeeze, continuation breakout, or failed breakout to become more likely.</p>
+            <p>This tool highlights those moments.</p>
+
+            <h3>Why it only works inside your own higher-timeframe zones</h3>
+            <p>The tool does not scan the entire chart and tell you where to trade. It only evaluates signals while price is inside a zone you define, such as:</p>
+            <ul>
+              <li>A higher-timeframe range high or low</li>
+              <li>A liquidity pool</li>
+              <li>A weekly or daily support/resistance level</li>
+              <li>An order block</li>
+              <li>A fair value gap</li>
+              <li>A major swing high or low</li>
+            </ul>
+            <p>The OI signal tells you that leverage may be building at that area. Your market structure, liquidity, price action, and execution rules determine whether there is actually a trade.</p>
+            <p>Outside an active zone, the tool deliberately produces no signal.</p>
+
+            <h3>What an alert means</h3>
+            <p>An alert means: <strong>"Compared with recent market behaviour, open interest has expanded unusually aggressively relative to how much price has actually progressed."</strong></p>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0 14px;">
+              <div style="background:rgba(226,100,95,0.06);border:0.5px solid rgba(226,100,95,0.25);border-radius:8px;padding:10px 12px;">
+                <span class="oix-ctx-badge oix-ctx-bearish-exhaustion" style="display:inline-block;margin-bottom:6px;">Up-move OI expansion</span>
+                <p style="margin:0;font-size:11.5px;">Open interest increased while price moved higher over the signal window. This can indicate long-side crowding. Near major resistance or buy-side liquidity, it may increase the chance of a rejection or long squeeze. In a strong breakout, it may instead signal continuation.</p>
+              </div>
+              <div style="background:rgba(61,220,151,0.06);border:0.5px solid rgba(61,220,151,0.25);border-radius:8px;padding:10px 12px;">
+                <span class="oix-ctx-badge oix-ctx-bullish-exhaustion" style="display:inline-block;margin-bottom:6px;">Down-move OI expansion</span>
+                <p style="margin:0;font-size:11.5px;">Open interest increased while price moved lower over the signal window. This can indicate short-side crowding. Near major support or sell-side liquidity, it may increase the chance of a bounce or short squeeze. In a strong breakdown, it may instead signal continuation.</p>
+              </div>
             </div>
-            An alert fires when that rolling score is unusually high relative to its own trailing 30-day history (percentile-based, not a fixed threshold) <b style="color:var(--text);">and</b> the score itself is positive — a candle that merely looks "less bad" than a negative recent history never qualifies.<br>
-            <b style="color:var(--text);">This is an exhaustion / context alert, not an automatic long or short entry.</b> Two neutral contexts are labeled, not traded:
-            <div style="margin-top:6px;">
-              <span class="oix-ctx-badge oix-ctx-bearish-exhaustion" style="margin-right:8px;">up-move-oi-expansion</span>OI expanding while price rose over the trailing 12h — potential long-side crowding.
+
+            <div class="grid-docs-note">
+              <strong>This is not an automatic long or short entry.</strong> OI is neutral; context and price reaction decide the trade.
             </div>
-            <div style="margin-top:4px;">
-              <span class="oix-ctx-badge oix-ctx-bullish-exhaustion" style="margin-right:8px;">down-move-oi-expansion</span>OI expanding while price fell over the trailing 12h — potential short-side crowding.
-            </div>
-            <div style="margin-top:10px;padding:8px 12px;background:var(--bg2);border-radius:6px;font-size:11px;color:var(--text-dim);line-height:1.6;">
-              <b style="color:var(--text);">Two selectable alert models — pick one in Parameters, never blended:</b><br>
-              <b style="color:var(--teal);">Strict path score (V1)</b> compares OI growth with cumulative intraperiod price travel (path length), so it fires rarely — only when OI expansion outpaces the market's total 5m-by-5m movement, chop included.<br>
-              <b style="color:var(--teal);">Net progress score (V2)</b> compares OI growth with NET 12h price displacement instead, designed to catch OI accumulation during choppy, range-bound conditions where price travels a lot but ends up near flat — a case V1 is structurally blind to.
-            </div>
-            <div style="margin-top:10px;padding:8px 12px;background:var(--bg2);border-radius:6px;border-left:2px solid var(--amber);font-size:11px;color:var(--text-dim);line-height:1.6;">
-              <b style="color:var(--amber);">Real expectancy requires real, timestamped HTF zones</b> — a wide placeholder zone (or no zone at all) will produce few or meaningless alerts. Define your actual range/level levels below with an accurate "available from" time before treating results as informative.
-            </div>
+
           </div>
         </div>
 
         <!-- Parameters -->
         <div style="background:var(--card);border-radius:var(--radius-card);padding:16px;margin-bottom:16px;border:0.5px solid var(--line-old);">
-          <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:12px;">Parameters</div>
+          <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:4px;">Parameters</div>
+          <div style="font-size:11px;color:var(--text-faint);margin-bottom:12px;">OI is neutral; HTF structure, liquidity, price reaction, and execution rules decide the trade.</div>
           <div class="oix-param-grid">
-            <label class="oix-param">Symbol<input class="oix-input" value="BTCUSDT" disabled></label>
-            <label class="oix-param">Alert model<select class="oix-input" id="oix-alertModel">
+            <label class="oix-param"><span>Symbol<span class="oix-help" id="oix-help-symbol" tabindex="0" role="button" aria-label="Help: Symbol" onclick="OIExhaustionRender.toggleHelpTooltip('oix-help-symbol')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">?<span class="oix-help-pop">The market being analysed. BTCUSDT only — the price feed and OI aggregate (CryptoHFT major-venue aggregate) are built specifically for BTC perpetual futures.</span></span></span><input class="oix-input" value="BTCUSDT" disabled></label>
+            <label class="oix-param"><span>Alert model<span class="oix-help" id="oix-help-alertModel" tabindex="0" role="button" aria-label="Help: Alert model" onclick="OIExhaustionRender.toggleHelpTooltip('oix-help-alertModel')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">?<span class="oix-help-pop">Chooses how OI expansion is measured against price progress.<br><br><b>Net Progress (V2):</b> OI growth vs. net price displacement across the window — better at catching crowding during ranges, chop, and failed breakouts.<br><br><b>Strict Path (V1):</b> OI growth vs. all intrawindow price movement, chop included — stricter, fewer alerts.<br><br>Changing the model changes what behaviour is detected. Don't blend V1 and V2 results.</span></span></span><select class="oix-input" id="oix-alertModel">
               <option value="netProgress">Net progress score (V2)</option>
               <option value="strict">Strict path score (V1)</option>
             </select></label>
-            <label class="oix-param">Lookback days<input class="oix-input" type="number" id="oix-lookbackDays"></label>
-            <label class="oix-param">Signal window (candles)<input class="oix-input" type="number" id="oix-signalWindow"></label>
-            <label class="oix-param">Baseline lookback (candles)<input class="oix-input" type="number" id="oix-baselineLookbackCandles"></label>
-            <label class="oix-param">Min baseline samples<input class="oix-input" type="number" id="oix-minBaselineSamples"></label>
-            <label class="oix-param">Alert percentile<input class="oix-input" type="number" id="oix-entryPercentile"></label>
-            <label class="oix-param">Rearm percentile<input class="oix-input" type="number" id="oix-rearmPercentile"></label>
-            <label class="oix-param">CryptoHFTData API key<input class="oix-input" type="password" id="oix-cryptoHftApiKey" placeholder="required — never sent anywhere except CryptoHFTData"></label>
+            <label class="oix-param"><span>Lookback days<span class="oix-help" id="oix-help-lookbackDays" tabindex="0" role="button" aria-label="Help: Lookback days" onclick="OIExhaustionRender.toggleHelpTooltip('oix-help-lookbackDays')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">?<span class="oix-help-pop">How much historical data is loaded for analysis. More days give more review context but take longer to fetch initially. Does not change the score formula.</span></span></span><input class="oix-input" type="number" id="oix-lookbackDays"></label>
+            <label class="oix-param"><span>Signal window (candles)<span class="oix-help" id="oix-help-signalWindow" tabindex="0" role="button" aria-label="Help: Signal window" onclick="OIExhaustionRender.toggleHelpTooltip('oix-help-signalWindow')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">?<span class="oix-help-pop">How far back each score measures OI expansion and price movement. At 15-minute data: 16 candles = 4h, 48 = 12h, 96 = 24h. Shorter windows react faster but are noisier; longer windows capture slower positioning build-up but react later.</span></span></span><input class="oix-input" type="number" id="oix-signalWindow"></label>
+            <label class="oix-param"><span>Baseline lookback (candles)<span class="oix-help" id="oix-help-baselineLookback" tabindex="0" role="button" aria-label="Help: Baseline lookback" onclick="OIExhaustionRender.toggleHelpTooltip('oix-help-baselineLookback')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">?<span class="oix-help-pop">How much prior score history is used to define what counts as unusual. At 15-minute data, 2880 candles is roughly 30 days. A longer baseline is more stable but slower to adapt; a shorter baseline adapts faster but can be noisier.</span></span></span><input class="oix-input" type="number" id="oix-baselineLookbackCandles"></label>
+            <label class="oix-param"><span>Min baseline samples<span class="oix-help" id="oix-help-minBaselineSamples" tabindex="0" role="button" aria-label="Help: Min baseline samples" onclick="OIExhaustionRender.toggleHelpTooltip('oix-help-minBaselineSamples')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">?<span class="oix-help-pop">The minimum number of valid historical scores required before alerts are allowed. Prevents percentile thresholds from being calculated from too little data. Higher values are safer but delay the first valid alerts.</span></span></span><input class="oix-input" type="number" id="oix-minBaselineSamples"></label>
+            <label class="oix-param"><span>Alert percentile<span class="oix-help" id="oix-help-alertPercentile" tabindex="0" role="button" aria-label="Help: Alert percentile" onclick="OIExhaustionRender.toggleHelpTooltip('oix-help-alertPercentile')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">?<span class="oix-help-pop">How extreme the current score must be compared with its own recent history before an alert can trigger. 95 means roughly the top 5% of recent readings; 99 means only the most extreme 1%. Higher values mean fewer, more selective alerts.</span></span></span><input class="oix-input" type="number" id="oix-entryPercentile"></label>
+            <label class="oix-param"><span>Rearm percentile<span class="oix-help" id="oix-help-rearmPercentile" tabindex="0" role="button" aria-label="Help: Rearm percentile" onclick="OIExhaustionRender.toggleHelpTooltip('oix-help-rearmPercentile')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">?<span class="oix-help-pop">After an alert triggers, the score must cool below this lower threshold before another alert can trigger. This prevents repeated alerts during one continuous OI-building event. A wider gap to the alert percentile means fewer repeats.</span></span></span><input class="oix-input" type="number" id="oix-rearmPercentile"></label>
+            <label class="oix-param"><span>CryptoHFTData API key<span class="oix-help" id="oix-help-apiKey" tabindex="0" role="button" aria-label="Help: CryptoHFTData API key" onclick="OIExhaustionRender.toggleHelpTooltip('oix-help-apiKey')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">?<span class="oix-help-pop">Your API key for fetching the raw OI snapshots. Source: CryptoHFT major-venue aggregate. It does not affect the strategy logic or scoring.</span></span></span><input class="oix-input" type="password" id="oix-cryptoHftApiKey" placeholder="required — never sent anywhere except CryptoHFTData"></label>
           </div>
 
           <div style="margin-top:16px;padding-top:14px;border-top:0.5px solid var(--line-old);">
@@ -2594,18 +2618,19 @@
             </div>
             <div class="oix-param-grid">
               <label class="oix-param" style="flex-direction:row;align-items:center;gap:6px;">
-                <input type="checkbox" id="oix-oiRecencyFilterEnabled" style="width:auto;">Enable filter
+                <input type="checkbox" id="oix-oiRecencyFilterEnabled" style="width:auto;">Enable filter<span class="oix-help" id="oix-help-recencyEnable" tabindex="0" role="button" aria-label="Help: Enable OI recency filter" onclick="OIExhaustionRender.toggleHelpTooltip('oix-help-recencyEnable')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">?<span class="oix-help-pop">Optional V2 filter. Requires OI to still be expanding recently, rather than allowing an alert based only on OI growth that happened earlier in the signal window. Enabled means fewer but fresher alerts.</span></span>
               </label>
-              <label class="oix-param">Recency window<select class="oix-input" id="oix-oiRecencyWindow">
+              <label class="oix-param"><span>Recency window<span class="oix-help" id="oix-help-recencyWindow" tabindex="0" role="button" aria-label="Help: Recency window" onclick="OIExhaustionRender.toggleHelpTooltip('oix-help-recencyWindow')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">?<span class="oix-help-pop">How recent the OI expansion must be when the recency filter is enabled. At 15-minute data: 1h = 4 candles, 2h = 8 candles, 4h = 16 candles. Shorter windows demand more immediate expansion; longer windows allow slower current build-up.</span></span></span><select class="oix-input" id="oix-oiRecencyWindow">
                 <option value="30m">30m</option>
                 <option value="1h">1h</option>
                 <option value="2h">2h</option>
                 <option value="4h">4h</option>
               </select></label>
-              <label class="oix-param">Min recent OI change %<input class="oix-input" type="number" id="oix-minimumRecentOIChangePct"></label>
+              <label class="oix-param"><span>Min recent OI change %<span class="oix-help" id="oix-help-recencyMinChange" tabindex="0" role="button" aria-label="Help: Min recent OI change %" onclick="OIExhaustionRender.toggleHelpTooltip('oix-help-recencyMinChange')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">?<span class="oix-help-pop">The minimum aggregate OI increase required over the selected recency window. Higher values prioritise fast, active leverage expansion but can miss slower absorption. Lower values catch more gradual positioning but allow weaker signals.</span></span></span><input class="oix-input" type="number" id="oix-minimumRecentOIChangePct"></label>
             </div>
           </div>
         </div>
+
 
         <!-- Zones editor -->
         <div style="background:var(--card);border-radius:var(--radius-card);padding:16px;margin-bottom:16px;border:0.5px solid var(--line-old);">
@@ -2615,7 +2640,18 @@
               <i class="ti ti-plus" style="font-size:12px;"></i> Add zone
             </button>
           </div>
+          <div class="oix-zone-row oix-zone-header">
+            <div class="oix-zone-header-label">Label<span class="oix-help" id="oix-help-zoneLabel" tabindex="0" role="button" aria-label="Help: Zone label" onclick="OIExhaustionRender.toggleHelpTooltip('oix-help-zoneLabel')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">?<span class="oix-help-pop">A name for the area, such as Weekly Range High, 4H Order Block, Equal Highs Liquidity, or Daily Support. Labels are for organisation and journaling; they do not affect the score.</span></span></div>
+            <div class="oix-zone-header-label">Type<span class="oix-help" id="oix-help-zoneType" tabindex="0" role="button" aria-label="Help: Zone type" onclick="OIExhaustionRender.toggleHelpTooltip('oix-help-zoneType')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">?<span class="oix-help-pop">Defines how the tool interprets the area, such as a price Range (top/bottom) or a specific Level (± tolerance).</span></span></div>
+            <div class="oix-zone-header-label">Level / Top<span class="oix-help" id="oix-help-zoneLevelTop" tabindex="0" role="button" aria-label="Help: Level or top price" onclick="OIExhaustionRender.toggleHelpTooltip('oix-help-zoneLevelTop')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">?<span class="oix-help-pop">The boundaries of the area where signals are allowed — the top of a Range, or the exact price of a Level. The tool only evaluates alerts while price is inside an enabled zone.</span></span></div>
+            <div class="oix-zone-header-label">Tolerance / Bottom<span class="oix-help" id="oix-help-zoneToleranceBottom" tabindex="0" role="button" aria-label="Help: Tolerance or bottom price" onclick="OIExhaustionRender.toggleHelpTooltip('oix-help-zoneToleranceBottom')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">?<span class="oix-help-pop">The bottom of a Range, or the ± tolerance around a Level price. Wide zones create more observations but less precision; narrow, well-defined HTF zones produce fewer and more meaningful observations.</span></span></div>
+            <div class="oix-zone-header-label">Available from<span class="oix-help" id="oix-help-zoneAvailableFrom" tabindex="0" role="button" aria-label="Help: Available from" onclick="OIExhaustionRender.toggleHelpTooltip('oix-help-zoneAvailableFrom')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">?<span class="oix-help-pop">The earliest time this zone was genuinely knowable. This prevents hindsight bias in backtesting — e.g. a swing high should not be active before it was confirmed.</span></span></div>
+            <div class="oix-zone-header-label">Available until<span class="oix-help" id="oix-help-zoneAvailableUntil" tabindex="0" role="button" aria-label="Help: Available until" onclick="OIExhaustionRender.toggleHelpTooltip('oix-help-zoneAvailableUntil')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">?<span class="oix-help-pop">Optional expiry time for the zone. Use this when a level becomes invalid after a break, mitigation, or a known market event.</span></span></div>
+            <div class="oix-zone-header-label">Enabled<span class="oix-help" id="oix-help-zoneEnabled" tabindex="0" role="button" aria-label="Help: Enabled" onclick="OIExhaustionRender.toggleHelpTooltip('oix-help-zoneEnabled')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">?<span class="oix-help-pop">Turns the zone on or off without deleting it. Useful for comparing zones or keeping old levels saved without including them in current analysis.</span></span></div>
+            <div></div>
+          </div>
           <div id="oix-zones-body"></div>
+          <div style="margin-top:8px;font-size:11px;color:var(--text-faint);">Best use: define narrow, real higher-timeframe areas. Wide placeholder zones create more alerts but weaker insight.</div>
         </div>
 
         <!-- Run -->
@@ -3197,6 +3233,33 @@
   .oix-ctx-neutral{color:var(--text-dim);background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);}
   .oix-model-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;
     color:var(--teal);background:rgba(40,215,200,0.1);border:1px solid rgba(40,215,200,0.3);letter-spacing:0.03em;}
+  /* ---- "?" help tooltip icon — shared by Parameters & Zones field labels ---- */
+  .oix-help{
+    position:relative;display:inline-flex;align-items:center;justify-content:center;
+    width:13px;height:13px;border-radius:50%;flex-shrink:0;
+    background:rgba(255,255,255,0.08);color:var(--text-faint);
+    font-size:9px;font-weight:700;line-height:1;cursor:help;
+    margin-left:5px;vertical-align:middle;user-select:none;
+    text-transform:none;letter-spacing:normal;
+  }
+  .oix-help:hover,.oix-help:focus-visible,.oix-help.oix-help-open{
+    background:var(--teal);color:#07060c;outline:none;
+  }
+  .oix-help-pop{
+    display:none;position:absolute;z-index:60;
+    bottom:calc(100% + 7px);left:50%;transform:translateX(-50%);
+    width:230px;max-width:min(230px,72vw);
+    background:var(--card);border:0.5px solid var(--line-old);border-radius:8px;
+    padding:9px 11px;font-size:11px;font-weight:400;line-height:1.55;
+    color:var(--text-dim);text-align:left;white-space:normal;
+    text-transform:none;letter-spacing:normal;
+    box-shadow:0 8px 28px rgba(0,0,0,0.45);pointer-events:none;
+  }
+  .oix-help-pop b{color:var(--text);font-weight:600;}
+  .oix-help:hover .oix-help-pop,.oix-help:focus-visible .oix-help-pop,.oix-help.oix-help-open .oix-help-pop{display:block;}
+  .oix-zone-header{padding:0 2px 6px;}
+  .oix-zone-header-label{font-size:10px;font-weight:600;color:var(--text-faint);letter-spacing:0.02em;
+    display:flex;align-items:center;}
 </style>
 
 

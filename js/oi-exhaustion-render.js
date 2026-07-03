@@ -687,7 +687,7 @@
   let hyparquetModulePromise = null;
   function loadHyparquet() {
     if (!hyparquetModulePromise) {
-      hyparquetModulePromise = import('https://cdn.jsdelivr.net/npm/hyparquet/src/hyparquet.min.js');
+      hyparquetModulePromise = import('https://cdn.jsdelivr.net/npm/hyparquet@1.26.2/src/index.js');
     }
     return hyparquetModulePromise;
   }

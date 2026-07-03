@@ -22,7 +22,7 @@ section('validateSettings: fills in defaults for missing/undefined fields');
   assert('lookbackDays defaults to 90', s.lookbackDays === 90);
   assert('entryPercentile defaults to 95', s.entryPercentile === 95);
   assert('rearmPercentile defaults to 80', s.rearmPercentile === 80);
-  assert('baselineLookbackCandles defaults to 8640', s.baselineLookbackCandles === 8640);
+  assert('baselineLookbackCandles defaults to 2880 (30d at 15m, was 8640 at 5m)', s.baselineLookbackCandles === 2880);
 })();
 
 section('validateSettings: clamps out-of-range values instead of accepting garbage');
@@ -62,6 +62,125 @@ section('validateSettings: alertModel defaults to netProgress (UI default), acce
   const s3 = R.validateSettings({ alertModel: 'garbage-value' });
   assert('unrecognized alertModel falls back to the default rather than passing through garbage', s3.alertModel === 'netProgress');
 })();
+
+section('validateSettings: cryptoHftApiKey passthrough — trimmed string, defaults to empty');
+(function () {
+  const s1 = R.validateSettings({});
+  assert('default cryptoHftApiKey is empty string', s1.cryptoHftApiKey === '');
+  const s2 = R.validateSettings({ cryptoHftApiKey: '  abc123  ' });
+  assert('cryptoHftApiKey is trimmed', s2.cryptoHftApiKey === 'abc123');
+  const s3 = R.validateSettings({ cryptoHftApiKey: 42 });
+  assert('non-string cryptoHftApiKey falls back to default', s3.cryptoHftApiKey === '');
+})();
+
+// ── fetchCryptoHFTAggregateOI (dependency-injected) ─────────────────────
+
+function mockCryptoHFTResponse({ status, rows }) {
+  return {
+    status,
+    ok: status >= 200 && status < 300,
+    arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer, // decodeZst mock ignores actual bytes
+    text: async () => '',
+    headers: { entries: () => [] },
+    __rows: rows, // stashed for the mock decoder to read back out
+  };
+}
+
+section('fetchCryptoHFTAggregateOI: requires an API key');
+asyncTests.push((async function () {
+  let threw = false;
+  try {
+    await R.fetchCryptoHFTAggregateOI(0, 1000, '', { decodeZst: () => new Uint8Array(), parseParquet: async () => [] });
+  } catch (e) {
+    threw = true;
+    assert('error mentions API key', /API key/i.test(e.message));
+  }
+  assert('throws without an API key', threw === true);
+})());
+
+section('fetchCryptoHFTAggregateOI: requires decodeZst and parseParquet to be provided');
+asyncTests.push((async function () {
+  let threw = false;
+  try {
+    await R.fetchCryptoHFTAggregateOI(0, 1000, 'fake-key', {});
+  } catch (e) {
+    threw = true;
+  }
+  assert('throws without decode functions', threw === true);
+})());
+
+section('fetchCryptoHFTAggregateOI: injects `exchange` from the requested venue into every row, aggregates via bucketAndAggregateOI');
+asyncTests.push((async function () {
+  const bucketMs = 15 * 60 * 1000;
+  const baseTs = Math.floor(Date.now() / bucketMs) * bucketMs - 6 * 60 * 60 * 1000;
+
+  const fetchFn = async (url) => {
+    // Every request "succeeds" with one row for whichever venue is in the URL.
+    return mockCryptoHFTResponse({ status: 200, rows: [{ timestamp: String(baseTs), sum_open_interest: '1', sum_open_interest_value: '100' }] });
+  };
+  const decodeZst = (bytes) => bytes; // pass-through mock
+  const parseParquet = async (bytes) => {
+    // The mock fetchFn above doesn't actually carry rows through arrayBuffer,
+    // so this test only needs to prove exchange injection + no-throw behavior
+    // via a fixed single row per call.
+    return [{ timestamp: String(baseTs), sum_open_interest: '1', sum_open_interest_value: '100' }];
+  };
+  const sleepFn = async () => {};
+
+  const result = await R.fetchCryptoHFTAggregateOI(baseTs, baseTs + bucketMs, 'fake-key', {
+    fetchFn, decodeZst, parseParquet, sleepFn, hourStepHours: 24, pageDelayMs: 0,
+  });
+
+  assert('produced at least one aggregate bucket (all 3 canonical venues reported the same bucket)', result.oiRows.length >= 1);
+  assert('oi sums to 300 (3 venues * 100 each — Bitget excluded from the canonical basket)', result.oiRows.some(r => Math.abs(r.oi - 300) < 1e-9));
+  assert('coverage reports all 3 venues seen', result.coverage.venuesSeen.length === 3);
+  assert('totalRequests > 0 and is a multiple of 3 (3 canonical venues)', result.totalRequests > 0 && result.totalRequests % 3 === 0);
+})());
+
+section('fetchCryptoHFTAggregateOI: a 404 for one venue/hour is skipped (not fatal), other venues still aggregate');
+asyncTests.push((async function () {
+  const bucketMs = 15 * 60 * 1000;
+  const baseTs = Math.floor(Date.now() / bucketMs) * bucketMs - 6 * 60 * 60 * 1000;
+
+  const fetchFn = async (url) => {
+    if (url.includes('okx_futures')) return mockCryptoHFTResponse({ status: 404 });
+    return mockCryptoHFTResponse({ status: 200 });
+  };
+  const decodeZst = (bytes) => bytes;
+  const parseParquet = async () => [{ timestamp: String(baseTs), sum_open_interest: '1', sum_open_interest_value: '50' }];
+  const sleepFn = async () => {};
+
+  const result = await R.fetchCryptoHFTAggregateOI(baseTs, baseTs + bucketMs, 'fake-key', {
+    fetchFn, decodeZst, parseParquet, sleepFn, hourStepHours: 24, pageDelayMs: 0,
+  });
+
+  assert('404 does not throw', true); // reaching this line at all proves it
+  assert('okx_futures missing -> no complete bucket (2 of 3 required venues only)', result.oiRows.length === 0);
+  assert('coverage shows only 2 venues seen', result.coverage.venuesSeen.length === 2);
+  assert('skipped404Count > 0', result.skipped404Count > 0);
+})());
+
+section('fetchCryptoHFTAggregateOI: a non-404 HTTP error is fatal, throws with the failing path in the message');
+asyncTests.push((async function () {
+  const bucketMs = 15 * 60 * 1000;
+  const baseTs = Math.floor(Date.now() / bucketMs) * bucketMs - 6 * 60 * 60 * 1000;
+
+  const fetchFn = async () => mockCryptoHFTResponse({ status: 401 });
+  const decodeZst = (bytes) => bytes;
+  const parseParquet = async () => [];
+  const sleepFn = async () => {};
+
+  let threw = false;
+  try {
+    await R.fetchCryptoHFTAggregateOI(baseTs, baseTs + bucketMs, 'bad-key', {
+      fetchFn, decodeZst, parseParquet, sleepFn, hourStepHours: 24, pageDelayMs: 0,
+    });
+  } catch (e) {
+    threw = true;
+    assert('error mentions the httpStatus', /401/.test(e.message));
+  }
+  assert('non-404 error is fatal (throws)', threw === true);
+})());
 
 // ── levelToBoundedZone ───────────────────────────────────────────────────
 

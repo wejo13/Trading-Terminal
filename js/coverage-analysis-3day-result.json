@@ -1,0 +1,48 @@
+{
+  "window": {
+    "startTime": 1782812700000,
+    "endTime": 1783071900000,
+    "lookbackDays": 3,
+    "hourStepHours": 1
+  },
+  "perVenue": [
+    {
+      "venue": "binance_futures",
+      "rawRows": 854,
+      "validValueRows": 854,
+      "firstTs": 1782812700000,
+      "lastTs": 1783068600000,
+      "bucketsSeen": 285,
+      "requestCount": 73,
+      "notFoundCount": 1,
+      "errorCount": 0
+    },
+    {
+      "venue": "bybit",
+      "rawRows": 25621,
+      "validValueRows": 25621,
+      "firstTs": 1782812705210,
+      "lastTs": 1783069193210,
+      "bucketsSeen": 285,
+      "requestCount": 73,
+      "notFoundCount": 1,
+      "errorCount": 0
+    },
+    {
+      "venue": "okx_futures",
+      "rawRows": 55857,
+      "validValueRows": 55857,
+      "firstTs": 1782812704046,
+      "lastTs": 1783069196570,
+      "bucketsSeen": 285,
+      "requestCount": 73,
+      "notFoundCount": 1,
+      "errorCount": 0
+    }
+  ],
+  "totalBucketsSeen": 285,
+  "completeBuckets": 285,
+  "incompleteBuckets": 0,
+  "longestConsecutiveRunBuckets": 285,
+  "missingReasonCounts": {}
+}

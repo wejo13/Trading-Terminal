@@ -4,15 +4,22 @@
  * to the DOM — this file itself does no scoring/state-machine math, it only
  * fetches data, calls OIExhaustionEngine/OIExhaustionBacktest, and renders.
  *
- * Data source rule (explicit, per spec):
- *  - Bybit 5m OI + Bybit 5m candles are the SIGNAL source (paired, same
- *    instrument, same timestamps — this is what actually feeds the engine).
- *  - Binance 5m BTCUSDT candles are used ONLY for the displayed chart.
- *    Alert markers are plotted at the Binance candle matching the alert's
- *    timestamp; the alert's own price/score/percentile values always come
- *    from the Bybit-based calculation, never from Binance.
- *  - Bybit API key/secret are never read here — OI and kline are both
- *    public, unauthenticated endpoints.
+ * Data source rule (REPLACED — Bybit-only OI is no longer the live source):
+ *  - OI SIGNAL SOURCE: CryptoHFT major-venue aggregate (Binance Futures +
+ *    Bybit + OKX + Bitget BTC perpetuals, sum_open_interest_value only),
+ *    bucketed to 15m UTC. See oi-exhaustion-cryptohft-source.js for the
+ *    aggregation rules (last-observation-per-bucket, all-four-venues
+ *    required, no forward-fill, no partial aggregate).
+ *  - PRICE SOURCE (both signal AND chart): Binance BTCUSDT spot candles,
+ *    now fetched at 15m to match the OI bucket interval exactly — there is
+ *    only one candle series now, used for both scoring and display.
+ *  - Bybit fetch functions (fetchBybitOI/fetchBybitCandles) remain defined
+ *    below with their existing tests intact, but are NOT called anywhere
+ *    in the live pipeline — Bybit is not the default/live source anymore.
+ *  - CryptoHFTData requires an API key (unlike the old Bybit/Binance public
+ *    endpoints) — entered in Parameters, stored in localStorage alongside
+ *    the rest of settings, never logged or sent anywhere except the
+ *    CryptoHFTData download endpoint itself.
  */
 'use strict';
 
@@ -24,8 +31,8 @@
 
   const DEFAULT_SETTINGS = {
     lookbackDays: 90,
-    signalWindow: 144,
-    baselineLookbackCandles: 8640,
+    signalWindow: 48, // 12h of 15m candles (was 144 * 5m under Bybit)
+    baselineLookbackCandles: 2880, // 30d * 96/day at 15m (was 8640 * 5m)
     minBaselineSamples: 500,
     entryPercentile: 95,
     rearmPercentile: 80,
@@ -33,6 +40,7 @@
     oiRecencyFilterEnabled: false, // disabled by default, per explicit request — not auto-tuned
     minimumRecentOIChangePct: 0,
     oiRecencyWindow: '1h',
+    cryptoHftApiKey: '', // required for the CryptoHFT aggregate OI source; never hardcoded, never logged
   };
 
   const VALID_ALERT_MODELS = ['strict', 'netProgress'];
@@ -41,6 +49,10 @@
   const Probe = (typeof module !== 'undefined' && module.exports)
     ? require('./oi-exhaustion-probe.js')
     : window.OIExhaustionProbe;
+
+  const CryptoHFTSource = (typeof module !== 'undefined' && module.exports)
+    ? require('./oi-exhaustion-cryptohft-source.js')
+    : window.OIExhaustionCryptoHFTSource;
 
   // ── Fetch reliability: rate-limit retry, backoff, and raw-data caching ──
   // (all pure / dependency-injected so they're testable in Node without a
@@ -53,7 +65,21 @@
   const MAX_PAGES = 700;
   const BYBIT_PAGE_DELAY_MS = 600; // conservative default, within the requested 500-750ms range
   const BINANCE_PAGE_DELAY_MS = 200; // separate exchange, separate rate-limit domain
-  const CHART_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4h chart candles (display only)
+  const CHART_INTERVAL_MS = 15 * 60 * 1000; // 15m — signal AND chart candles, same series now
+  const CRYPTOHFT_BUCKET_MS = 15 * 60 * 1000;
+  // Canonical 3-venue aggregate basket. bitget_futures is deliberately
+  // EXCLUDED — confirmed (via real downloaded files across 3 different
+  // dates spanning April-June 2026) that CryptoHFTData's bitget_futures
+  // feed has sum_open_interest_value = null in 100% of rows. This is a
+  // fixed exclusion, not dynamic coverage — the model never falls back to
+  // a 4th venue and never tolerates a 2-of-3 partial aggregate either.
+  const CRYPTOHFT_REQUIRED_VENUES = ['binance_futures', 'bybit', 'okx_futures'];
+  const CRYPTOHFT_SYMBOL_BY_VENUE = {
+    binance_futures: 'BTCUSDT',
+    bybit: 'BTCUSDT',
+    okx_futures: 'BTC-USDT-SWAP',
+  };
+  const CRYPTOHFT_PAGE_DELAY_MS = 300; // conservative default between CryptoHFTData requests
   const RATE_LIMIT_RETCODE = 10006;
   const DEFAULT_MAX_RATE_LIMIT_RETRIES = 6;
   const RATE_LIMIT_SAFETY_BUFFER_MS = 500;
@@ -341,6 +367,119 @@
     return allCandles;
   }
 
+  // ── Fetch: CryptoHFT major-venue aggregate OI (the live OI signal source) ──
+  // Fetches one .parquet.zst object per venue per requested hour step,
+  // decodes (outer Zstd via injected decodeZst, then Parquet via injected
+  // parseParquet — real implementations wire fzstd + hyparquet, see the
+  // browser section below), injects `exchange` from the requested path
+  // (the parquet rows themselves don't carry it), then hands everything to
+  // the already-proven bucketAndAggregateOI for the actual aggregation.
+  //
+  // `hourStepHours` defaults to 1, NOT a coarser value — CORRECTED after
+  // measuring real per-venue coverage. binance_futures files do contain a
+  // wide (~42.5h) overlapping window and tolerate sparse fetching fine, but
+  // bybit and okx_futures do NOT share that behavior: a real 14-day, 3-venue
+  // measurement at hourStepHours=8 produced only 165/1344 (12.3%) complete
+  // 3-venue 15m buckets — bybit and okx_futures were the limiting factor
+  // every time (confirmed: "bybit+okx_futures missing" was 100% of the
+  // incomplete-bucket reasons). A targeted re-test of bybit alone at
+  // hourStepHours=1 for one day reached 93/96 buckets (96.9%) — confirming
+  // this is a FETCH-DENSITY problem, not a 15m-bucket-size problem. Do not
+  // widen this back down without re-measuring bybit/okx_futures specifically.
+
+  async function fetchCryptoHFTAggregateOI(startTime, endTime, apiKey, options) {
+    options = options || {};
+    const fetchFn = options.fetchFn || (typeof fetch !== 'undefined' ? fetch : null);
+    const sleepFn = options.sleepFn || realSleep;
+    const onProgress = options.onProgress || null;
+    const pageDelayMs = options.pageDelayMs != null ? options.pageDelayMs : CRYPTOHFT_PAGE_DELAY_MS;
+    const decodeZst = options.decodeZst; // required: (Uint8Array) => Uint8Array
+    const parseParquet = options.parseParquet; // required: (Uint8Array) => Promise<Array<object>>
+    const venues = options.venues || CRYPTOHFT_REQUIRED_VENUES;
+    const bucketMs = options.bucketMs != null ? options.bucketMs : CRYPTOHFT_BUCKET_MS;
+    const hourStepHours = options.hourStepHours != null ? options.hourStepHours : 1;
+    const symbolByVenue = options.symbolByVenue || CRYPTOHFT_SYMBOL_BY_VENUE;
+
+    if (!apiKey) throw new Error('CryptoHFTData API key is required — enter it in Parameters before fetching.');
+    if (typeof decodeZst !== 'function' || typeof parseParquet !== 'function') {
+      throw new Error('fetchCryptoHFTAggregateOI requires decodeZst and parseParquet to be provided.');
+    }
+
+    const HOUR_MS = 60 * 60 * 1000;
+    const stepMs = hourStepHours * HOUR_MS;
+    const firstHour = Math.floor(startTime / HOUR_MS) * HOUR_MS;
+    const hourStamps = [];
+    for (let h = firstHour; h <= endTime; h += stepMs) hourStamps.push(h);
+    const totalRequests = venues.length * hourStamps.length;
+
+    const allRawRows = [];
+    let requestIndex = 0;
+    let skipped404Count = 0;
+
+    for (const venue of venues) {
+      const symbol = symbolByVenue[venue] || 'BTCUSDT';
+      for (const hourStart of hourStamps) {
+        requestIndex++;
+        const d = new Date(hourStart);
+        const dateStr = d.toISOString().slice(0, 10);
+        const hh = String(d.getUTCHours()).padStart(2, '0');
+        const path = `${venue}/${dateStr}/${hh}/${symbol}_open_interest.parquet.zst`;
+        const url = `https://api.cryptohftdata.com/download?file=${encodeURIComponent(path)}&api_key=${encodeURIComponent(apiKey)}`;
+
+        if (onProgress) onProgress({ type: 'page', source: 'cryptohft', venue, path, requestIndex, totalRequests, rowsSoFar: allRawRows.length });
+
+        let res;
+        try {
+          res = await fetchFn(url);
+        } catch (err) {
+          throw new Error(`CryptoHFTData network error fetching ${path}: ${err.message}`);
+        }
+
+        if (res.status === 404) {
+          skipped404Count++;
+          // No file for this venue/hour — legitimate absence, not a fatal
+          // error. bucketAndAggregateOI already handles missing coverage
+          // transparently (fewer complete buckets), no fabrication needed.
+        } else if (!res.ok) {
+          throw new Error(`CryptoHFTData fetch failed for ${path}: httpStatus=${res.status}`);
+        } else {
+          let compressedBytes;
+          try {
+            const buf = await res.arrayBuffer();
+            compressedBytes = new Uint8Array(buf);
+          } catch (err) {
+            throw new Error(`CryptoHFTData response read failed for ${path}: ${err.message}`);
+          }
+
+          let decompressedBytes;
+          try {
+            decompressedBytes = decodeZst(compressedBytes);
+          } catch (err) {
+            throw new Error(`Zstd decompression failed for ${path}: ${err.message}`);
+          }
+
+          let rows;
+          try {
+            rows = await parseParquet(decompressedBytes);
+          } catch (err) {
+            throw new Error(`Parquet parsing failed for ${path}: ${err.message}`);
+          }
+
+          for (const r of rows) {
+            allRawRows.push(Object.assign({ exchange: venue }, r));
+          }
+        }
+
+        await sleepFn(pageDelayMs);
+      }
+    }
+
+    const oiRows = CryptoHFTSource.bucketAndAggregateOI(allRawRows, bucketMs, venues);
+    const coverage = CryptoHFTSource.summarizeBucketCoverage(allRawRows, bucketMs, venues);
+
+    return { oiRows, rawRowCount: allRawRows.length, coverage, skipped404Count, totalRequests };
+  }
+
   // ── Pure logic (no DOM) — exported for Node tests ───────────────────────
 
   /** Fills in any missing fields with defaults; clamps obviously invalid values. */
@@ -356,6 +495,7 @@
     s.oiRecencyFilterEnabled = s.oiRecencyFilterEnabled === true || s.oiRecencyFilterEnabled === 'true';
     s.minimumRecentOIChangePct = clampNumber(s.minimumRecentOIChangePct, -1000, 1000, DEFAULT_SETTINGS.minimumRecentOIChangePct);
     s.oiRecencyWindow = VALID_OI_RECENCY_WINDOWS.indexOf(s.oiRecencyWindow) !== -1 ? s.oiRecencyWindow : DEFAULT_SETTINGS.oiRecencyWindow;
+    s.cryptoHftApiKey = typeof s.cryptoHftApiKey === 'string' ? s.cryptoHftApiKey.trim() : DEFAULT_SETTINGS.cryptoHftApiKey;
     return s;
   }
 
@@ -517,6 +657,10 @@
     fetchBybitOI,
     fetchBybitCandles,
     fetchBinanceCandles,
+    fetchCryptoHFTAggregateOI,
+    CRYPTOHFT_BUCKET_MS,
+    CRYPTOHFT_REQUIRED_VENUES,
+    CRYPTOHFT_SYMBOL_BY_VENUE,
     parseBybitKlineRow,
   };
 
@@ -529,13 +673,40 @@
 
   const Engine = window.OIExhaustionEngine;
   const Backtest = window.OIExhaustionBacktest;
-  // Probe, fetchBybitOI, fetchBybitCandles, fetchBinanceCandles,
-  // parseBybitKlineRow, SYMBOL, CATEGORY, PAGE_LIMIT, MAX_PAGES,
-  // BINANCE_PAGE_DELAY_MS, CHART_INTERVAL_MS are all defined above
-  // (shared/testable section) and already in scope here via closure —
-  // not redeclared.
+  // Probe, CryptoHFTSource, fetchBybitOI, fetchBybitCandles, fetchBinanceCandles,
+  // fetchCryptoHFTAggregateOI, parseBybitKlineRow, SYMBOL, CATEGORY, PAGE_LIMIT,
+  // MAX_PAGES, BINANCE_PAGE_DELAY_MS, CHART_INTERVAL_MS, CRYPTOHFT_* are all
+  // defined above (shared/testable section) and already in scope here via
+  // closure — not redeclared.
 
   function sleep(ms) { return realSleep(ms); }
+
+  // ── CryptoHFT decode wiring: fzstd (global, CDN <script>) + hyparquet
+  // (dynamically imported ESM from CDN, cached after first load) ─────────
+
+  let hyparquetModulePromise = null;
+  function loadHyparquet() {
+    if (!hyparquetModulePromise) {
+      hyparquetModulePromise = import('https://cdn.jsdelivr.net/npm/hyparquet/src/hyparquet.min.js');
+    }
+    return hyparquetModulePromise;
+  }
+
+  function decodeZstBrowser(compressedBytes) {
+    if (typeof fzstd === 'undefined') {
+      throw new Error('fzstd is not loaded — check the <script src="...fzstd..."> tag in index.html.');
+    }
+    return fzstd.decompress(compressedBytes);
+  }
+
+  async function parseParquetBrowser(decompressedBytes) {
+    const { parquetReadObjects } = await loadHyparquet();
+    const arrayBuffer = decompressedBytes.buffer.slice(
+      decompressedBytes.byteOffset,
+      decompressedBytes.byteOffset + decompressedBytes.byteLength
+    );
+    return parquetReadObjects({ file: arrayBuffer });
+  }
 
   // ── State ────────────────────────────────────────────────────────────
 
@@ -545,7 +716,7 @@
     lastRun: null, // { result, binanceCandles, binanceIndex, chartPoints }
     lastRunAt: null, // Date.now() of the last SUCCESSFUL run, for the stale-results banner
     lastRunFailed: false, // true when the most recent attempt failed — results shown (if any) are from an earlier run
-    rawDataCache: null, // { lookbackDays, startTime, endTime, bybitCandles, oiRows, binanceCandles }
+    rawDataCache: null, // { lookbackDays, startTime, endTime, oiRows, binanceCandles, coverage, cachedAt }
     chart: { scale: 0.3, offsetX: 0, dragging: false },
   };
 
@@ -568,7 +739,7 @@
 
   function renderSettingsForm() {
     const s = state.settings;
-    const ids = ['lookbackDays', 'signalWindow', 'baselineLookbackCandles', 'minBaselineSamples', 'entryPercentile', 'rearmPercentile', 'alertModel', 'minimumRecentOIChangePct', 'oiRecencyWindow'];
+    const ids = ['lookbackDays', 'signalWindow', 'baselineLookbackCandles', 'minBaselineSamples', 'entryPercentile', 'rearmPercentile', 'alertModel', 'minimumRecentOIChangePct', 'oiRecencyWindow', 'cryptoHftApiKey'];
     ids.forEach(id => {
       const el = document.getElementById('oix-' + id);
       if (el) el.value = s[id];
@@ -578,7 +749,7 @@
   }
 
   function readSettingsFromForm() {
-    const ids = ['lookbackDays', 'signalWindow', 'baselineLookbackCandles', 'minBaselineSamples', 'entryPercentile', 'rearmPercentile', 'alertModel', 'minimumRecentOIChangePct', 'oiRecencyWindow'];
+    const ids = ['lookbackDays', 'signalWindow', 'baselineLookbackCandles', 'minBaselineSamples', 'entryPercentile', 'rearmPercentile', 'alertModel', 'minimumRecentOIChangePct', 'oiRecencyWindow', 'cryptoHftApiKey'];
     const raw = {};
     ids.forEach(id => {
       const el = document.getElementById('oix-' + id);
@@ -669,6 +840,10 @@
     if (refreshBtn) refreshBtn.disabled = true;
 
     try {
+      if (!s.cryptoHftApiKey) {
+        throw new Error('CryptoHFTData API key is required — enter it in Parameters before running.');
+      }
+
       const endTime = latestCompletedCandleStart(Date.now());
       const startTime = endTime - s.lookbackDays * 24 * 3600 * 1000;
 
@@ -679,12 +854,14 @@
             `(page ${evt.page}) — retrying in ${Math.round(evt.waitMs / 1000)}s ` +
             `(attempt ${evt.attempt}/${evt.maxRetries})…`
           );
+        } else if (evt.source === 'cryptohft') {
+          setStatus(`Fetching CryptoHFT… ${escapeHtml(evt.venue)} request ${evt.requestIndex}/${evt.totalRequests} (${safeNumber(evt.rowsSoFar)} raw rows collected)`);
         } else {
           setStatus(`Fetching… ${escapeHtml(evt.source)} page ${evt.page} (${safeNumber(evt.rowsSoFar)} rows collected)`);
         }
       };
 
-      let oiRows, bybitCandles, binanceCandles;
+      let oiRows, binanceCandles, coverage;
       const cached = forceRefresh ? null : getCachedRawData(state.rawDataCache, s.lookbackDays);
 
       if (cached) {
@@ -694,33 +871,38 @@
           `Reusing already-downloaded raw data (lookback days unchanged, cache still fresh) — rerunning analysis with current parameters, no new fetch. ` +
           `Cached window: ${cachedWindow} &middot; fetched at ${cachedAtStr}.`
         );
-        ({ oiRows, bybitCandles, binanceCandles } = cached);
+        ({ oiRows, binanceCandles, coverage } = cached);
       } else {
-        setStatus('Fetching Bybit OI + candles (sequential, one Bybit request stream at a time), and Binance candles for chart (concurrent)…');
+        setStatus('Fetching CryptoHFT 3-venue aggregate OI (Binance + Bybit + OKX; Bitget excluded — null OI data) and Binance 15m price candles…');
 
-        // Binance is a separate exchange/rate-limit domain, so it's fine to
-        // run alongside the Bybit pull. The two BYBIT fetches, however, are
-        // deliberately sequential — OI fully finishes before candles start —
-        // so there is only ever one Bybit pagination stream in flight.
-        const binancePromise = fetchBinanceCandles(startTime, endTime, { onProgress: progress });
-        oiRows = await fetchBybitOI(startTime, endTime, { onProgress: progress });
-        bybitCandles = await fetchBybitCandles(startTime, endTime, { onProgress: progress });
+        const binancePromise = fetchBinanceCandles(startTime, endTime, { onProgress: progress, pageDelayMs: BINANCE_PAGE_DELAY_MS });
+        const cryptoHftResult = await fetchCryptoHFTAggregateOI(startTime, endTime, s.cryptoHftApiKey, {
+          onProgress: progress,
+          decodeZst: decodeZstBrowser,
+          parseParquet: parseParquetBrowser,
+        });
         binanceCandles = await binancePromise;
+        oiRows = cryptoHftResult.oiRows;
+        coverage = cryptoHftResult.coverage;
 
-        if (oiRows.length === 0 || bybitCandles.length === 0) {
-          throw new Error('Zero rows returned for Bybit OI and/or candles — aborting rather than running on partial data.');
+        if (oiRows.length === 0 || binanceCandles.length === 0) {
+          throw new Error(
+            `Zero usable rows returned — CryptoHFT aggregate buckets: ${oiRows.length}, Binance candles: ${binanceCandles.length}. ` +
+            `Raw rows collected: ${cryptoHftResult.rawRowCount}, complete buckets: ${coverage.completeBuckets}/${coverage.totalBucketsSeen} seen, ` +
+            `venues seen: ${coverage.venuesSeen.join(', ') || 'none'}. Aborting rather than running on partial data.`
+          );
         }
 
         // Only cache on a fully successful fetch — a failed/partial attempt
         // must never poison the cache with incomplete data.
-        state.rawDataCache = { lookbackDays: s.lookbackDays, startTime, endTime, oiRows, bybitCandles, binanceCandles, cachedAt: Date.now() };
+        state.rawDataCache = { lookbackDays: s.lookbackDays, startTime, endTime, oiRows, binanceCandles, coverage, cachedAt: Date.now() };
       }
 
       const zones = state.zones.map(normalizeZone).filter(z => isFinite(z.top) && isFinite(z.bottom));
 
-      setStatus(`Running event-study… (${bybitCandles.length} Bybit candles, ${oiRows.length} OI rows, ${zones.length} active zone definitions)`);
+      setStatus(`Running event-study… (${binanceCandles.length} Binance 15m candles, ${oiRows.length} CryptoHFT aggregate OI buckets, ${zones.length} active zone definitions)`);
 
-      const result = Backtest.runEventStudy(bybitCandles, oiRows, zones, {
+      const result = Backtest.runEventStudy(binanceCandles, oiRows, zones, {
         entryPercentile: s.entryPercentile,
         rearmPercentile: s.rearmPercentile,
         minBaselineSamples: s.minBaselineSamples,
@@ -738,7 +920,7 @@
 
       // Only now — after everything above succeeded — do we touch the
       // rendered state. Nothing partial ever reaches state.lastRun.
-      state.lastRun = { result, binanceCandles, binanceIndex, chartPoints };
+      state.lastRun = { result, binanceCandles, binanceIndex, chartPoints, coverage };
       state.lastRunAt = Date.now();
       state.lastRunFailed = false;
       renderStaleBanner();
@@ -746,7 +928,9 @@
       setStatus(
         `<span style="color:var(--teal);">Done.</span> ` +
         `Model: <b>${s.alertModel === 'netProgress' ? 'Net progress score (V2)' : 'Strict path score (V1)'}</b> &middot; ` +
-        `Coverage: ${bybitCandles.length} Bybit candles / ${oiRows.length} OI rows / ${binanceCandles.length} Binance candles &middot; ` +
+        `Coverage: ${binanceCandles.length} Binance 15m candles / ${oiRows.length} CryptoHFT aggregate OI buckets &middot; ` +
+        `Bucket completeness: ${coverage.completeBuckets} valid / ${coverage.incompleteBuckets} incomplete excluded (of ${coverage.totalBucketsSeen} seen) &middot; ` +
+        `Venues seen: ${coverage.venuesSeen.length}/3 (${coverage.venuesSeen.join(', ') || 'none'}) &middot; ` +
         `Valid scored: ${result.meta.validScoreCount} / ${result.meta.totalCandles} &middot; ` +
         `Positive scores: ${result.meta.positiveScorePct != null ? result.meta.positiveScorePct.toFixed(1) + '%' : '—'} of valid candles &middot; ` +
         `Baseline: ${result.meta.finalBaselineSize} (cap ${result.meta.baselineLookbackCandles}) &middot; ` +
@@ -812,6 +996,13 @@
     }
 
     body.innerHTML = `
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;padding-bottom:10px;border-bottom:0.5px solid var(--line-old);">
+        <b style="color:var(--text);">OI source coverage:</b>
+        venues seen ${run.coverage ? run.coverage.venuesSeen.length : 0}/3 (${run.coverage ? escapeHtml(run.coverage.venuesSeen.join(', ') || 'none') : 'n/a'}) &middot;
+        valid aggregate buckets: ${run.coverage ? safeNumber(run.coverage.completeBuckets) : 'n/a'} &middot;
+        incomplete buckets excluded: ${run.coverage ? safeNumber(run.coverage.incompleteBuckets) : 'n/a'}
+        <span style="color:var(--text-faint);"> (of ${run.coverage ? safeNumber(run.coverage.totalBucketsSeen) : 'n/a'} 15m buckets seen)</span>
+      </div>
       <div style="font-size:11px;color:var(--text-faint);margin-bottom:10px;line-height:1.6;">
         Side-by-side comparison only — <b style="color:var(--text-dim);">strictPathScore</b> is the unchanged v1 signal (still the only score that gates alerts above). <b style="color:var(--text-dim);">netProgressScore</b> compares OI expansion against NET 12h price displacement instead of cumulative path length, so it can stay positive through a choppy, range-bound stretch that strictPathScore scores negative. Not wired to any alert yet.
       </div>
@@ -1194,7 +1385,7 @@
       return;
     }
 
-    const { timestamps, closes, ois, validFlags } = Backtest.alignCandlesAndOI(cache.bybitCandles, cache.oiRows);
+    const { timestamps, closes, ois, validFlags } = Backtest.alignCandlesAndOI(cache.binanceCandles, cache.oiRows);
     const series = Engine.computeExhaustionSeries(timestamps, closes, ois, { validFlags });
 
     const WINDOWS = { '30m': 6, '1h': 12, '2h': 24 }; // candle counts
@@ -1280,7 +1471,7 @@
       return;
     }
 
-    const { timestamps, closes, ois, validFlags } = Backtest.alignCandlesAndOI(cache.bybitCandles, cache.oiRows);
+    const { timestamps, closes, ois, validFlags } = Backtest.alignCandlesAndOI(cache.binanceCandles, cache.oiRows);
     const series = Engine.computeExhaustionSeries(timestamps, closes, ois, { validFlags });
 
     const WINDOWS = { '30m': 6, '1h': 12, '2h': 24 };
@@ -1351,8 +1542,8 @@
         if (firstQualifying === null && oiPercentile >= 95 && pricePercentile >= 80) {
           firstQualifying = { ts, oiPercentile, pricePercentile, cls, t };
         }
-        if (peakOiPercentile === null || oiPercentile > peakOiPercentile.value) peakOiPercentile = { value: oiPercentile, ts };
-        if (peakPricePercentile === null || pricePercentile > peakPricePercentile.value) peakPricePercentile = { value: pricePercentile, ts };
+        if (peakOiPercentile === null || oiPercentile > peakOiPercentile.value) peakOiPercentile = { value: oiPercentile, ts, t };
+        if (peakPricePercentile === null || pricePercentile > peakPricePercentile.value) peakPricePercentile = { value: pricePercentile, ts, t };
       }
 
       resultsByWindow[label] = { rows, firstQualifying, peakOiPercentile, peakPricePercentile };
@@ -1374,26 +1565,26 @@
       if (r.rows.length === 0) { console.log('  (no valid candles in range)\n'); continue; }
       console.table(r.rows);
 
+      function accelerationNote(targetT, refLabel) {
+        const tRef = Math.max(0, targetT - 3);
+        const cNow = perCandle[targetT] ? perCandle[targetT][label] : null;
+        const cRef = perCandle[tRef] ? perCandle[tRef][label] : null;
+        if (!cNow || !cRef || cNow.oiChangePct === null || cRef.oiChangePct === null || cNow.absPriceChangePct === null || cRef.absPriceChangePct === null) {
+          return `insufficient data to assess (at ${refLabel})`;
+        }
+        const oiAccelerating = cNow.oiChangePct > cRef.oiChangePct;
+        const priceAccelerating = cNow.absPriceChangePct > cRef.absPriceChangePct;
+        return `OI ${oiAccelerating ? 'still accelerating' : 'had stalled/plateaued'}, price ${priceAccelerating ? 'still accelerating' : 'had stalled/plateaued'} (vs 15m earlier, evaluated at ${refLabel})`;
+      }
+
       if (r.firstQualifying) {
         const fq = r.firstQualifying;
         console.log(`1. First timestamp OI percentile>=95 AND price-move percentile>=80: ${new Date(fq.ts).toISOString()} ` +
           `(oiPctile=${fq.oiPercentile.toFixed(1)}, pricePctile=${fq.pricePercentile.toFixed(1)}, class=${fq.cls})`);
-
-        // Acceleration check: compare this candle's window-change values to
-        // 3 candles (15 min) earlier — still growing = accelerating, flat
-        // or reversed = stalled. This is a simple local-derivative check,
-        // not a new score.
-        const tRef = Math.max(0, fq.t - 3);
-        const cNow = perCandle[fq.t][label], cRef = perCandle[tRef] ? perCandle[tRef][label] : null;
-        let accelNote = 'insufficient data to assess';
-        if (cRef && cNow.oiChangePct !== null && cRef.oiChangePct !== null && cNow.absPriceChangePct !== null && cRef.absPriceChangePct !== null) {
-          const oiAccelerating = cNow.oiChangePct > cRef.oiChangePct;
-          const priceAccelerating = cNow.absPriceChangePct > cRef.absPriceChangePct;
-          accelNote = `OI ${oiAccelerating ? 'still accelerating' : 'had stalled/plateaued'}, price ${priceAccelerating ? 'still accelerating' : 'had stalled/plateaued'} (vs 15m earlier)`;
-        }
-        console.log(`5. ${accelNote}`);
+        console.log(`5. ${accelerationNote(fq.t, 'the joint-qualifying candle')}`);
       } else {
-        console.log('1. No candle in this window reached OI percentile>=95 AND price-move percentile>=80.');
+        console.log('1. No candle in this window reached OI percentile>=95 AND price-move percentile>=80 simultaneously.');
+        console.log(`5. ${accelerationNote(r.peakOiPercentile.t, 'the peak-OI-percentile candle, since no joint-qualifying candle existed')}`);
       }
       console.log(`2. Peak OI-change percentile: ${r.peakOiPercentile.value.toFixed(1)} at ${new Date(r.peakOiPercentile.ts).toISOString()}`);
       console.log(`3. Peak price-move percentile: ${r.peakPricePercentile.value.toFixed(1)} at ${new Date(r.peakPricePercentile.ts).toISOString()}`);
@@ -1416,7 +1607,7 @@
       return;
     }
 
-    const { timestamps, closes, ois, validFlags } = Backtest.alignCandlesAndOI(cache.bybitCandles, cache.oiRows);
+    const { timestamps, closes, ois, validFlags } = Backtest.alignCandlesAndOI(cache.binanceCandles, cache.oiRows);
 
     const rows = [];
     let prevClose = null, prevOI = null;
@@ -1441,7 +1632,7 @@
       return;
     }
 
-    console.log(`Bybit BTCUSDT linear — raw OI/price, ${rows.length} candles, ${startIso} → ${endIso}`);
+    console.log(`CryptoHFT 3-venue aggregate OI (Binance+Bybit+OKX) + Binance price, ${rows.length} 15m buckets, ${startIso} → ${endIso}`);
     console.table(rows);
 
     const firstOI = rows[0].oi, lastOI = rows[rows.length - 1].oi;
@@ -1483,7 +1674,7 @@
     console.log('');
 
     const zones = state.zones.map(normalizeZone).filter(z => isFinite(z.top) && isFinite(z.bottom));
-    const { timestamps, closes, ois, validFlags } = Backtest.alignCandlesAndOI(cache.bybitCandles, cache.oiRows);
+    const { timestamps, closes, ois, validFlags } = Backtest.alignCandlesAndOI(cache.binanceCandles, cache.oiRows);
     const series = Engine.computeExhaustionSeries(timestamps, closes, ois, { validFlags });
 
     const targetSet = new Set(targetTimestamps);
@@ -1562,10 +1753,10 @@
       return;
     }
 
-    console.log(`Bybit OI change 1h:  ${f(entry.oiChange1hPct, 3)}%`);
-    console.log(`Bybit OI change 4h:  ${f(entry.oiChange4hPct, 3)}%`);
-    console.log(`Bybit OI change 12h: ${f(entry.oiChange12hPct, 3)}%`);
-    console.log(`Bybit net 12h price move: ${f(entry.priceChange12hPct, 3)}%`);
+    console.log(`OI change 1h:  ${f(entry.oiChange1hPct, 3)}%`);
+    console.log(`OI change 4h:  ${f(entry.oiChange4hPct, 3)}%`);
+    console.log(`OI change 12h: ${f(entry.oiChange12hPct, 3)}%`);
+    console.log(`Net 12h price move: ${f(entry.priceChange12hPct, 3)}%`);
     console.log(`netProgressScore: ${f(entry.netProgressScore, 4)}  (strictPathScore for reference: ${f(entry.score, 4)})`);
     console.log(`Selected model: ${ctx.alertModel}  Selected score used for gating: ${f(ctx.selectedScore, 4)}`);
     console.log(`Percentile (vs trailing baseline): ${ctx.warmingUp ? 'n/a (baseline warming up)' : f(ctx.percentile, 2)}`);

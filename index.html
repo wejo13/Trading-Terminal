@@ -1065,7 +1065,10 @@
       <i class="ti ti-history"></i>Backtesting
     </div>
     <div class="nav-item" data-tab="oix" onclick="switchTab('oix')">
-      <i class="ti ti-activity"></i>OI Exhaustion
+      <i class="ti ti-activity"></i>OI Backtester
+    </div>
+    <div class="nav-item" data-tab="oix-alerts" onclick="switchTab('oix-alerts')">
+      <i class="ti ti-bell-ringing"></i>OI Alerts
     </div>
 
     <div class="sidebar-section-label">Research</div>
@@ -2527,7 +2530,7 @@
     </div>
 
     <!-- ===================== OI EXHAUSTION TAB ===================== -->
-    <div class="tab-view" id="tab-oix" data-title="OI Exhaustion">
+    <div class="tab-view" id="tab-oix" data-title="OI Backtester">
       <div style="padding:0 0 40px;max-width:1200px;">
 
         <!-- Data source banner -->
@@ -2697,6 +2700,19 @@
           <div id="oix-results-body" style="overflow-x:auto;"></div>
         </div>
 
+      </div>
+    </div>
+
+    <!-- ===================== OI ALERTS TAB (live forward testing — placeholder) ===================== -->
+    <div class="tab-view" id="tab-oix-alerts" data-title="OI Alerts">
+      <div style="padding:0 0 40px;max-width:1200px;">
+        <div style="background:var(--card);border-radius:var(--radius-card);padding:32px 24px;border:0.5px solid var(--line-old);text-align:center;">
+          <i class="ti ti-bell-ringing" style="font-size:28px;color:var(--text-faint);"></i>
+          <div style="font-size:13px;font-weight:600;color:var(--text);margin-top:12px;">Live forward testing — coming soon</div>
+          <div style="font-size:12px;color:var(--text-faint);margin-top:6px;max-width:440px;margin-left:auto;margin-right:auto;line-height:1.6;">
+            This tab will run the OI Backtester's V1/V2 pipeline on live data and surface new alerts in real time, separate from the historical runs on the OI Backtester tab.
+          </div>
+        </div>
       </div>
     </div>
 

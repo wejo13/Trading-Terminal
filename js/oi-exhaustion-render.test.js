@@ -907,6 +907,57 @@ section('nextHelpTooltipState: only one tooltip open at a time');
   assert('clicking a different icon switches to it (closes the old one)', R.nextHelpTooltipState('a', 'b') === 'b');
 })();
 
+section('createOverlaySafely: creates without points, then sets them via overrideOverlay (klinecharts 9.8.10 workaround)');
+(function () {
+  function makeFakeChart() {
+    const calls = { createOverlay: [], overrideOverlay: [] };
+    let nextId = 1;
+    return {
+      calls,
+      createOverlay(config) {
+        calls.createOverlay.push(config);
+        return 'overlay_' + (nextId++);
+      },
+      overrideOverlay(override) {
+        calls.overrideOverlay.push(override);
+      },
+    };
+  }
+
+  const chart = makeFakeChart();
+  const points = [{ timestamp: 123, value: 456 }];
+  const id = R.createOverlaySafely(chart, { name: 'verticalStraightLine', lock: true, points: [{ timestamp: 999, value: 999 }] }, points);
+
+  assert('returns the id from createOverlay', id === 'overlay_1');
+  assert('createOverlay was called exactly once', chart.calls.createOverlay.length === 1);
+  assert('createOverlay was NOT given points (that is the buggy path)', !('points' in chart.calls.createOverlay[0]));
+  assert('createOverlay still received the rest of the config (name, lock)', chart.calls.createOverlay[0].name === 'verticalStraightLine' && chart.calls.createOverlay[0].lock === true);
+  assert('overrideOverlay was called exactly once, after createOverlay', chart.calls.overrideOverlay.length === 1);
+  assert('overrideOverlay received the real id', chart.calls.overrideOverlay[0].id === 'overlay_1');
+  assert('overrideOverlay received the intended points', chart.calls.overrideOverlay[0].points === points);
+})();
+
+section('createOverlaySafely: handles an array return from createOverlay (klinecharts returns an array for array input)');
+(function () {
+  const chart = {
+    createOverlay: () => ['overlay_arr_1'],
+    overrideOverlay: () => {},
+  };
+  assert('unwraps the first id from an array return', R.createOverlaySafely(chart, { name: 'x' }, []) === 'overlay_arr_1');
+})();
+
+section('createOverlaySafely: does not call overrideOverlay if createOverlay fails (null/falsy id)');
+(function () {
+  let overrideCalled = false;
+  const chart = {
+    createOverlay: () => null,
+    overrideOverlay: () => { overrideCalled = true; },
+  };
+  const result = R.createOverlaySafely(chart, { name: 'x' }, []);
+  assert('returns null when createOverlay fails', result === null);
+  assert('overrideOverlay is never called on failure', overrideCalled === false);
+})();
+
 
 (async () => {
   await Promise.all(asyncTests);

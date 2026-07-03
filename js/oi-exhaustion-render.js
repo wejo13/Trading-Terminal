@@ -794,6 +794,28 @@
   }
 
   /**
+   * klinecharts 9.8.10 has a confirmed library bug where createOverlay can
+   * fail to render when `points` are supplied directly at creation time
+   * (fixed only in v10, which has breaking API changes we don't want —
+   * removes applyNewData among others — so not something to pull in here).
+   * Workaround: create the overlay with no points to get a valid id, then
+   * set its points via a separate overrideOverlay call, which does not
+   * hit the same bug. Returns the overlay id, or null if creation failed.
+   * No real DOM/klinecharts dependency of its own — `chart` is just an
+   * object with createOverlay/overrideOverlay methods, dependency-injected,
+   * so this is testable in Node against a fake chart.
+   */
+  function createOverlaySafely(chart, overlayConfig, points) {
+    const withoutPoints = Object.assign({}, overlayConfig);
+    delete withoutPoints.points;
+    const created = chart.createOverlay(withoutPoints);
+    const id = Array.isArray(created) ? created[0] : created;
+    if (!id) return null;
+    chart.overrideOverlay({ id, points });
+    return id;
+  }
+
+  /**
    * Maps a raw alert timestamp (always 15m-aligned) onto the displayed
    * candle that actually contains it, for the given display timeframe —
    * i.e. the fix for "overlays/tooltip/focus used the raw 15m alert
@@ -841,6 +863,7 @@
     buildDisplayCandleIndex,
     findDisplayCandleForAlert,
     nextHelpTooltipState,
+    createOverlaySafely,
     // Fetch reliability — exported for Node testing (all dependency-injected,
     // no real network/DOM required to exercise them).
     RATE_LIMIT_RETCODE,
@@ -1437,6 +1460,10 @@
     try {
       klinecharts.registerOverlay({
         name: 'oixZoneBand',
+        // Explicit — a 2-corner rectangle needs exactly 2 points before
+        // it's considered "complete" and drawn. Left implicit, this has
+        // been observed to leave the overlay stuck mid-draw and invisible.
+        totalStep: 2,
         needDefaultPointFigure: false,
         needDefaultXAxisFigure: false,
         needDefaultYAxisFigure: false,
@@ -1484,14 +1511,10 @@
 
       const zones = state.zones.map(normalizeZone).filter(z => isFinite(z.top) && isFinite(z.bottom));
       zones.forEach(z => {
-        chart.createOverlay({
-          name: 'oixZoneBand',
-          lock: true,
-          points: [
-            { timestamp: displayCandles[0].timestamp, value: z.top },
-            { timestamp: displayCandles[displayCandles.length - 1].timestamp, value: z.bottom },
-          ],
-        });
+        createOverlaySafely(chart, { name: 'oixZoneBand', lock: true }, [
+          { timestamp: displayCandles[0].timestamp, value: z.top },
+          { timestamp: displayCandles[displayCandles.length - 1].timestamp, value: z.bottom },
+        ]);
       });
 
       run.chartPoints.forEach(p => {
@@ -1504,13 +1527,15 @@
         if (!displayCandle) return; // alert's UTC bucket isn't present in the currently displayed series
         const isUp = a.contextDirection === 'bearish-exhaustion'; // up-move-oi-expansion
         const color = isUp ? '#e2645f' : '#3ddc97';
-        chart.createOverlay({
-          name: 'verticalRayLine',
+        // verticalStraightLine (not verticalRayLine — a ray needs 2 points
+        // to define its direction; we only ever have one) — spans the full
+        // chart height at this single timestamp, needs just 1 point.
+        createOverlaySafely(chart, {
+          name: 'verticalStraightLine',
           lock: true,
-          points: [{ timestamp: displayCandle.timestamp, value: a.price }],
           styles: { line: { color, style: 'dashed', size: 1.4, dashedValue: [4, 3] } },
           extendData: a,
-        });
+        }, [{ timestamp: displayCandle.timestamp, value: a.price }]);
       });
     } catch (err) {
       chartError('applyChartData', err);
@@ -1525,7 +1550,13 @@
       b.style.background = active ? 'var(--teal)' : 'transparent';
       b.style.color = active ? '#07060c' : 'var(--text)';
     });
-    applyChartData();
+    // Full dispose + recreate rather than applyNewData on the live
+    // instance — switching to a dataset of very different size (e.g. 1H's
+    // ~720 candles to 15m's ~2880) was observed to silently fail to
+    // re-render on the existing instance (no error, chart just keeps
+    // showing the previous timeframe). A clean reinit is the same code
+    // path that already renders correctly on first load.
+    initChart();
   }
 
   function wireChartTooltip(chart) {

@@ -1141,8 +1141,169 @@
     return runAnalysis({ forceRefresh: true });
   }
 
+  // ── Console diagnostic: gate-by-gate breakdown at specific timestamps ────
+  // Read-only. Uses whatever raw data is already cached in memory (run
+  // "Fetch data & run analysis" at least once first) and the CURRENT UI
+  // parameter values unless overridden. Does not change strategy math —
+  // replays the exact same Engine/Backtest functions the live run uses.
+  // The OI-recency gate snippet is copied verbatim from oi-exhaustion-
+  // backtest.js's runEventStudy (it isn't separately exported) — if that
+  // logic changes there, this copy needs updating too.
+  //
+  // Console usage:
+  //   OIExhaustionRender.diagnoseAlert(['2026-06-25T13:30:00Z', '2026-06-25T15:30:00Z'])
+  //   OIExhaustionRender.diagnoseAlert(['2026-06-25T15:30:00Z'], { entryPercentile: 95 })
+
+  function diagnoseAlertFmt(v, digits) {
+    if (v === null || v === undefined || !isFinite(v)) return 'n/a';
+    return v.toFixed(digits != null ? digits : 4);
+  }
+
+  function diagnoseAlert(isoTimestamps, overrides) {
+    overrides = overrides || {};
+    const cache = state.rawDataCache;
+    if (!cache) {
+      console.warn('No raw data cached yet — click "Fetch data & run analysis" (or Refresh raw data) at least once first, then re-run this.');
+      return;
+    }
+
+    const s = state.settings;
+    const alertModel = overrides.alertModel || s.alertModel;
+    const entryPercentile = overrides.entryPercentile != null ? overrides.entryPercentile : s.entryPercentile;
+    const rearmPercentile = overrides.rearmPercentile != null ? overrides.rearmPercentile : s.rearmPercentile;
+    const minBaselineSamples = overrides.minBaselineSamples != null ? overrides.minBaselineSamples : s.minBaselineSamples;
+    const baselineLookbackCandles = overrides.baselineLookbackCandles != null ? overrides.baselineLookbackCandles : s.baselineLookbackCandles;
+    const oiRecencyFilterEnabled = overrides.oiRecencyFilterEnabled != null ? overrides.oiRecencyFilterEnabled : s.oiRecencyFilterEnabled;
+    const oiRecencyWindow = Engine.OI_RECENCY_WINDOW_CANDLES[overrides.oiRecencyWindow] ? overrides.oiRecencyWindow : s.oiRecencyWindow;
+    const oiRecencyWindowCandles = Engine.OI_RECENCY_WINDOW_CANDLES[oiRecencyWindow];
+    const minimumRecentOIChangePct = overrides.minimumRecentOIChangePct != null ? overrides.minimumRecentOIChangePct : s.minimumRecentOIChangePct;
+
+    const targetTimestamps = isoTimestamps.map(str => new Date(str).getTime());
+    console.log(`Params: alertModel=${alertModel} entryPercentile=${entryPercentile} rearmPercentile=${rearmPercentile} ` +
+      `minBaselineSamples=${minBaselineSamples} baselineLookbackCandles=${baselineLookbackCandles} ` +
+      `oiRecencyFilterEnabled=${oiRecencyFilterEnabled} oiRecencyWindow=${oiRecencyWindow} minimumRecentOIChangePct=${minimumRecentOIChangePct}`);
+    console.log(`Target timestamps: ${targetTimestamps.map(t => new Date(t).toISOString()).join(', ')}`);
+    console.log(`Using cached raw data window: ${safeUtcDateString(cache.startTime)} → ${safeUtcDateString(cache.endTime)} (fetched ${safeUtcDateString(cache.cachedAt)})`);
+    console.log('');
+
+    const zones = state.zones.map(normalizeZone).filter(z => isFinite(z.top) && isFinite(z.bottom));
+    const { timestamps, closes, ois, validFlags } = Backtest.alignCandlesAndOI(cache.bybitCandles, cache.oiRows);
+    const series = Engine.computeExhaustionSeries(timestamps, closes, ois, { validFlags });
+
+    const targetSet = new Set(targetTimestamps);
+    const baseline = Engine.createBaselineLog({ baselineLookbackCandles });
+    const zoneStates = new Map(zones.map(z => [z.id, false]));
+    let anyMatched = false;
+
+    for (let t = 0; t < series.length; t++) {
+      const entry = series[t];
+      const ts = timestamps[t];
+      const price = closes[t];
+      const isTarget = targetSet.has(ts);
+
+      if (!entry.valid) {
+        for (const zone of zones) {
+          const inZone = Engine.isPriceInZone(price, zone) && Engine.isZoneTemporallyActive(zone, ts);
+          if (!inZone) zoneStates.set(zone.id, false);
+        }
+        if (isTarget) { anyMatched = true; diagnoseAlertPrint(ts, price, null, zones, { invalidWindow: true }); }
+        continue;
+      }
+
+      const warmingUp = baseline.size() < minBaselineSamples;
+      const selectedScore = Engine.getModelScore(entry, alertModel);
+      const percentile = (!warmingUp && selectedScore !== null) ? baseline.percentileRank(selectedScore) : null;
+
+      let additionalGatePassed = true;
+      let recentOIChangePct = null;
+      if (oiRecencyFilterEnabled) {
+        recentOIChangePct = Engine.computeChangeOverCandles(ois, t, oiRecencyWindowCandles);
+        const slopeOk = entry.oiSlopeRecent !== null && entry.oiSlopeRecent >= 0;
+        const recentChangeOk = recentOIChangePct !== null && recentOIChangePct > minimumRecentOIChangePct;
+        additionalGatePassed = slopeOk && recentChangeOk;
+      }
+
+      const perZoneSnapshots = [];
+      for (const zone of zones) {
+        const inZone = Engine.isPriceInZone(price, zone) && Engine.isZoneTemporallyActive(zone, ts);
+        const prevArmed = zoneStates.get(zone.id);
+        const step = (selectedScore !== null)
+          ? Engine.stepZoneState(prevArmed, inZone, percentile, warmingUp, selectedScore, { entryPercentile, rearmPercentile, additionalGatePassed })
+          : { armed: prevArmed, alertFired: false };
+        if (selectedScore !== null) zoneStates.set(zone.id, step.armed);
+        else if (!inZone) zoneStates.set(zone.id, false);
+        perZoneSnapshots.push({ zone, inZone, prevArmed, armed: step.armed, alertFired: step.alertFired });
+      }
+
+      if (selectedScore !== null) baseline.insert(selectedScore);
+
+      if (isTarget) {
+        anyMatched = true;
+        diagnoseAlertPrint(ts, price, entry, zones, {
+          alertModel, selectedScore, percentile, warmingUp,
+          entryPercentile, rearmPercentile,
+          oiRecencyFilterEnabled, oiRecencyWindow, minimumRecentOIChangePct,
+          recentOIChangePct, additionalGatePassed, perZoneSnapshots,
+        });
+      }
+    }
+
+    if (!anyMatched) {
+      console.warn('None of the requested timestamps matched an exact 5m candle in the cached data — check the ISO strings are on a 5-minute boundary and within the cached window shown above.');
+    }
+  }
+
+  function diagnoseAlertPrint(ts, price, entry, zones, ctx) {
+    const f = diagnoseAlertFmt;
+    console.log('════════════════════════════════════════════════════════');
+    console.log(`Timestamp: ${new Date(ts).toISOString()}`);
+    console.log(`Price: ${price != null ? price : 'n/a'}`);
+
+    if (ctx.invalidWindow || !entry) {
+      console.log('Window invalid at this candle (gap/missing data) — no score computed.');
+      console.log('Final rejection reason: INVALID_WINDOW (144-candle score window not fully valid here)');
+      console.log('════════════════════════════════════════════════════════\n');
+      return;
+    }
+
+    console.log(`Bybit OI change 1h:  ${f(entry.oiChange1hPct, 3)}%`);
+    console.log(`Bybit OI change 4h:  ${f(entry.oiChange4hPct, 3)}%`);
+    console.log(`Bybit OI change 12h: ${f(entry.oiChange12hPct, 3)}%`);
+    console.log(`Bybit net 12h price move: ${f(entry.priceChange12hPct, 3)}%`);
+    console.log(`netProgressScore: ${f(entry.netProgressScore, 4)}  (strictPathScore for reference: ${f(entry.score, 4)})`);
+    console.log(`Selected model: ${ctx.alertModel}  Selected score used for gating: ${f(ctx.selectedScore, 4)}`);
+    console.log(`Percentile (vs trailing baseline): ${ctx.warmingUp ? 'n/a (baseline warming up)' : f(ctx.percentile, 2)}`);
+    console.log(`1h OI recency value: ${f(ctx.recentOIChangePct, 3)}%`);
+    console.log(`Recent OI slope (last 1h, raw units/candle): ${f(entry.oiSlopeRecent, 4)}`);
+    console.log('');
+
+    const scorePassed = ctx.selectedScore !== null && ctx.selectedScore > 0;
+    const percentilePassed = !ctx.warmingUp && ctx.percentile !== null && ctx.percentile >= ctx.entryPercentile;
+    const recencyPassed = !ctx.oiRecencyFilterEnabled || ctx.additionalGatePassed;
+
+    console.log(`Score > 0 passed:        ${scorePassed}`);
+    console.log(`Percentile >= ${ctx.entryPercentile} passed: ${percentilePassed}`);
+    console.log(`OI recency filter passed: ${ctx.oiRecencyFilterEnabled ? recencyPassed : 'n/a (filter disabled)'}`);
+    console.log('');
+
+    for (const snap of ctx.perZoneSnapshots) {
+      console.log(`Zone "${snap.zone.label || snap.zone.id}": inZone=${snap.inZone} prevArmed=${snap.prevArmed} -> armed=${snap.armed} alertFired=${snap.alertFired}`);
+      let reason;
+      if (ctx.warmingUp) reason = 'BASELINE_WARMING_UP (not enough baseline samples yet)';
+      else if (!snap.inZone) reason = 'ZONE_FAILED (price outside active zone, or zone not yet available/expired)';
+      else if (!scorePassed) reason = 'SCORE_FAILED (selected-model score is not positive)';
+      else if (!percentilePassed) reason = 'PERCENTILE_FAILED (below entry percentile threshold)';
+      else if (ctx.oiRecencyFilterEnabled && !recencyPassed) reason = 'RECENCY_FAILED (OI recency filter rejected — stalled OI and/or negative recent slope)';
+      else if (snap.prevArmed && !snap.alertFired) reason = 'ALREADY_ARMED (qualifies, but zone was already armed from an earlier candle — no re-fire until rearm)';
+      else if (snap.alertFired) reason = 'ALERT_FIRED (all gates passed, this candle triggered the alert)';
+      else reason = 'UNKNOWN (should not happen — check logic)';
+      console.log(`  Final rejection reason: ${reason}`);
+    }
+    console.log('════════════════════════════════════════════════════════\n');
+  }
+
   Object.assign(OIExhaustionRender, {
-    init, runAnalysis, refreshRawData, addZoneRow, removeZone, updateZoneField, readSettingsFromForm,
+    init, runAnalysis, refreshRawData, diagnoseAlert, addZoneRow, removeZone, updateZoneField, readSettingsFromForm,
     focusChartOnAlert,
     fetchBybitOI, fetchBybitCandles, fetchBinanceCandles, // exposed for console debugging
   });

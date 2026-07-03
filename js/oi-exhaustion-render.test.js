@@ -544,6 +544,63 @@ section('REGRESSION: initial empty state — no cache, no prior run — cache lo
   assert('cachedAt on an empty cache formats as unknown, not a throw', R.safeUtcDateString(fakeEmptyCacheFields.cachedAt) === 'unknown');
 })();
 
+// ── REGRESSION: fetchBinanceCandles page-delay ReferenceError ────────────
+
+section('REGRESSION: fetchBinanceCandles executes a multi-page fetch with an injected sleepFn — no ReferenceError on the page-delay constant');
+asyncTests.push((async function () {
+  // This is the exact bug: fetchBinanceCandles used to call
+  // sleep(REQUEST_DELAY_MS), but REQUEST_DELAY_MS was never defined in
+  // scope (it was removed during an earlier refactor). That line only
+  // executes on the SECOND page of a multi-page pull, so a single-page
+  // fetch would never have caught it — this test deliberately forces two
+  // pages so the page-delay line actually runs.
+  const T0 = Date.UTC(2026, 0, 1);
+  const FOUR_H = 4 * 60 * 60 * 1000;
+  const startTime = T0;
+  const endTime = T0 + 3 * FOUR_H;
+
+  let pageCount = 0;
+  const sleepCalls = [];
+  const fetchFn = async (url) => {
+    pageCount++;
+    if (pageCount === 1) {
+      // First page: exactly 1000 rows worth isn't necessary — return 2
+      // candles ending before endTime so the loop continues to a second page.
+      const list = [
+        [T0, '100', '101', '99', '100.5', '10'],
+        [T0 + FOUR_H, '100.5', '102', '100', '101', '12'],
+      ];
+      return { ok: true, status: 200, json: async () => list, text: async () => '' };
+    }
+    // Second page: covers the rest, then the loop should terminate.
+    const list = [
+      [T0 + 2 * FOUR_H, '101', '103', '100.5', '102', '9'],
+      [T0 + 3 * FOUR_H, '102', '104', '101.5', '103', '11'],
+    ];
+    return { ok: true, status: 200, json: async () => list, text: async () => '' };
+  };
+  const sleepFn = async (ms) => { sleepCalls.push(ms); };
+
+  let threw = false;
+  let candles = null;
+  try {
+    candles = await R.fetchBinanceCandles(startTime, endTime, { fetchFn, sleepFn, pageDelayMs: 50 });
+  } catch (e) {
+    threw = true;
+    console.error('  (unexpected throw): ' + e.message);
+  }
+
+  assert('no ReferenceError (or any error) during a multi-page fetch', threw === false);
+  assert('fetched across multiple pages', pageCount >= 2);
+  assert('candles were collected from both pages', candles && candles.length === 4);
+  assert('the injected sleepFn was actually called with the configured delay (proves the constant resolved, not skipped)', sleepCalls.length >= 1 && sleepCalls[0] === 50);
+})());
+
+section('BINANCE_PAGE_DELAY_MS: a real, defined constant (not the removed REQUEST_DELAY_MS)');
+(function () {
+  assert('BINANCE_PAGE_DELAY_MS is a positive finite number', typeof R.BINANCE_PAGE_DELAY_MS === 'number' && R.BINANCE_PAGE_DELAY_MS > 0);
+})();
+
 // ── summary ───────────────────────────────────────────────────────────────
 
 (async () => {

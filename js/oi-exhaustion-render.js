@@ -52,6 +52,8 @@
   const PAGE_LIMIT = 200;
   const MAX_PAGES = 700;
   const BYBIT_PAGE_DELAY_MS = 600; // conservative default, within the requested 500-750ms range
+  const BINANCE_PAGE_DELAY_MS = 200; // separate exchange, separate rate-limit domain
+  const CHART_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4h chart candles (display only)
   const RATE_LIMIT_RETCODE = 10006;
   const DEFAULT_MAX_RATE_LIMIT_RETRIES = 6;
   const RATE_LIMIT_SAFETY_BUFFER_MS = 500;
@@ -303,6 +305,42 @@
     return Array.from(byTs.values()).sort((a, b) => a.ts - b.ts);
   }
 
+  // ── Fetch: Binance candles (chart display only) ─────────────────────────
+  // Separate exchange, separate rate-limit domain — no retry logic here by
+  // design (not in scope; Bybit retry logic is untouched). Moved into this
+  // shared/testable section (previously browser-only) purely so it can be
+  // exercised in Node tests with an injected fetchFn/sleepFn, same pattern
+  // as the two Bybit fetchers above.
+
+  async function fetchBinanceCandles(startTime, endTime, options) {
+    options = options || {};
+    const fetchFn = options.fetchFn || (typeof fetch !== 'undefined' ? fetch : null);
+    const sleepFn = options.sleepFn || realSleep;
+    const onProgress = options.onProgress || null;
+    const pageDelayMs = options.pageDelayMs != null ? options.pageDelayMs : BINANCE_PAGE_DELAY_MS;
+
+    const allCandles = [];
+    let ts = startTime;
+    let pageIndex = 0;
+    while (ts <= endTime && pageIndex < MAX_PAGES) {
+      const url = `https://api.binance.com/api/v3/klines?symbol=${SYMBOL}&interval=4h&limit=1000&startTime=${ts}&endTime=${endTime}`;
+      const res = await fetchFn(url);
+      if (!res.ok) throw new Error(`Binance candle fetch failed at page ${pageIndex}: httpStatus=${res.status} ${await res.text()}`);
+      const list = await res.json();
+      if (!Array.isArray(list) || list.length === 0) break;
+      for (const c of list) {
+        allCandles.push({ ts: c[0], open: parseFloat(c[1]), high: parseFloat(c[2]), low: parseFloat(c[3]), close: parseFloat(c[4]) });
+      }
+      if (onProgress) onProgress({ type: 'page', source: 'binance-candles', page: pageIndex, rowsThisPage: list.length, rowsSoFar: allCandles.length });
+      pageIndex++;
+      const lastTs = list[list.length - 1][0];
+      if (lastTs <= ts) break;
+      ts = lastTs + CHART_INTERVAL_MS;
+      await sleepFn(pageDelayMs);
+    }
+    return allCandles;
+  }
+
   // ── Pure logic (no DOM) — exported for Node tests ───────────────────────
 
   /** Fills in any missing fields with defaults; clamps obviously invalid values. */
@@ -446,8 +484,6 @@
     return currentCandleStart - FIVE_MIN_MS;
   }
 
-  const CHART_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4h chart candles (display only)
-
   const OIExhaustionRender = {
     DEFAULT_SETTINGS,
     SETTINGS_KEY,
@@ -469,6 +505,7 @@
     RATE_LIMIT_RETCODE,
     DEFAULT_MAX_RATE_LIMIT_RETRIES,
     BYBIT_PAGE_DELAY_MS,
+    BINANCE_PAGE_DELAY_MS,
     isRateLimitedResponse,
     computeBackoffDelayMs,
     parseRateLimitResetWaitMs,
@@ -479,6 +516,7 @@
     safeUtcDateString,
     fetchBybitOI,
     fetchBybitCandles,
+    fetchBinanceCandles,
     parseBybitKlineRow,
   };
 
@@ -491,36 +529,13 @@
 
   const Engine = window.OIExhaustionEngine;
   const Backtest = window.OIExhaustionBacktest;
-  // Probe, fetchBybitOI, fetchBybitCandles, parseBybitKlineRow, SYMBOL,
-  // CATEGORY, PAGE_LIMIT, MAX_PAGES are all defined above (shared/testable
-  // section) and already in scope here via closure — not redeclared.
+  // Probe, fetchBybitOI, fetchBybitCandles, fetchBinanceCandles,
+  // parseBybitKlineRow, SYMBOL, CATEGORY, PAGE_LIMIT, MAX_PAGES,
+  // BINANCE_PAGE_DELAY_MS, CHART_INTERVAL_MS are all defined above
+  // (shared/testable section) and already in scope here via closure —
+  // not redeclared.
 
   function sleep(ms) { return realSleep(ms); }
-
-  // ── Fetch: Binance candles (chart display only) ─────────────────────────
-
-  async function fetchBinanceCandles(startTime, endTime, onProgress) {
-    const allCandles = [];
-    let ts = startTime;
-    let pageIndex = 0;
-    while (ts <= endTime && pageIndex < MAX_PAGES) {
-      const url = `https://api.binance.com/api/v3/klines?symbol=${SYMBOL}&interval=4h&limit=1000&startTime=${ts}&endTime=${endTime}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Binance candle fetch failed at page ${pageIndex}: httpStatus=${res.status} ${await res.text()}`);
-      const list = await res.json();
-      if (!Array.isArray(list) || list.length === 0) break;
-      for (const c of list) {
-        allCandles.push({ ts: c[0], open: parseFloat(c[1]), high: parseFloat(c[2]), low: parseFloat(c[3]), close: parseFloat(c[4]) });
-      }
-      if (onProgress) onProgress({ type: 'page', source: 'binance-candles', page: pageIndex, rowsThisPage: list.length, rowsSoFar: allCandles.length });
-      pageIndex++;
-      const lastTs = list[list.length - 1][0];
-      if (lastTs <= ts) break;
-      ts = lastTs + CHART_INTERVAL_MS;
-      await sleep(REQUEST_DELAY_MS);
-    }
-    return allCandles;
-  }
 
   // ── State ────────────────────────────────────────────────────────────
 
@@ -687,7 +702,7 @@
         // run alongside the Bybit pull. The two BYBIT fetches, however, are
         // deliberately sequential — OI fully finishes before candles start —
         // so there is only ever one Bybit pagination stream in flight.
-        const binancePromise = fetchBinanceCandles(startTime, endTime, progress);
+        const binancePromise = fetchBinanceCandles(startTime, endTime, { onProgress: progress });
         oiRows = await fetchBybitOI(startTime, endTime, { onProgress: progress });
         bybitCandles = await fetchBybitCandles(startTime, endTime, { onProgress: progress });
         binanceCandles = await binancePromise;

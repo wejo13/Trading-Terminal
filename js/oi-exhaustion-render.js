@@ -1159,6 +1159,68 @@
     return v.toFixed(digits != null ? digits : 4);
   }
 
+  // ── Console diagnostic: raw Bybit OI/price dump, no strategy math ───────
+  // Prints exactly what Bybit's own OI/price series did, candle by candle,
+  // in a time window — no scoring, no filters, nothing derived. Useful to
+  // sanity-check what the signal is "seeing" against an external chart
+  // (e.g. an aggregated-OI chart from another source) that may include
+  // other exchanges Bybit-only data won't match.
+  //
+  // Console usage:
+  //   OIExhaustionRender.dumpRawOI('2026-06-25T12:00:00Z', '2026-06-25T17:00:00Z')
+
+  function dumpRawOI(startIso, endIso) {
+    const cache = state.rawDataCache;
+    if (!cache) {
+      console.warn('No raw data cached yet — click "Fetch data & run analysis" at least once first.');
+      return;
+    }
+    const startTs = new Date(startIso).getTime();
+    const endTs = new Date(endIso).getTime();
+    if (!isFinite(startTs) || !isFinite(endTs)) {
+      console.warn('Could not parse startIso/endIso — use ISO strings, e.g. "2026-06-25T12:00:00Z".');
+      return;
+    }
+
+    const { timestamps, closes, ois, validFlags } = Backtest.alignCandlesAndOI(cache.bybitCandles, cache.oiRows);
+
+    const rows = [];
+    let prevClose = null, prevOI = null;
+    for (let i = 0; i < timestamps.length; i++) {
+      const ts = timestamps[i];
+      if (ts < startTs || ts > endTs) { prevClose = closes[i]; prevOI = ois[i]; continue; }
+      rows.push({
+        time: new Date(ts).toISOString(),
+        close: closes[i],
+        oi: ois[i],
+        oiChangePct: (prevOI != null && prevOI !== 0) ? (((ois[i] - prevOI) / prevOI) * 100).toFixed(4) + '%' : 'n/a',
+        priceChangePct: (prevClose != null && prevClose !== 0) ? (((closes[i] - prevClose) / prevClose) * 100).toFixed(4) + '%' : 'n/a',
+        gapBeforeThis: validFlags[i] === false,
+      });
+      prevClose = closes[i];
+      prevOI = ois[i];
+    }
+
+    if (rows.length === 0) {
+      console.warn('No cached candles fall inside that window. Cached window is: ' +
+        `${safeUtcDateString(cache.startTime)} → ${safeUtcDateString(cache.endTime)}`);
+      return;
+    }
+
+    console.log(`Bybit BTCUSDT linear — raw OI/price, ${rows.length} candles, ${startIso} → ${endIso}`);
+    console.table(rows);
+
+    const firstOI = rows[0].oi, lastOI = rows[rows.length - 1].oi;
+    const firstClose = rows[0].close, lastClose = rows[rows.length - 1].close;
+    console.log(`Net OI change over window: ${firstOI !== 0 ? (((lastOI - firstOI) / firstOI) * 100).toFixed(3) + '%' : 'n/a'} ` +
+      `(${firstOI} -> ${lastOI})`);
+    console.log(`Net price change over window: ${firstClose !== 0 ? (((lastClose - firstClose) / firstClose) * 100).toFixed(3) + '%' : 'n/a'} ` +
+      `(${firstClose} -> ${lastClose})`);
+    if (rows.some(r => r.gapBeforeThis)) {
+      console.warn('One or more candles in this window are flagged as following a data gap (5m-alignment broke) — treat any single-candle OI jump right after a gap with caution.');
+    }
+  }
+
   function diagnoseAlert(isoTimestamps, overrides) {
     overrides = overrides || {};
     const cache = state.rawDataCache;
@@ -1303,7 +1365,7 @@
   }
 
   Object.assign(OIExhaustionRender, {
-    init, runAnalysis, refreshRawData, diagnoseAlert, addZoneRow, removeZone, updateZoneField, readSettingsFromForm,
+    init, runAnalysis, refreshRawData, diagnoseAlert, dumpRawOI, addZoneRow, removeZone, updateZoneField, readSettingsFromForm,
     focusChartOnAlert,
     fetchBybitOI, fetchBybitCandles, fetchBinanceCandles, // exposed for console debugging
   });

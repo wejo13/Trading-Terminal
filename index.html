@@ -2533,7 +2533,7 @@
         <!-- Data source banner -->
         <div style="font-size:11px;color:var(--text-faint);margin-bottom:14px;">
           <i class="ti ti-info-circle" style="font-size:12px;vertical-align:-1px;"></i>
-          Signal: Bybit BTCUSDT linear OI &middot; Chart: Binance BTCUSDT spot
+          OI source: CryptoHFT major-venue aggregate &middot; 15m
         </div>
 
         <!-- Strategy explanation -->
@@ -2544,12 +2544,12 @@
           </div>
           <div style="font-size:12px;color:var(--text-dim);line-height:1.7;">
             The signal only evaluates while price is inside an active HTF range or level zone — outside a zone it produces no score and no alert.<br>
-            For every completed 5-minute candle it compares how much open interest expanded against how far price actually moved:
+            For every completed 15-minute candle it compares how much open interest expanded against how far price actually moved:
             <div style="margin:8px 0;padding:8px 12px;background:var(--bg2);border-radius:6px;font-family:var(--font);font-size:11px;color:var(--text);">
               priceMovePct = abs((close − prevClose) / prevClose) × 100<br>
               oiChangePct = (oi − prevOI) / prevOI × 100<br>
               exhaustionReading = oiChangePct − priceMovePct<br>
-              score = mean(exhaustionReading) over the trailing 144 candles (12h)
+              score = mean(exhaustionReading) over the trailing 48 candles (12h at 15m)
             </div>
             An alert fires when that rolling score is unusually high relative to its own trailing 30-day history (percentile-based, not a fixed threshold) <b style="color:var(--text);">and</b> the score itself is positive — a candle that merely looks "less bad" than a negative recent history never qualifies.<br>
             <b style="color:var(--text);">This is an exhaustion / context alert, not an automatic long or short entry.</b> Two neutral contexts are labeled, not traded:
@@ -2585,6 +2585,7 @@
             <label class="oix-param">Min baseline samples<input class="oix-input" type="number" id="oix-minBaselineSamples"></label>
             <label class="oix-param">Alert percentile<input class="oix-input" type="number" id="oix-entryPercentile"></label>
             <label class="oix-param">Rearm percentile<input class="oix-input" type="number" id="oix-rearmPercentile"></label>
+            <label class="oix-param">CryptoHFTData API key<input class="oix-input" type="password" id="oix-cryptoHftApiKey" placeholder="required — never sent anywhere except CryptoHFTData"></label>
           </div>
 
           <div style="margin-top:16px;padding-top:14px;border-top:0.5px solid var(--line-old);">
@@ -2639,7 +2640,7 @@
 
         <!-- Chart -->
         <div style="background:var(--card);border-radius:var(--radius-card);padding:16px;margin-bottom:16px;border:0.5px solid var(--line-old);">
-          <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:10px;">Price chart with zones &amp; alerts <span style="font-weight:400;color:var(--text-faint);">(4h candles for display &middot; scroll to zoom, drag to pan &middot; signal itself is still computed on 5m data)</span></div>
+          <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:10px;">Price chart with zones &amp; alerts <span style="font-weight:400;color:var(--text-faint);">(15m candles — same series used for both the signal and the chart &middot; scroll to zoom, drag to pan)</span></div>
           <div id="oix-price-chart-wrap" style="position:relative;overflow:hidden;border-radius:6px;background:#0a090f;">
             <canvas id="oix-price-canvas" style="width:100%;height:340px;display:block;cursor:crosshair;"></canvas>
             <div id="oix-chart-tooltip" style="display:none;position:absolute;background:var(--card);border:0.5px solid var(--line-old);border-radius:6px;padding:8px 10px;font-size:11px;color:var(--text);pointer-events:none;z-index:10;min-width:160px;"></div>
@@ -3208,6 +3209,8 @@
   <script src="js/oi-exhaustion-probe.js"></script>
 <script src="js/oi-exhaustion-engine.js"></script>
 <script src="js/oi-exhaustion-backtest.js"></script>
+<script src="js/oi-exhaustion-cryptohft-source.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fzstd@0.1.1/umd/index.js"></script>
 <script src="js/oi-exhaustion-render.js"></script>
 <script>
 if(typeof OIExhaustionRender!=="undefined"){

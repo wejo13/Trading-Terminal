@@ -958,6 +958,176 @@ section('createOverlaySafely: does not call overrideOverlay if createOverlay fai
   assert('overrideOverlay is never called on failure', overrideCalled === false);
 })();
 
+// ── reconcileChartMarkers / formatChartMarkerDiagnosticLine ──────────────
+// "Not every valid alert appears as a marker" — root cause was multiple
+// alerts sharing one displayed candle drawing perfectly-overlapping,
+// visually-indistinguishable overlays. These tests cover the reconciliation
+// (every alert accounted for exactly once: mapped-into-a-group XOR
+// excluded-with-a-reason) that the fix is built on.
+
+function mkAlert(ts, price, overrides) {
+  return Object.assign({
+    timestamp: ts,
+    price: price,
+    score: 1,
+    alertModel: 'netProgress',
+    contextDirection: 'bearish-exhaustion',
+    zoneBounds: { label: 'test-zone', id: 'zone-1' },
+    zoneId: 'zone-1',
+  }, overrides || {});
+}
+
+section('reconcileChartMarkers: every 15m alert maps to its exact raw candle (1:1, no grouping)');
+(function () {
+  const dayStart = Date.UTC(2026, 2, 10, 0, 0, 0);
+  const candles = [];
+  for (let i = 0; i < 20; i++) candles.push(mkCandle(dayStart + i * FIFTEEN_MIN(), 1000 + i));
+  const displayCandles = R.resampleCandlesForDisplay(candles, '15m');
+
+  const alerts = [
+    mkAlert(dayStart + 2 * FIFTEEN_MIN(), 1002),
+    mkAlert(dayStart + 5 * FIFTEEN_MIN(), 1005),
+    mkAlert(dayStart + 19 * FIFTEEN_MIN(), 1019),
+  ];
+  const r = R.reconcileChartMarkers(alerts, candles, displayCandles, '15m');
+
+  assert('all 3 alerts mapped', r.mappedCount === 3);
+  assert('none excluded', r.outsideRangeCount === 0);
+  assert('none grouped (each on its own distinct candle)', r.groupedAlertCount === 0);
+  assert('3 distinct single-alert groups', r.groups.length === 3 && r.groups.every(g => g.alerts.length === 1));
+  assert('each group timestamp equals the alert\'s own raw candle ts (exact 1:1 at 15m)', r.groups[0].timestamp === dayStart + 2 * FIFTEEN_MIN());
+})();
+
+section('reconcileChartMarkers: alerts at the very start and very end of the visible range');
+(function () {
+  const dayStart = Date.UTC(2026, 2, 10, 0, 0, 0);
+  const candles = [];
+  for (let i = 0; i < 10; i++) candles.push(mkCandle(dayStart + i * FIFTEEN_MIN(), 1000 + i));
+  const displayCandles = R.resampleCandlesForDisplay(candles, '15m');
+
+  const firstAlert = mkAlert(dayStart, 1000); // exact first candle
+  const lastAlert = mkAlert(dayStart + 9 * FIFTEEN_MIN(), 1009); // exact last candle
+  const r = R.reconcileChartMarkers([firstAlert, lastAlert], candles, displayCandles, '15m');
+
+  assert('both boundary alerts mapped', r.mappedCount === 2);
+  assert('none excluded', r.outsideRangeCount === 0);
+  assert('first alert maps to the first candle', r.groups.some(g => g.timestamp === dayStart));
+  assert('last alert maps to the last candle', r.groups.some(g => g.timestamp === dayStart + 9 * FIFTEEN_MIN()));
+})();
+
+section('reconcileChartMarkers: multiple alerts sharing one 1H candle are grouped, not dropped');
+(function () {
+  const dayStart = Date.UTC(2026, 2, 10, 0, 0, 0);
+  const candles = [];
+  for (let i = 0; i < 8; i++) candles.push(mkCandle(dayStart + i * FIFTEEN_MIN(), 1000 + i)); // 2 hours
+  const displayCandles = R.resampleCandlesForDisplay(candles, '1h');
+
+  // 3 alerts (different zones) all inside the FIRST hour (candles 0-3)
+  const alerts = [
+    mkAlert(dayStart + 0 * FIFTEEN_MIN(), 1000, { zoneId: 'zone-a' }),
+    mkAlert(dayStart + 1 * FIFTEEN_MIN(), 1001, { zoneId: 'zone-b' }),
+    mkAlert(dayStart + 3 * FIFTEEN_MIN(), 1003, { zoneId: 'zone-c' }),
+    // 1 alert in the second hour, alone
+    mkAlert(dayStart + 4 * FIFTEEN_MIN(), 1004, { zoneId: 'zone-a' }),
+  ];
+  const r = R.reconcileChartMarkers(alerts, candles, displayCandles, '1h');
+
+  assert('all 4 alerts mapped', r.mappedCount === 4);
+  assert('none excluded', r.outsideRangeCount === 0);
+  assert('exactly 2 groups (one per hour)', r.groups.length === 2);
+  const hour0 = r.groups.find(g => g.timestamp === dayStart);
+  const hour1 = r.groups.find(g => g.timestamp === dayStart + HOUR_MS);
+  assert('first hour group has all 3 alerts', hour0 && hour0.alerts.length === 3);
+  assert('second hour group has the 1 remaining alert', hour1 && hour1.alerts.length === 1);
+  assert('groupedAlertCount counts only alerts in groups of 2+ (the 3, not the lone 1)', r.groupedAlertCount === 3);
+  assert('grouped alerts keep their own distinct raw timestamps/prices (not overwritten)', hour0.alerts.map(a => a.price).sort().join(',') === '1000,1001,1003');
+})();
+
+section('reconcileChartMarkers: multiple alerts sharing one 4H candle are grouped, not dropped');
+(function () {
+  const dayStart = Date.UTC(2026, 2, 10, 0, 0, 0);
+  const candles = [];
+  for (let i = 0; i < 32; i++) candles.push(mkCandle(dayStart + i * FIFTEEN_MIN(), 1000 + i)); // 8 hours
+  const displayCandles = R.resampleCandlesForDisplay(candles, '4h');
+
+  // 4 alerts scattered across the first 4h bucket (candles 0-15), 1 in the second
+  const alerts = [
+    mkAlert(dayStart + 0 * FIFTEEN_MIN(), 1000, { zoneId: 'zone-a' }),
+    mkAlert(dayStart + 5 * FIFTEEN_MIN(), 1005, { zoneId: 'zone-b' }),
+    mkAlert(dayStart + 10 * FIFTEEN_MIN(), 1010, { zoneId: 'zone-c' }),
+    mkAlert(dayStart + 15 * FIFTEEN_MIN(), 1015, { zoneId: 'zone-d' }),
+    mkAlert(dayStart + 20 * FIFTEEN_MIN(), 1020, { zoneId: 'zone-a' }),
+  ];
+  const r = R.reconcileChartMarkers(alerts, candles, displayCandles, '4h');
+
+  assert('all 5 alerts mapped', r.mappedCount === 5);
+  assert('exactly 2 groups (one per 4h bucket)', r.groups.length === 2);
+  const bucket0 = r.groups.find(g => g.timestamp === dayStart);
+  assert('first 4h bucket has all 4 scattered alerts', bucket0 && bucket0.alerts.length === 4);
+  assert('groupedAlertCount reflects the 4-alert group only', r.groupedAlertCount === 4);
+})();
+
+section('reconcileChartMarkers: an alert outside the loaded candle range is explicitly excluded with a reason');
+(function () {
+  const dayStart = Date.UTC(2026, 2, 10, 0, 0, 0);
+  const candles = [];
+  for (let i = 0; i < 10; i++) candles.push(mkCandle(dayStart + i * FIFTEEN_MIN(), 1000 + i));
+  const displayCandles = R.resampleCandlesForDisplay(candles, '15m');
+
+  const inRange = mkAlert(dayStart + 3 * FIFTEEN_MIN(), 1003);
+  const beforeRange = mkAlert(dayStart - HOUR_MS, 999); // well before the first candle
+  const afterRange = mkAlert(dayStart + 100 * FIFTEEN_MIN(), 1100); // well after the last candle
+  const r = R.reconcileChartMarkers([inRange, beforeRange, afterRange], candles, displayCandles, '15m');
+
+  assert('only the in-range alert is mapped', r.mappedCount === 1);
+  assert('both out-of-range alerts are excluded', r.outsideRangeCount === 2);
+  assert('excluded list has an explicit reason for each', r.excluded.every(x => typeof x.reason === 'string' && x.reason.length > 0));
+  assert('excluded entries retain the original alert object', r.excluded.every(x => x.alert && typeof x.alert.timestamp === 'number'));
+  assert('reason correctly identifies "before range"/"after range" as the same raw-range-exclusion reason', r.excluded.every(x => x.reason === 'OUTSIDE_RAW_CANDLE_RANGE'));
+})();
+
+section('reconcileChartMarkers: reconciliation invariant — mapped + excluded === total, always');
+(function () {
+  const dayStart = Date.UTC(2026, 2, 10, 0, 0, 0);
+  const candles = [];
+  for (let i = 0; i < 40; i++) candles.push(mkCandle(dayStart + i * FIFTEEN_MIN(), 1000 + i));
+  const displayCandles4h = R.resampleCandlesForDisplay(candles, '4h');
+
+  const alerts = [
+    mkAlert(dayStart + 0 * FIFTEEN_MIN(), 1000),
+    mkAlert(dayStart + 1 * FIFTEEN_MIN(), 1001),
+    mkAlert(dayStart + 2 * FIFTEEN_MIN(), 1002),
+    mkAlert(dayStart + 20 * FIFTEEN_MIN(), 1020),
+    mkAlert(dayStart - HOUR_MS, 998), // out of range
+    mkAlert(dayStart + 500 * FIFTEEN_MIN(), 1500), // out of range
+  ];
+
+  ['15m', '1h', '4h', '1d'].forEach(tf => {
+    const dc = R.resampleCandlesForDisplay(candles, tf);
+    const r = R.reconcileChartMarkers(alerts, candles, dc, tf);
+    assert(`[${tf}] mappedCount + outsideRangeCount === totalAlerts`, r.mappedCount + r.outsideRangeCount === r.totalAlerts);
+    assert(`[${tf}] totalAlerts matches input length`, r.totalAlerts === alerts.length);
+    const groupSum = r.groups.reduce((s, g) => s + g.alerts.length, 0);
+    assert(`[${tf}] sum of group sizes equals mappedCount (no alert lost or duplicated across groups)`, groupSum === r.mappedCount);
+  });
+
+  assert('unused var silences lint (displayCandles4h referenced)', Array.isArray(displayCandles4h));
+})();
+
+section('reconcileChartMarkers: empty/garbage input never throws');
+(function () {
+  const r1 = R.reconcileChartMarkers([], [], [], '15m');
+  assert('no alerts -> all zeros, empty groups', r1.totalAlerts === 0 && r1.mappedCount === 0 && r1.outsideRangeCount === 0 && r1.groups.length === 0);
+  const r2 = R.reconcileChartMarkers(null, null, null, '15m');
+  assert('null inputs -> no throw, all zeros', r2.totalAlerts === 0 && r2.mappedCount === 0);
+})();
+
+section('formatChartMarkerDiagnosticLine: exact required format');
+(function () {
+  const line = R.formatChartMarkerDiagnosticLine({ mappedCount: 8, totalAlerts: 10, outsideRangeCount: 2, groupedAlertCount: 3 });
+  assert('matches the exact required format', line === 'Chart markers: 8/10 alerts mapped &middot; 2 outside visible range &middot; 3 grouped into shared candles');
+})();
+
 
 (async () => {
   await Promise.all(asyncTests);

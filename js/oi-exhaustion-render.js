@@ -838,6 +838,87 @@
     return currentCandleStart - CHART_INTERVAL_MS;
   }
 
+  // ── Chart marker reconciliation ──────────────────────────────────────────
+  // Every alert the backtest returns should end up as a visible chart
+  // marker, UNLESS its raw timestamp genuinely falls outside the loaded
+  // candle range (rare — only possible with a stale/mismatched run). Two
+  // or more alerts landing on the same DISPLAYED candle (normal: different
+  // zones can both fire on the same candle, and coarser timeframes bucket
+  // several raw candles together) is NOT an exclusion — it's a group that
+  // must be rendered distinguishably rather than silently overlapping.
+
+  /**
+   * For every alert, determines whether it maps to a raw 15m candle AND a
+   * displayed candle for the given timeframe, or is excluded with an
+   * explicit reason — then groups every successfully-mapped alert by its
+   * shared display-candle timestamp.
+   *
+   * Invariant: mappedCount + excluded.length === totalAlerts, always —
+   * every alert lands in exactly one of the two buckets, never both, never
+   * neither.
+   *
+   * @param {Array<object>} alerts result.alerts from the backtest (each has a `timestamp`)
+   * @param {Array<{ts:number}>} rawCandles ascending — run.binanceCandles
+   * @param {Array<{timestamp:number}>} displayCandles ascending — resampleCandlesForDisplay(...) output
+   * @param {string} timeframe one of '15m' | '1h' | '4h' | '1d'
+   * @returns {{
+   *   totalAlerts: number,
+   *   mappedCount: number,
+   *   outsideRangeCount: number,
+   *   groupedAlertCount: number,
+   *   groups: Array<{timestamp:number, alerts: Array<object>}>,
+   *   excluded: Array<{alert:object, reason:string}>,
+   * }}
+   */
+  function reconcileChartMarkers(alerts, rawCandles, displayCandles, timeframe) {
+    const alertList = Array.isArray(alerts) ? alerts : [];
+    const displayCandleIndex = buildDisplayCandleIndex(Array.isArray(displayCandles) ? displayCandles : []);
+
+    const excluded = [];
+    const groupsByTs = new Map(); // display timestamp -> alerts[]
+
+    for (const alert of alertList) {
+      const rawIdx = findContainingCandleIndex(alert.timestamp, Array.isArray(rawCandles) ? rawCandles : [], CHART_INTERVAL_MS);
+      if (rawIdx === -1) {
+        excluded.push({ alert, reason: 'OUTSIDE_RAW_CANDLE_RANGE' });
+        continue;
+      }
+      const displayCandle = findDisplayCandleForAlert(alert.timestamp, displayCandleIndex, timeframe);
+      if (!displayCandle) {
+        excluded.push({ alert, reason: 'OUTSIDE_DISPLAY_CANDLE_RANGE' });
+        continue;
+      }
+      if (!groupsByTs.has(displayCandle.timestamp)) groupsByTs.set(displayCandle.timestamp, []);
+      groupsByTs.get(displayCandle.timestamp).push(alert);
+    }
+
+    const groups = Array.from(groupsByTs.entries())
+      .map(([timestamp, groupAlerts]) => ({ timestamp, alerts: groupAlerts }))
+      .sort((a, b) => a.timestamp - b.timestamp);
+
+    const mappedCount = groups.reduce((sum, g) => sum + g.alerts.length, 0);
+    const groupedAlertCount = groups.filter(g => g.alerts.length > 1).reduce((sum, g) => sum + g.alerts.length, 0);
+
+    return {
+      totalAlerts: alertList.length,
+      mappedCount,
+      outsideRangeCount: excluded.length,
+      groupedAlertCount,
+      groups,
+      excluded,
+    };
+  }
+
+  /** Pure formatter for the permanent chart-marker diagnostic line. */
+  function formatChartMarkerDiagnosticLine(reconciliation) {
+    const r = reconciliation || {};
+    const mapped = r.mappedCount || 0;
+    const total = r.totalAlerts || 0;
+    const outside = r.outsideRangeCount || 0;
+    const grouped = r.groupedAlertCount || 0;
+    return `Chart markers: ${mapped}/${total} alerts mapped &middot; ${outside} outside visible range &middot; ${grouped} grouped into shared candles`;
+  }
+
   const OIExhaustionRender = {
     DEFAULT_SETTINGS,
     SETTINGS_KEY,
@@ -857,6 +938,8 @@
     mapAlertToContainingChartPoint,
     buildBinanceCandleIndex,
     latestCompletedCandleStart,
+    reconcileChartMarkers,
+    formatChartMarkerDiagnosticLine,
     CHART_BUCKET_MS,
     getUtcBucketStart,
     resampleCandlesForDisplay,
@@ -941,7 +1024,7 @@
     lastRunAt: null, // Date.now() of the last SUCCESSFUL run, for the stale-results banner
     lastRunFailed: false, // true when the most recent attempt failed — results shown (if any) are from an earlier run
     rawDataCache: null, // { lookbackDays, startTime, endTime, oiRows, binanceCandles, coverage, cachedAt }
-    chart: { instance: null, timeframe: '15m', displayIndex: null },
+    chart: { instance: null, timeframe: '15m', displayIndex: null, markerGroups: [], focusTooltipHideTimer: null },
   };
 
   function loadSettings() {
@@ -1491,6 +1574,52 @@
     }
   }
 
+  // Small "×N" badge drawn near the top of a shared display candle when 2+
+  // alerts land on it — without this, N overlapping full-height vertical
+  // lines at the exact same x are visually indistinguishable from 1, which
+  // was the root cause of "the table has more alerts than the chart shows".
+  let alertBadgeOverlayRegistered = false;
+  function ensureAlertBadgeOverlayRegistered() {
+    if (alertBadgeOverlayRegistered || typeof klinecharts === 'undefined') return;
+    try {
+      klinecharts.registerOverlay({
+        name: 'oixAlertCountBadge',
+        totalStep: 1,
+        needDefaultPointFigure: false,
+        needDefaultXAxisFigure: false,
+        needDefaultYAxisFigure: false,
+        createPointFigures: ({ coordinates, overlay }) => {
+          if (!coordinates.length) return [];
+          const { x } = coordinates[0];
+          const count = (overlay.extendData && overlay.extendData.count) || 0;
+          const color = (overlay.extendData && overlay.extendData.color) || '#28d7c8';
+          if (count < 2) return [];
+          const y = 14;
+          const r = 9;
+          return [
+            { type: 'circle', attrs: { x, y, r }, styles: { style: 'fill', color }, ignoreEvent: true },
+            {
+              type: 'text',
+              attrs: { x, y, text: String(count), align: 'center', baseline: 'middle' },
+              styles: { color: '#07060c', size: 10, family: undefined },
+              ignoreEvent: true,
+            },
+          ];
+        },
+      });
+      alertBadgeOverlayRegistered = true;
+    } catch (err) {
+      chartError('registerOverlay(oixAlertCountBadge)', err);
+    }
+  }
+
+  /** Writes the permanent "Chart markers: X/Y mapped..." line near the chart. */
+  function renderChartMarkerDiagnostic(reconciliation) {
+    const el = document.getElementById('oix-chart-marker-diag');
+    if (!el) return;
+    el.innerHTML = formatChartMarkerDiagnosticLine(reconciliation);
+  }
+
   function applyChartData() {
     const chart = state.chart.instance;
     const run = state.lastRun;
@@ -1506,8 +1635,12 @@
       state.chart.displayIndex = displayIndex;
       chart.applyNewData(displayCandles);
 
+      // #9: unconditional full clear before redrawing — every rerun/
+      // timeframe switch fully replaces prior overlays, no stale/partial
+      // marker state can survive between calls.
       chart.removeOverlay();
       ensureZoneOverlayRegistered();
+      ensureAlertBadgeOverlayRegistered();
 
       const zones = state.zones.map(normalizeZone).filter(z => isFinite(z.top) && isFinite(z.bottom));
       zones.forEach(z => {
@@ -1517,15 +1650,19 @@
         ]);
       });
 
-      run.chartPoints.forEach(p => {
-        const a = p.alert;
-        // Map the alert's raw 15m timestamp onto whichever DISPLAYED candle
-        // actually contains it — at 1H/4H/1D the raw timestamp won't land
-        // on an exact displayed-candle boundary, so the overlay must use
-        // the containing bucket's timestamp instead.
-        const displayCandle = findDisplayCandleForAlert(a.timestamp, displayIndex, timeframe);
-        if (!displayCandle) return; // alert's UTC bucket isn't present in the currently displayed series
-        const isUp = a.contextDirection === 'bearish-exhaustion'; // up-move-oi-expansion
+      const reconciliation = reconcileChartMarkers(run.result.alerts, run.binanceCandles, displayCandles, timeframe);
+      // Stashed for wireChartTooltip and focusChartOnAlert — both need the
+      // same per-display-candle grouping used to draw the markers, so
+      // hovering/clicking finds ALL alerts sharing a candle, not just one.
+      state.chart.markerGroups = reconciliation.groups;
+
+      reconciliation.groups.forEach(group => {
+        // Representative alert for the shared full-height line's color and
+        // price anchor — arbitrary choice (first by time) when grouped;
+        // each constituent alert's own raw timestamp/price is preserved
+        // untouched in group.alerts for the tooltip.
+        const rep = group.alerts[0];
+        const isUp = rep.contextDirection === 'bearish-exhaustion'; // up-move-oi-expansion
         const color = isUp ? '#e2645f' : '#3ddc97';
         // verticalStraightLine (not verticalRayLine — a ray needs 2 points
         // to define its direction; we only ever have one) — spans the full
@@ -1534,9 +1671,19 @@
           name: 'verticalStraightLine',
           lock: true,
           styles: { line: { color, style: 'dashed', size: 1.4, dashedValue: [4, 3] } },
-          extendData: a,
-        }, [{ timestamp: displayCandle.timestamp, value: a.price }]);
+          extendData: rep,
+        }, [{ timestamp: group.timestamp, value: rep.price }]);
+
+        if (group.alerts.length > 1) {
+          createOverlaySafely(chart, {
+            name: 'oixAlertCountBadge',
+            lock: true,
+            extendData: { count: group.alerts.length, color },
+          }, [{ timestamp: group.timestamp, value: rep.price }]);
+        }
       });
+
+      renderChartMarkerDiagnostic(reconciliation);
     } catch (err) {
       chartError('applyChartData', err);
     }
@@ -1559,42 +1706,9 @@
     initChart();
   }
 
-  function wireChartTooltip(chart) {
-    const wrap = document.getElementById('oix-price-chart-wrap');
-    const tooltip = document.getElementById('oix-chart-tooltip');
-    if (!wrap || !tooltip) return;
-
-    wrap.onmousemove = (e) => {
-      const run = state.lastRun;
-      if (!run || !run.chartPoints.length) { tooltip.style.display = 'none'; return; }
-      const displayIndex = state.chart.displayIndex;
-      const timeframe = state.chart.timeframe;
-      if (!displayIndex) { tooltip.style.display = 'none'; return; }
-      const rect = wrap.getBoundingClientRect();
-      const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-
-      let nearest = null, nearestDist = Infinity;
-      try {
-        for (const p of run.chartPoints) {
-          // Hit-test against the displayed candle's timestamp (matches
-          // where the overlay was actually drawn), not the raw 15m alert
-          // timestamp — those diverge at 1H/4H/1D. The tooltip TEXT below
-          // still reports the alert's real raw timestamp/price.
-          const displayCandle = findDisplayCandleForAlert(p.alert.timestamp, displayIndex, timeframe);
-          if (!displayCandle) continue;
-          const px = chart.convertToPixel({ timestamp: displayCandle.timestamp }, { absolute: false });
-          if (!px || px.x == null) continue;
-          const dist = Math.abs(mx - px.x);
-          if (dist < 8 && dist < nearestDist) { nearest = p; nearestDist = dist; }
-        }
-      } catch (err) {
-        tooltip.style.display = 'none';
-        return;
-      }
-      if (!nearest) { tooltip.style.display = 'none'; return; }
-
-      const a = nearest.alert;
-      const html = `<div style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:11px;">
+  /** Full detail grid for a single alert — unchanged from before, factored out for reuse by both the hover tooltip and the group tooltip. */
+  function renderAlertDetailHtml(a) {
+    return `<div style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:11px;">
         <span style="color:var(--text-faint);">Date</span><span>${new Date(a.timestamp).toISOString().slice(0, 16).replace('T', ' ')}</span>
         <span style="color:var(--text-faint);">Model</span><span>${a.alertModel === 'netProgress' ? 'Net progress score (V2)' : 'Strict path score (V1)'}</span>
         <span style="color:var(--text-faint);">Price</span><span>$${safeNumber(a.price, { maximumFractionDigits: 0 })}</span>
@@ -1614,7 +1728,62 @@
         <span style="color:var(--text-faint);">Zone</span><span>${escapeHtml(a.zoneBounds.label || a.zoneId)}</span>
         ${a.oiRecencyFilter ? `<span style="color:var(--text-faint);">Recency filter</span><span>${escapeHtml(a.oiRecencyFilter.window)} window, min ${a.oiRecencyFilter.minimumRecentOIChangePct}%</span>` : ''}
       </div>`;
-      tooltip.innerHTML = html;
+  }
+
+  /**
+   * Tooltip content for a display-candle group. A single alert gets the
+   * full detail grid unchanged (the common case, same as before this
+   * fix). 2+ alerts sharing a candle get a compact per-alert summary list
+   * instead — each row keeps that alert's own raw timestamp and price
+   * (never the shared display-candle's), so nothing about an individual
+   * alert is lost just because it's grouped with others.
+   */
+  function renderAlertGroupTooltipHtml(group) {
+    if (group.alerts.length === 1) return renderAlertDetailHtml(group.alerts[0]);
+    const rows = group.alerts.map(a => `
+      <div style="display:grid;grid-template-columns:auto auto 1fr auto;gap:8px;align-items:center;padding:4px 0;border-bottom:0.5px solid var(--line-old);">
+        <span style="color:var(--text-faint);">${new Date(a.timestamp).toISOString().slice(11, 16)}</span>
+        <span class="oix-model-badge">${a.alertModel === 'netProgress' ? 'V2' : 'V1'}</span>
+        <span>$${safeNumber(a.price, { maximumFractionDigits: 0 })} &middot; ${escapeHtml(a.zoneBounds.label || a.zoneId)}</span>
+        <span style="color:${a.contextDirection === 'bearish-exhaustion' ? '#e2645f' : '#3ddc97'};">${a.contextDirection === 'bearish-exhaustion' ? 'up' : 'down'}</span>
+      </div>`).join('');
+    return `<div style="font-size:11px;min-width:220px;">
+      <div style="font-weight:600;color:var(--text);margin-bottom:6px;">${group.alerts.length} alerts in this candle</div>
+      ${rows}
+    </div>`;
+  }
+
+  function wireChartTooltip(chart) {
+    const wrap = document.getElementById('oix-price-chart-wrap');
+    const tooltip = document.getElementById('oix-chart-tooltip');
+    if (!wrap || !tooltip) return;
+
+    wrap.onmousemove = (e) => {
+      const groups = state.chart.markerGroups;
+      if (!groups || !groups.length) { tooltip.style.display = 'none'; return; }
+      const rect = wrap.getBoundingClientRect();
+      const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+
+      let nearest = null, nearestDist = Infinity;
+      try {
+        for (const group of groups) {
+          // Hit-test against the displayed candle's timestamp (matches
+          // where the overlay was actually drawn), not any individual
+          // alert's raw 15m timestamp — those diverge at 1H/4H/1D. The
+          // tooltip TEXT itself still reports each alert's real raw
+          // timestamp/price (see renderAlertGroupTooltipHtml).
+          const px = chart.convertToPixel({ timestamp: group.timestamp }, { absolute: false });
+          if (!px || px.x == null) continue;
+          const dist = Math.abs(mx - px.x);
+          if (dist < 8 && dist < nearestDist) { nearest = group; nearestDist = dist; }
+        }
+      } catch (err) {
+        tooltip.style.display = 'none';
+        return;
+      }
+      if (!nearest) { tooltip.style.display = 'none'; return; }
+
+      tooltip.innerHTML = renderAlertGroupTooltipHtml(nearest);
       tooltip.style.display = 'block';
       const tx = mx + 12 > rect.width - 200 ? mx - 195 : mx + 12;
       tooltip.style.left = tx + 'px';
@@ -1668,8 +1837,35 @@
     try {
       // At 1H/4H/1D the raw 15m alert timestamp doesn't land on a displayed
       // candle boundary — scroll to the containing displayed candle instead.
-      const bucketTs = getUtcBucketStart(alert.timestamp, state.chart.timeframe);
+      const timeframe = state.chart.timeframe;
+      const bucketTs = getUtcBucketStart(alert.timestamp, timeframe);
       chart.scrollToTimestamp(bucketTs, 300);
+
+      // #10: also open the marker's own tooltip/detail once the scroll
+      // settles, so clicking a table row visibly connects to its chart
+      // marker rather than just moving the viewport. Reuses the exact
+      // same group lookup/rendering the hover tooltip uses.
+      setTimeout(() => {
+        const groups = state.chart.markerGroups || [];
+        const group = groups.find(g => g.timestamp === bucketTs);
+        const wrap = document.getElementById('oix-price-chart-wrap');
+        const tooltip = document.getElementById('oix-chart-tooltip');
+        if (!group || !wrap || !tooltip) return;
+        try {
+          const px = chart.convertToPixel({ timestamp: bucketTs }, { absolute: false });
+          if (!px || px.x == null) return;
+          const rect = wrap.getBoundingClientRect();
+          tooltip.innerHTML = renderAlertGroupTooltipHtml(group);
+          tooltip.style.display = 'block';
+          const tx = px.x + 12 > rect.width - 200 ? px.x - 195 : px.x + 12;
+          tooltip.style.left = tx + 'px';
+          tooltip.style.top = '20px';
+          // No mouse is hovering to naturally dismiss it via onmouseleave,
+          // so auto-hide after a few seconds.
+          clearTimeout(state.chart.focusTooltipHideTimer);
+          state.chart.focusTooltipHideTimer = setTimeout(() => { tooltip.style.display = 'none'; }, 4000);
+        } catch (err) { /* non-fatal — the scroll itself already succeeded */ }
+      }, 320);
     } catch (err) {
       chartError('focusChartOnAlert', err);
     }

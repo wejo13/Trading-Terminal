@@ -282,6 +282,104 @@ section('summarizeBucketCoverage: empty/garbage input never throws');
   assert('null -> all zeros, no throw', nullResult.totalBucketsSeen === 0);
 })();
 
+section('bucketSingleVenueOI: buckets one venue, keeps latest snapshot per bucket');
+(function () {
+  const raw = [
+    row('bybit', 0, 100),
+    row('bybit', 1000, 150), // same bucket as ts=0, later timestamp wins
+    row('bybit', FIFTEEN_MIN_MS, 200),
+  ];
+  const out = S.bucketSingleVenueOI(raw, FIFTEEN_MIN_MS);
+  assert('two buckets emitted', out.length === 2);
+  assert('bucket 0 keeps latest-timestamp value (150, not 100)', approx(out[0].oi, 150));
+  assert('bucket 1 value correct', approx(out[1].oi, 200));
+  assert('ascending by ts', out[0].ts < out[1].ts);
+})();
+
+section('bucketSingleVenueOI: empty/garbage input never throws');
+(function () {
+  assert('empty array -> []', S.bucketSingleVenueOI([], FIFTEEN_MIN_MS).length === 0);
+  assert('null input -> []', S.bucketSingleVenueOI(null, FIFTEEN_MIN_MS).length === 0);
+  assert('garbage rows -> [] (no throw)', S.bucketSingleVenueOI([null, 'x', 42, {}], FIFTEEN_MIN_MS).length === 0);
+})();
+
+section('aggregateFromPerVenueBuckets: only emits buckets complete across all required venues');
+(function () {
+  const perVenueOI = {
+    binance_futures: [{ ts: 0, oi: 100 }, { ts: FIFTEEN_MIN_MS, oi: 110 }],
+    bybit: [{ ts: 0, oi: 100 }, { ts: FIFTEEN_MIN_MS, oi: 110 }],
+    okx_futures: [{ ts: 0, oi: 100 }], // missing bucket 1 -> bucket 1 incomplete
+  };
+  const out = S.aggregateFromPerVenueBuckets(perVenueOI, VENUES);
+  assert('only complete bucket 0 emitted', out.length === 1);
+  assert('sum is correct', approx(out[0].oi, 300));
+})();
+
+section('aggregateFromPerVenueBuckets: empty/garbage input never throws');
+(function () {
+  assert('empty object -> []', S.aggregateFromPerVenueBuckets({}, VENUES).length === 0);
+  assert('null input -> []', S.aggregateFromPerVenueBuckets(null, VENUES).length === 0);
+  assert('missing venue key entirely -> []', S.aggregateFromPerVenueBuckets({ bybit: [{ ts: 0, oi: 100 }] }, VENUES).length === 0);
+})();
+
+section('summarizeBucketCoverageFromPerVenue: reports total/complete/incomplete bucket counts and venues seen');
+(function () {
+  const perVenueOI = {
+    binance_futures: [{ ts: 0, oi: 100 }, { ts: FIFTEEN_MIN_MS, oi: 100 }],
+    bybit: [{ ts: 0, oi: 100 }, { ts: FIFTEEN_MIN_MS, oi: 100 }],
+    okx_futures: [{ ts: 0, oi: 100 }], // missing bucket 1
+  };
+  const summary = S.summarizeBucketCoverageFromPerVenue(perVenueOI, VENUES);
+  assert('totalBucketsSeen = 2', summary.totalBucketsSeen === 2);
+  assert('completeBuckets = 1', summary.completeBuckets === 1);
+  assert('incompleteBuckets = 1', summary.incompleteBuckets === 1);
+  assert('venuesSeen contains all 3', VENUES.every(v => summary.venuesSeen.indexOf(v) !== -1));
+})();
+
+section('summarizeBucketCoverageFromPerVenue: empty/garbage input never throws');
+(function () {
+  const empty = S.summarizeBucketCoverageFromPerVenue({}, VENUES);
+  assert('empty object -> all zeros', empty.totalBucketsSeen === 0 && empty.completeBuckets === 0 && empty.incompleteBuckets === 0);
+  const nullResult = S.summarizeBucketCoverageFromPerVenue(null, VENUES);
+  assert('null -> all zeros, no throw', nullResult.totalBucketsSeen === 0);
+})();
+
+section('equivalence: per-venue bucket+aggregate pipeline matches bucketAndAggregateOI on the same raw data');
+(function () {
+  // Randomized-ish fixture: several venues, several buckets, some venues
+  // missing from some buckets, duplicate same-bucket snapshots per venue —
+  // this must produce IDENTICAL output whether bucketed all-at-once or
+  // per-venue-then-combined, since that equivalence is the entire point of
+  // the per-venue caching refactor.
+  const raw = [
+    row('binance_futures', 0, 100), row('binance_futures', 500, 105), // dup in bucket 0, later wins
+    row('bybit', 0, 200),
+    row('okx_futures', 0, 300),
+    row('binance_futures', FIFTEEN_MIN_MS, 110),
+    row('bybit', FIFTEEN_MIN_MS, 210),
+    // okx_futures missing entirely from bucket 1 -> incomplete
+    row('binance_futures', FIFTEEN_MIN_MS * 2, 120),
+    row('bybit', FIFTEEN_MIN_MS * 2, 220),
+    row('okx_futures', FIFTEEN_MIN_MS * 2, 320),
+  ];
+
+  const directOI = S.bucketAndAggregateOI(raw, FIFTEEN_MIN_MS, VENUES);
+  const directCoverage = S.summarizeBucketCoverage(raw, FIFTEEN_MIN_MS, VENUES);
+
+  const perVenueOI = {};
+  for (const v of VENUES) {
+    perVenueOI[v] = S.bucketSingleVenueOI(raw.filter(r => r.exchange === v), FIFTEEN_MIN_MS);
+  }
+  const combinedOI = S.aggregateFromPerVenueBuckets(perVenueOI, VENUES);
+  const combinedCoverage = S.summarizeBucketCoverageFromPerVenue(perVenueOI, VENUES);
+
+  assert('same number of aggregate buckets', directOI.length === combinedOI.length);
+  assert('aggregate ts/oi values match exactly', directOI.every((d, i) => combinedOI[i].ts === d.ts && approx(combinedOI[i].oi, d.oi)));
+  assert('coverage totals match', directCoverage.totalBucketsSeen === combinedCoverage.totalBucketsSeen);
+  assert('coverage complete/incomplete match', directCoverage.completeBuckets === combinedCoverage.completeBuckets && directCoverage.incompleteBuckets === combinedCoverage.incompleteBuckets);
+  assert('coverage venuesSeen match', VENUES.every(v => combinedCoverage.venuesSeen.indexOf(v) !== -1) && directCoverage.venuesSeen.length === combinedCoverage.venuesSeen.length);
+})();
+
 console.log('\n────────────────────────────────────────');
 console.log('oi-exhaustion-cryptohft-source: ' + passed + ' passed, ' + failed + ' failed');
 if (failed > 0) process.exit(1);

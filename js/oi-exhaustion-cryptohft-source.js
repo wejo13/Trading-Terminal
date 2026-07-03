@@ -264,6 +264,146 @@
     };
   }
 
+  /**
+   * Buckets a SINGLE venue's raw OI snapshots into fixed-width time buckets,
+   * keeping each bucket's LATEST sum_open_interest_value by exchange
+   * `timestamp` (never received_time) — the per-venue counterpart to
+   * bucketAndAggregateOI, used so each venue can be fetched, bucketed, and
+   * cached independently (incremental per-venue caching) instead of holding
+   * all venues' raw rows in memory until every venue has been fetched.
+   *
+   * No completeness gating happens here — that only applies once buckets
+   * from multiple venues are combined, in aggregateFromPerVenueBuckets.
+   *
+   * @param {Array<object>} rawSnapshots raw rows for one venue only
+   * @param {number} [bucketMs] defaults to 15 minutes
+   * @returns {Array<{ts:number, oi:number}>} ascending by ts
+   */
+  function bucketSingleVenueOI(rawSnapshots, bucketMs) {
+    const bucket = bucketMs != null ? bucketMs : DEFAULT_BUCKET_MS;
+
+    if (!Array.isArray(rawSnapshots) || rawSnapshots.length === 0) return [];
+
+    // latestByBucket: Map<bucketKey, {tsMs, oiValue}>
+    const latestByBucket = new Map();
+
+    for (const row of rawSnapshots) {
+      if (!row || typeof row !== 'object') continue;
+
+      const tsMs = parseMsTimestamp(row.timestamp);
+      if (tsMs === null) continue;
+      const oiValue = parseOiValue(row.sum_open_interest_value); // NEVER row.sum_open_interest
+      if (oiValue === null) continue;
+
+      const bucketKey = Math.floor(tsMs / bucket) * bucket;
+
+      const existing = latestByBucket.get(bucketKey);
+      if (!existing || tsMs >= existing.tsMs) {
+        latestByBucket.set(bucketKey, { tsMs, oiValue });
+      }
+    }
+
+    const out = [];
+    for (const [bucketKey, entry] of latestByBucket) {
+      out.push({ ts: bucketKey, oi: entry.oiValue });
+    }
+
+    out.sort((a, b) => a.ts - b.ts);
+    return out;
+  }
+
+  /**
+   * Combines already-bucketed per-venue OI (each venue bucketed independently
+   * via bucketSingleVenueOI) into the same complete-bucket-only aggregate
+   * that bucketAndAggregateOI produces directly from raw multi-venue rows.
+   *
+   * Same completeness rule as bucketAndAggregateOI: a bucket is emitted ONLY
+   * if every venue in `requiredVenues` has an entry at that exact ts — no
+   * forward-fill, no partial sum, no zero substitution for a missing venue.
+   *
+   * @param {Object<string, Array<{ts:number, oi:number}>>} perVenueOI keyed by venue
+   * @param {string[]} [requiredVenues] defaults to the required basket
+   * @returns {Array<{ts:number, oi:number}>} ascending by ts
+   */
+  function aggregateFromPerVenueBuckets(perVenueOI, requiredVenues) {
+    const venues = requiredVenues != null ? requiredVenues : DEFAULT_REQUIRED_VENUES;
+
+    if (!perVenueOI || typeof perVenueOI !== 'object') return [];
+
+    // oiByVenueBucket: Map<bucketKey, Map<venue, oi>>
+    const oiByVenueBucket = new Map();
+
+    for (const venue of venues) {
+      const entries = perVenueOI[venue];
+      if (!Array.isArray(entries)) continue;
+      for (const entry of entries) {
+        if (!entry || typeof entry.ts !== 'number' || typeof entry.oi !== 'number') continue;
+        if (!oiByVenueBucket.has(entry.ts)) oiByVenueBucket.set(entry.ts, new Map());
+        oiByVenueBucket.get(entry.ts).set(venue, entry.oi);
+      }
+    }
+
+    const out = [];
+    for (const [bucketKey, venueMap] of oiByVenueBucket) {
+      let complete = true;
+      let sum = 0;
+      for (const v of venues) {
+        if (!venueMap.has(v)) { complete = false; break; }
+        sum += venueMap.get(v);
+      }
+      if (!complete) continue; // omit incomplete buckets entirely — no partial aggregate
+      out.push({ ts: bucketKey, oi: sum });
+    }
+
+    out.sort((a, b) => a.ts - b.ts);
+    return out;
+  }
+
+  /**
+   * Diagnostic-only companion to aggregateFromPerVenueBuckets: reports how
+   * many distinct time buckets were SEEN across the per-venue bucket sets vs
+   * how many were actually complete (all required venues present at that
+   * ts) and thus emitted. Mirrors summarizeBucketCoverage's contract but
+   * reads already-bucketed per-venue data instead of raw snapshots.
+   *
+   * @param {Object<string, Array<{ts:number, oi:number}>>} perVenueOI keyed by venue
+   * @param {string[]} [requiredVenues] defaults to the required basket
+   * @returns {{totalBucketsSeen:number, completeBuckets:number, incompleteBuckets:number, venuesSeen:string[]}}
+   */
+  function summarizeBucketCoverageFromPerVenue(perVenueOI, requiredVenues) {
+    const venues = requiredVenues != null ? requiredVenues : DEFAULT_REQUIRED_VENUES;
+
+    if (!perVenueOI || typeof perVenueOI !== 'object') {
+      return { totalBucketsSeen: 0, completeBuckets: 0, incompleteBuckets: 0, venuesSeen: [] };
+    }
+
+    const bucketVenues = new Map(); // bucketKey -> Set<venue>
+    const venuesSeenSet = new Set();
+
+    for (const venue of venues) {
+      const entries = perVenueOI[venue];
+      if (!Array.isArray(entries) || entries.length === 0) continue;
+      venuesSeenSet.add(venue);
+      for (const entry of entries) {
+        if (!entry || typeof entry.ts !== 'number') continue;
+        if (!bucketVenues.has(entry.ts)) bucketVenues.set(entry.ts, new Set());
+        bucketVenues.get(entry.ts).add(venue);
+      }
+    }
+
+    let completeBuckets = 0;
+    for (const venueSet of bucketVenues.values()) {
+      if (venues.every(v => venueSet.has(v))) completeBuckets++;
+    }
+
+    return {
+      totalBucketsSeen: bucketVenues.size,
+      completeBuckets,
+      incompleteBuckets: bucketVenues.size - completeBuckets,
+      venuesSeen: Array.from(venuesSeenSet),
+    };
+  }
+
   const OIExhaustionCryptoHFTSource = {
     DEFAULT_BUCKET_MS,
     DEFAULT_REQUIRED_VENUES,
@@ -272,6 +412,9 @@
     parseOiValue,
     bucketAndAggregateOI,
     summarizeBucketCoverage,
+    bucketSingleVenueOI,
+    aggregateFromPerVenueBuckets,
+    summarizeBucketCoverageFromPerVenue,
   };
 
   if (typeof module !== 'undefined' && module.exports) {

@@ -270,7 +270,7 @@ section('Renderer: no "short" or "risk-off" language anywhere');
 
 section('Fixture: dist20d and dist200d fields present on all rows');
 (function () {
-  const { SP500_WATCHLIST: W } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const { SP500_WATCHLIST: W } = require('./sp500-fixture.js');
   W.forEach(function (r) {
     assert(r.ticker + ' has dist20d',  typeof r.dist20d  === 'number');
     assert(r.ticker + ' has dist200d', typeof r.dist200d === 'number');
@@ -279,7 +279,7 @@ section('Fixture: dist20d and dist200d fields present on all rows');
 
 section('Fixture: dist20d sign consistent with above20d');
 (function () {
-  const { SP500_WATCHLIST: W } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const { SP500_WATCHLIST: W } = require('./sp500-fixture.js');
   W.forEach(function (r) {
     if (r.above20d)  assert(r.ticker + ' above20d → dist20d > 0',  r.dist20d  > 0);
     if (!r.above20d) assert(r.ticker + ' below20d → dist20d < 0',  r.dist20d  < 0);
@@ -288,7 +288,7 @@ section('Fixture: dist20d sign consistent with above20d');
 
 section('Fixture: dist200d sign consistent with above200d');
 (function () {
-  const { SP500_WATCHLIST: W } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const { SP500_WATCHLIST: W } = require('./sp500-fixture.js');
   W.forEach(function (r) {
     if (r.above200d)  assert(r.ticker + ' above200d → dist200d > 0', r.dist200d > 0);
     if (!r.above200d) assert(r.ticker + ' below200d → dist200d < 0', r.dist200d < 0);
@@ -298,9 +298,9 @@ section('Fixture: dist200d sign consistent with above200d');
 section('_fmtDist: formats positive, negative, zero, missing values');
 (function () {
   // Test via the renderer's internal logic by running renderWatchlist and checking output
-  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
-  const SP500Engine = require('/home/claude/fresh/js/sp500-engine.js');
-  const renderSrc2  = require('fs').readFileSync('/home/claude/fresh/js/sp500-render.js', 'utf8');
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('./sp500-fixture.js');
+  const SP500Engine = require('./sp500-engine.js');
+  const renderSrc2  = require('fs').readFileSync(__dirname + '/sp500-render.js', 'utf8');
 
   const nodes2 = {};
   function makeNode2() {
@@ -324,9 +324,9 @@ section('_fmtDist: formats positive, negative, zero, missing values');
 
 section('_fmtDist: missing/null shows —');
 (function () {
-  const { SP500_VALUATION } = require('/home/claude/fresh/js/sp500-fixture.js');
-  const SP500Engine = require('/home/claude/fresh/js/sp500-engine.js');
-  const renderSrc2  = require('fs').readFileSync('/home/claude/fresh/js/sp500-render.js', 'utf8');
+  const { SP500_VALUATION } = require('./sp500-fixture.js');
+  const SP500Engine = require('./sp500-engine.js');
+  const renderSrc2  = require('fs').readFileSync(__dirname + '/sp500-render.js', 'utf8');
 
   const nullRow = [{ ticker:'TEST', company:'Test', sector:'ETF', price:100, dayChg:0.5,
     above20d:true, above200d:true, dist20d:null, dist200d:undefined, note:'Test' }];
@@ -350,9 +350,9 @@ section('_fmtDist: missing/null shows —');
 
 section('SPY posture line: Bullish shows correct description');
 (function () {
-  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
-  const SP500Engine = require('/home/claude/fresh/js/sp500-engine.js');
-  const renderSrc3  = require('fs').readFileSync('/home/claude/fresh/js/sp500-render.js', 'utf8');
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('./sp500-fixture.js');
+  const SP500Engine = require('./sp500-engine.js');
+  const renderSrc3  = require('fs').readFileSync(__dirname + '/sp500-render.js', 'utf8');
   function makeEnv(watchlist) {
     const nodes = {};
     function mn(){ let _h=''; return { style:{}, get innerHTML(){return _h;}, set innerHTML(v){_h=v;} }; }
@@ -375,9 +375,9 @@ section('SPY posture line: Bullish shows correct description');
 
 section('SPY posture line: each status maps to correct description');
 (function () {
-  const { SP500_VALUATION } = require('/home/claude/fresh/js/sp500-fixture.js');
-  const SP500Engine = require('/home/claude/fresh/js/sp500-engine.js');
-  const renderSrc3  = require('fs').readFileSync('/home/claude/fresh/js/sp500-render.js', 'utf8');
+  const { SP500_VALUATION } = require('./sp500-fixture.js');
+  const SP500Engine = require('./sp500-engine.js');
+  const renderSrc3  = require('fs').readFileSync(__dirname + '/sp500-render.js', 'utf8');
   function makeEnv(spy) {
     const nodes = {};
     function mn(){ let _h=''; return { style:{}, get innerHTML(){return _h;}, set innerHTML(v){_h=v;} }; }
@@ -405,9 +405,9 @@ section('SPY posture line: each status maps to correct description');
 
 section('SPY posture line: posture appears before watchlist table');
 (function () {
-  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
-  const SP500Engine = require('/home/claude/fresh/js/sp500-engine.js');
-  const renderSrc3  = require('fs').readFileSync('/home/claude/fresh/js/sp500-render.js', 'utf8');
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('./sp500-fixture.js');
+  const SP500Engine = require('./sp500-engine.js');
+  const renderSrc3  = require('fs').readFileSync(__dirname + '/sp500-render.js', 'utf8');
   const nodes = {};
   function mn(){ let _h=''; return { style:{}, get innerHTML(){return _h;}, set innerHTML(v){_h=v;} }; }
   const doc = { getElementById(id){ if(!nodes[id]) nodes[id]=mn(); return nodes[id]; } };
@@ -424,9 +424,9 @@ section('SPY posture line: no CAPE influence on posture status');
 (function () {
   // Posture is purely from SPY row status (above20d/above200d/dayChg), not CAPE
   // Verify by checking the description doesn't mention valuation terms
-  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
-  const SP500Engine = require('/home/claude/fresh/js/sp500-engine.js');
-  const renderSrc3  = require('fs').readFileSync('/home/claude/fresh/js/sp500-render.js', 'utf8');
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('./sp500-fixture.js');
+  const SP500Engine = require('./sp500-engine.js');
+  const renderSrc3  = require('fs').readFileSync(__dirname + '/sp500-render.js', 'utf8');
   const nodes = {};
   function mn(){ let _h=''; return { style:{}, get innerHTML(){return _h;}, set innerHTML(v){_h=v;} }; }
   const doc = { getElementById(id){ if(!nodes[id]) nodes[id]=mn(); return nodes[id]; } };
@@ -445,8 +445,8 @@ section('SPY posture line: no CAPE influence on posture status');
 section('DataSource: getSnapshot returns required metadata fields');
 (function () {
   // Test the module in isolation (fixtures as globals)
-  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
-  const dsSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-data-source.js', 'utf8');
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('./sp500-fixture.js');
+  const dsSrc = require('fs').readFileSync(__dirname + '/sp500-data-source.js', 'utf8');
   const globals = {
     SP500_VALUATION, SP500_WATCHLIST,
     window:{}, module:{exports:{}}, require,
@@ -464,8 +464,8 @@ section('DataSource: getSnapshot returns required metadata fields');
 
 section('DataSource: isLive is strictly false (not falsy — must be boolean false)');
 (function () {
-  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
-  const dsSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-data-source.js', 'utf8');
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('./sp500-fixture.js');
+  const dsSrc = require('fs').readFileSync(__dirname + '/sp500-data-source.js', 'utf8');
   const globals = { SP500_VALUATION, SP500_WATCHLIST, window:{}, module:{exports:{}}, require };
   const DS = new Function(...Object.keys(globals), dsSrc+'\nreturn module.exports;')(...Object.values(globals));
   assert('isLive === false (strict)',  DS.getSnapshot().isLive === false);
@@ -475,8 +475,8 @@ section('DataSource: isLive is strictly false (not falsy — must be boolean fal
 
 section('DataSource: snapshot valuation matches SP500_VALUATION fixture');
 (function () {
-  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
-  const dsSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-data-source.js', 'utf8');
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('./sp500-fixture.js');
+  const dsSrc = require('fs').readFileSync(__dirname + '/sp500-data-source.js', 'utf8');
   const globals = { SP500_VALUATION, SP500_WATCHLIST, window:{}, module:{exports:{}}, require };
   const DS = new Function(...Object.keys(globals), dsSrc+'\nreturn module.exports;')(...Object.values(globals));
   const snap = DS.getSnapshot();
@@ -486,9 +486,9 @@ section('DataSource: snapshot valuation matches SP500_VALUATION fixture');
 
 section('Renderer: _safeSnapshot falls back gracefully when DataSource absent');
 (function () {
-  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
-  const SP500Engine = require('/home/claude/fresh/js/sp500-engine.js');
-  const renderSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-render.js', 'utf8');
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('./sp500-fixture.js');
+  const SP500Engine = require('./sp500-engine.js');
+  const renderSrc = require('fs').readFileSync(__dirname + '/sp500-render.js', 'utf8');
   // No SP500DataSource in globals — should fall back to direct globals
   const nodes = {};
   function mn(){ let _h=''; return {style:{},get innerHTML(){return _h;},set innerHTML(v){_h=v;}}; }
@@ -511,11 +511,11 @@ section('Renderer: _safeSnapshot falls back gracefully when DataSource absent');
 
 section('Renderer: banner text is consistent "DEMO DATA · Fixture values · Not live"');
 (function () {
-  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
-  const SP500Engine = require('/home/claude/fresh/js/sp500-engine.js');
-  const renderSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-render.js', 'utf8');
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('./sp500-fixture.js');
+  const SP500Engine = require('./sp500-engine.js');
+  const renderSrc = require('fs').readFileSync(__dirname + '/sp500-render.js', 'utf8');
   // Banners are in index.html static HTML, not renderer output — check index.html
-  const html = require('fs').readFileSync('/home/claude/fresh/index.html', 'utf8');
+  const html = require('fs').readFileSync(__dirname + '/../index.html', 'utf8');
   // Banners use &middot; entities; check raw HTML directly
   const bannerCount = (html.match(/sp5-demo-banner/g)||[]).length;
   assert('at least two banners present', bannerCount >= 2);
@@ -527,7 +527,7 @@ section('Renderer: banner text is consistent "DEMO DATA · Fixture values · Not
 
 section('Index.html: live-pill has IDs for runtime updates');
 (function () {
-  const html = require('fs').readFileSync('/home/claude/fresh/index.html', 'utf8');
+  const html = require('fs').readFileSync(__dirname + '/../index.html', 'utf8');
   assert('sp5-live-pill id exists',  html.includes('id="sp5-live-pill"'));
   assert('sp5-live-dot id exists',   html.includes('id="sp5-live-dot"'));
   assert('sp5-live-label id exists', html.includes('id="sp5-live-label"'));
@@ -535,7 +535,7 @@ section('Index.html: live-pill has IDs for runtime updates');
 
 section('Index.html: sp500-data-source.js script tag present before fixture');
 (function () {
-  const html = require('fs').readFileSync('/home/claude/fresh/index.html', 'utf8');
+  const html = require('fs').readFileSync(__dirname + '/../index.html', 'utf8');
   const dsIdx  = html.indexOf('sp500-data-source.js');
   const fixIdx = html.indexOf('sp500-fixture.js');
   assert('data-source script tag present', dsIdx !== -1);
@@ -547,7 +547,7 @@ section('Index.html: sp500-data-source.js script tag present before fixture');
 
 section('DataSource: fetchLive merges live price/dayChg, preserves fixture fields');
 (function () {
-  const { SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const { SP500_WATCHLIST } = require('./sp500-fixture.js');
 
   function mergeRows(fixtureRows, liveRows) {
     const liveMap = {};
@@ -575,7 +575,7 @@ section('DataSource: fetchLive merges live price/dayChg, preserves fixture field
 
 section('DataSource: tickers absent from live payload keep fixture values');
 (function () {
-  const { SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const { SP500_WATCHLIST } = require('./sp500-fixture.js');
   function mergeRows(fixtureRows, liveRows) {
     const liveMap = {};
     for (const r of liveRows) liveMap[r.ticker] = r;
@@ -603,8 +603,8 @@ section('DataSource: tickers absent from live payload keep fixture values');
 
 section('DataSource: WORKER_URL points to deployed Cloudflare Worker');
 (function () {
-  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
-  const dsSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-data-source.js', 'utf8');
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('./sp500-fixture.js');
+  const dsSrc = require('fs').readFileSync(__dirname + '/sp500-data-source.js', 'utf8');
   const globals = { SP500_VALUATION, SP500_WATCHLIST, window:{}, module:{exports:{}}, require };
   const DS = new Function(...Object.keys(globals), dsSrc+'\nreturn module.exports;')(...Object.values(globals));
   assert('WORKER_URL is the deployed endpoint',
@@ -614,7 +614,7 @@ section('DataSource: WORKER_URL points to deployed Cloudflare Worker');
 
 section('Renderer: setPillLive and setPillDemo are exposed and distinct');
 (function () {
-  const renderSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-render.js', 'utf8');
+  const renderSrc = require('fs').readFileSync(__dirname + '/sp500-render.js', 'utf8');
   assert('setPillLive present in source',  renderSrc.includes('setPillLive'));
   assert('setPillDemo present in source',  renderSrc.includes('setPillDemo'));
   assert('_updateWatchlistBanner present', renderSrc.includes('_updateWatchlistBanner'));
@@ -622,7 +622,7 @@ section('Renderer: setPillLive and setPillDemo are exposed and distinct');
 
 section('Index.html: watchlist banner has stable ID for live updates');
 (function () {
-  const html = require('fs').readFileSync('/home/claude/fresh/index.html', 'utf8');
+  const html = require('fs').readFileSync(__dirname + '/../index.html', 'utf8');
   assert('sp5-watchlist-banner id present', html.includes('id="sp5-watchlist-banner"'));
 })();
 
@@ -631,8 +631,8 @@ section('Index.html: watchlist banner has stable ID for live updates');
 
 section('DataSource: getSnapshot tags every row priceSource=fixture by default');
 (function () {
-  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
-  const dsSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-data-source.js', 'utf8');
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('./sp500-fixture.js');
+  const dsSrc = require('fs').readFileSync(__dirname + '/sp500-data-source.js', 'utf8');
   const globals = { SP500_VALUATION, SP500_WATCHLIST, window:{}, module:{exports:{}}, require };
   const DS = new Function(...Object.keys(globals), dsSrc+'\nreturn module.exports;')(...Object.values(globals));
   const snap = DS.getSnapshot();
@@ -657,7 +657,7 @@ function buildMergeFn() {
 
 section('Coverage: all 12 tickers returned → mode=live, every row priceSource=live');
 (function () {
-  const { SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const { SP500_WATCHLIST } = require('./sp500-fixture.js');
   const mergeRows = buildMergeFn();
   const liveRows = SP500_WATCHLIST.map(r => ({ ticker: r.ticker, price: 999, dayChg: 1.1 }));
   const merged = mergeRows(SP500_WATCHLIST, liveRows);
@@ -671,7 +671,7 @@ section('Coverage: all 12 tickers returned → mode=live, every row priceSource=
 
 section('Coverage: 8/12 returned → mode=partial, correct per-row provenance');
 (function () {
-  const { SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const { SP500_WATCHLIST } = require('./sp500-fixture.js');
   const mergeRows = buildMergeFn();
   const liveTickers = ['SPY','NVDA','MSFT','AMZN','META','AAPL','AMD','SMH'];
   const liveRows = liveTickers.map(t => ({ ticker: t, price: 500, dayChg: 0.5 }));
@@ -693,8 +693,8 @@ section('Coverage: 8/12 returned → mode=partial, correct per-row provenance');
 
 section('Coverage: no payload / failure → demo state preserved, all rows fixture');
 (function () {
-  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
-  const dsSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-data-source.js', 'utf8');
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('./sp500-fixture.js');
+  const dsSrc = require('fs').readFileSync(__dirname + '/sp500-data-source.js', 'utf8');
   const globals = { SP500_VALUATION, SP500_WATCHLIST, window:{}, module:{exports:{}}, require };
   const DS = new Function(...Object.keys(globals), dsSrc+'\nreturn module.exports;')(...Object.values(globals));
   // Simulate fetch failure: getSnapshot() is what the renderer falls back to
@@ -707,7 +707,7 @@ section('Coverage: no payload / failure → demo state preserved, all rows fixtu
 
 section('Merge: fixture technical fields unchanged after quote merge (live)');
 (function () {
-  const { SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const { SP500_WATCHLIST } = require('./sp500-fixture.js');
   const mergeRows = buildMergeFn();
   const liveRows = SP500_WATCHLIST.map(r => ({ ticker: r.ticker, price: 777, dayChg: 2.2 }));
   const merged = mergeRows(SP500_WATCHLIST, liveRows);
@@ -726,7 +726,7 @@ section('Merge: fixture technical fields unchanged after quote merge (live)');
 
 section('Merge: fixture technical fields unchanged after quote merge (partial)');
 (function () {
-  const { SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
+  const { SP500_WATCHLIST } = require('./sp500-fixture.js');
   const mergeRows = buildMergeFn();
   const liveRows = [{ ticker:'SPY', price: 700, dayChg: -1.0 }]; // only SPY live
   const merged = mergeRows(SP500_WATCHLIST, liveRows);
@@ -741,9 +741,9 @@ section('Merge: fixture technical fields unchanged after quote merge (partial)')
 
 section('Renderer: banner text — full live coverage');
 (function () {
-  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
-  const SP500Engine = require('/home/claude/fresh/js/sp500-engine.js');
-  const renderSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-render.js', 'utf8');
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('./sp500-fixture.js');
+  const SP500Engine = require('./sp500-engine.js');
+  const renderSrc = require('fs').readFileSync(__dirname + '/sp500-render.js', 'utf8');
   const nodes = {};
   function mn(){ let _h=''; return {style:{},get innerHTML(){return _h;},set innerHTML(v){_h=v;},get textContent(){return _h;},set textContent(v){_h=v;}}; }
   const doc = { getElementById(id){ if(!nodes[id]) nodes[id]=mn(); return nodes[id]; } };
@@ -778,9 +778,9 @@ section('Renderer: banner text — partial coverage format');
 
 section('Renderer: Source column only rendered when coverage is partial');
 (function () {
-  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
-  const SP500Engine = require('/home/claude/fresh/js/sp500-engine.js');
-  const renderSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-render.js', 'utf8');
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('./sp500-fixture.js');
+  const SP500Engine = require('./sp500-engine.js');
+  const renderSrc = require('fs').readFileSync(__dirname + '/sp500-render.js', 'utf8');
 
   // Demo mode (no SP500DataSource) — Source column should NOT appear
   const nodes1 = {};
@@ -795,9 +795,9 @@ section('Renderer: Source column only rendered when coverage is partial');
 
 section('Renderer: Source column shows Live/Fixture labels when partial');
 (function () {
-  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
-  const SP500Engine = require('/home/claude/fresh/js/sp500-engine.js');
-  const renderSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-render.js', 'utf8');
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('./sp500-fixture.js');
+  const SP500Engine = require('./sp500-engine.js');
+  const renderSrc = require('fs').readFileSync(__dirname + '/sp500-render.js', 'utf8');
 
   const nodes = {};
   function mn(){ let _h=''; return {style:{},get innerHTML(){return _h;},set innerHTML(v){_h=v;}}; }
@@ -830,9 +830,9 @@ section('Renderer: Source column shows Live/Fixture labels when partial');
 
 section('Renderer: valuation panel stays DEMO regardless of watchlist coverage');
 (function () {
-  const { SP500_VALUATION, SP500_WATCHLIST } = require('/home/claude/fresh/js/sp500-fixture.js');
-  const SP500Engine = require('/home/claude/fresh/js/sp500-engine.js');
-  const renderSrc = require('fs').readFileSync('/home/claude/fresh/js/sp500-render.js', 'utf8');
+  const { SP500_VALUATION, SP500_WATCHLIST } = require('./sp500-fixture.js');
+  const SP500Engine = require('./sp500-engine.js');
+  const renderSrc = require('fs').readFileSync(__dirname + '/sp500-render.js', 'utf8');
   const nodes = {};
   function mn(){ let _h=''; return {style:{},get innerHTML(){return _h;},set innerHTML(v){_h=v;}}; }
   const doc = { getElementById(id){ if(!nodes[id]) nodes[id]=mn(); return nodes[id]; } };
@@ -845,16 +845,36 @@ section('Renderer: valuation panel stays DEMO regardless of watchlist coverage')
   assert('no Source/Live language in valuation panel', !html.includes('sp5-source'));
 })();
 
+// The Cloudflare Worker source (merged-index.js) lives in a separate
+// deployment, not in this repo — WORKER_SRC_PATH is a local-only override
+// (e.g. `WORKER_SRC_PATH=/path/to/merged-index.js node js/sp500.test.js`)
+// for anyone who has that file checked out elsewhere. Without it, these two
+// sections skip rather than crashing the rest of the suite.
+const WORKER_SRC_PATH = process.env.WORKER_SRC_PATH || null;
+let workerSrcCached = null;
+function tryReadWorkerSrc() {
+  if (workerSrcCached !== null) return workerSrcCached;
+  if (!WORKER_SRC_PATH) return null;
+  try {
+    workerSrcCached = require('fs').readFileSync(WORKER_SRC_PATH, 'utf8');
+    return workerSrcCached;
+  } catch (e) {
+    return null;
+  }
+}
+
 section('Worker source: requests all 12 tickers');
 (function () {
-  const workerSrc = require('fs').readFileSync('/home/claude/worker/merged-index.js', 'utf8');
+  const workerSrc = tryReadWorkerSrc();
+  if (!workerSrc) { console.log('  SKIP worker source not available locally (set WORKER_SRC_PATH to run this section)'); return; }
   const expected = ['SPY','NVDA','MSFT','AMZN','META','GOOGL','AAPL','AVGO','AMD','SMH','XLF','XLE'];
   expected.forEach(t => assert('worker requests ' + t, workerSrc.includes("'" + t + "'")));
 })();
 
 section('Response shape: normalized payload still has ticker/price/dayChg/provider/asOf');
 (function () {
-  const workerSrc = require('fs').readFileSync('/home/claude/worker/merged-index.js', 'utf8');
+  const workerSrc = tryReadWorkerSrc();
+  if (!workerSrc) { console.log('  SKIP worker source not available locally (set WORKER_SRC_PATH to run this section)'); return; }
   assert('payload includes provider field', workerSrc.includes("provider: 'Twelve Data'"));
   assert('payload includes asOf field',     workerSrc.includes('asOf: new Date().toISOString()'));
   assert('row includes ticker field',       workerSrc.includes('ticker,'));

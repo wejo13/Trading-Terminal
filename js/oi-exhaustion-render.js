@@ -25,7 +25,6 @@
 
 (function (root) {
 
-  const FIVE_MIN_MS = 5 * 60 * 1000;
   const SETTINGS_KEY = 'oix_settings_v1';
   const ZONES_KEY = 'oix_zones_v1';
 
@@ -483,6 +482,40 @@
   // ── Pure logic (no DOM) — exported for Node tests ───────────────────────
 
   /** Fills in any missing fields with defaults; clamps obviously invalid values. */
+  const SETTINGS_MIGRATION_KEY = 'oix_settings_migrated_15m_v1';
+  // Exact pre-15m-migration defaults, used ONLY to detect "this is almost
+  // certainly a stale untouched value from before the CryptoHFT/15m
+  // migration," not to detect any value that happens to equal these numbers
+  // for other reasons. This exists because DEFAULT_SETTINGS changed
+  // (signalWindow 144->48, baselineLookbackCandles 8640->2880) but anyone
+  // who already had settings saved in localStorage keeps their OLD saved
+  // values forever otherwise — Object.assign(DEFAULT_SETTINGS, raw) always
+  // lets a present raw value win, silently reintroducing the old 5m-era
+  // window/baseline size under the hood while the rest of the app now
+  // believes it's running on 15m candles.
+  const PRE_15M_DEFAULTS = { signalWindow: 144, baselineLookbackCandles: 8640 };
+
+  /**
+   * Runs at most ONCE per browser (gated by SETTINGS_MIGRATION_KEY in
+   * localStorage, checked by the caller). If a saved settings object still
+   * has the exact old 5m-era default values, replaces them with the new
+   * 15m-era defaults. Any value that ISN'T exactly the old default is left
+   * untouched — this never overwrites a value the user deliberately chose,
+   * before or after migration. Pure function; does not touch localStorage
+   * itself. Returns a new object, does not mutate the input.
+   */
+  function migrateStaleCadenceSettings(raw) {
+    if (!raw || typeof raw !== 'object') return raw;
+    const migrated = Object.assign({}, raw);
+    if (migrated.signalWindow === PRE_15M_DEFAULTS.signalWindow) {
+      migrated.signalWindow = DEFAULT_SETTINGS.signalWindow;
+    }
+    if (migrated.baselineLookbackCandles === PRE_15M_DEFAULTS.baselineLookbackCandles) {
+      migrated.baselineLookbackCandles = DEFAULT_SETTINGS.baselineLookbackCandles;
+    }
+    return migrated;
+  }
+
   function validateSettings(raw) {
     const s = Object.assign({}, DEFAULT_SETTINGS, raw || {});
     s.lookbackDays = clampNumber(s.lookbackDays, 1, 3650, DEFAULT_SETTINGS.lookbackDays);
@@ -618,16 +651,19 @@
     return map;
   }
 
-  /** Start timestamp of the latest fully completed 5m candle, given "now". */
+  /** Start timestamp of the latest fully completed 15m candle, given "now". */
   function latestCompletedCandleStart(nowMs) {
-    const currentCandleStart = Math.floor(nowMs / FIVE_MIN_MS) * FIVE_MIN_MS;
-    return currentCandleStart - FIVE_MIN_MS;
+    const currentCandleStart = Math.floor(nowMs / CHART_INTERVAL_MS) * CHART_INTERVAL_MS;
+    return currentCandleStart - CHART_INTERVAL_MS;
   }
 
   const OIExhaustionRender = {
     DEFAULT_SETTINGS,
     SETTINGS_KEY,
     ZONES_KEY,
+    SETTINGS_MIGRATION_KEY,
+    PRE_15M_DEFAULTS,
+    migrateStaleCadenceSettings,
     CHART_INTERVAL_MS,
     validateSettings,
     clampNumber,
@@ -723,7 +759,17 @@
   function loadSettings() {
     let raw = null;
     try { raw = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch (e) { /* ignore */ }
+
+    let migrationAlreadyRan = false;
+    try { migrationAlreadyRan = localStorage.getItem(SETTINGS_MIGRATION_KEY) === 'true'; } catch (e) { /* ignore */ }
+
+    if (!migrationAlreadyRan) {
+      raw = migrateStaleCadenceSettings(raw);
+      try { localStorage.setItem(SETTINGS_MIGRATION_KEY, 'true'); } catch (e) { /* ignore */ }
+    }
+
     state.settings = validateSettings(raw);
+    if (!migrationAlreadyRan) saveSettings(); // persist the migrated values immediately, not just in memory
   }
   function saveSettings() {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
@@ -907,6 +953,7 @@
         rearmPercentile: s.rearmPercentile,
         minBaselineSamples: s.minBaselineSamples,
         baselineLookbackCandles: s.baselineLookbackCandles,
+        signalWindow: s.signalWindow,
         alertModel: s.alertModel,
         oiRecencyFilterEnabled: s.oiRecencyFilterEnabled,
         minimumRecentOIChangePct: s.minimumRecentOIChangePct,
@@ -931,6 +978,7 @@
         `Coverage: ${binanceCandles.length} Binance 15m candles / ${oiRows.length} CryptoHFT aggregate OI buckets &middot; ` +
         `Bucket completeness: ${coverage.completeBuckets} valid / ${coverage.incompleteBuckets} incomplete excluded (of ${coverage.totalBucketsSeen} seen) &middot; ` +
         `Venues seen: ${coverage.venuesSeen.length}/3 (${coverage.venuesSeen.join(', ') || 'none'}) &middot; ` +
+        `Signal window: ${result.meta.signalWindow} candles (${result.meta.signalWindow * 15}min) &middot; ` +
         `Valid scored: ${result.meta.validScoreCount} / ${result.meta.totalCandles} &middot; ` +
         `Positive scores: ${result.meta.positiveScorePct != null ? result.meta.positiveScorePct.toFixed(1) + '%' : '—'} of valid candles &middot; ` +
         `Baseline: ${result.meta.finalBaselineSize} (cap ${result.meta.baselineLookbackCandles}) &middot; ` +

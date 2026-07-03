@@ -36,7 +36,7 @@ const Engine = (typeof module !== 'undefined' && module.exports)
   : window.OIExhaustionEngine;
 
 const HORIZONS_MINUTES = [15, 60, 240, 720, 1440, 4320]; // 15m, 1h, 4h, 12h, 24h, 3d
-const FIVE_MIN_MS = 5 * 60 * 1000;
+const FIFTEEN_MIN_MS = 15 * 60 * 1000; // candle/OI-bucket interval — switched from 5m (Bybit) to 15m (CryptoHFT aggregate + matching Binance price candles)
 
 // ── Alignment (causal-safe: just a join + gap flagging, no lookahead risk) ──
 
@@ -70,7 +70,7 @@ function alignCandlesAndOI(candles, oiRows) {
 
   const validFlags = timestamps.map((ts, i) => {
     if (i === 0) return true;
-    return ts - timestamps[i - 1] === FIVE_MIN_MS;
+    return ts - timestamps[i - 1] === FIFTEEN_MIN_MS;
   });
 
   return { timestamps, closes, ois, highs, lows, hasOHLC, validFlags };
@@ -187,6 +187,12 @@ function runEventStudy(candles, oiRows, zones, opts) {
   const rearmPercentile = opts.rearmPercentile || Engine.DEFAULT_REARM_PERCENTILE;
   const minBaselineSamples = opts.minBaselineSamples || Engine.MIN_BASELINE_SAMPLES;
   const baselineLookbackCandles = opts.baselineLookbackCandles || Engine.DEFAULT_BASELINE_LOOKBACK_CANDLES;
+  // BUG FIX: signalWindow was captured from the UI (Parameters -> "Signal
+  // window (candles)") and displayed, but never actually reached the
+  // engine — computeExhaustionSeries was always called without a
+  // windowSize option, silently falling back to Engine.SIGNAL_WINDOW no
+  // matter what the field showed. Now actually threaded through.
+  const signalWindow = opts.signalWindow || Engine.SIGNAL_WINDOW;
   // Backward-compatible default: any caller that doesn't pass alertModel
   // (existing tests, CLI, direct API use) gets exactly the original v1
   // strict-score behavior, unchanged.
@@ -203,7 +209,7 @@ function runEventStudy(candles, oiRows, zones, opts) {
   const oiRecencyWindowCandles = Engine.OI_RECENCY_WINDOW_CANDLES[oiRecencyWindow];
 
   const { timestamps, closes, ois, highs, lows, hasOHLC, validFlags } = alignCandlesAndOI(candles, oiRows);
-  const series = Engine.computeExhaustionSeries(timestamps, closes, ois, { validFlags });
+  const series = Engine.computeExhaustionSeries(timestamps, closes, ois, { validFlags, windowSize: signalWindow });
 
   const baseline = Engine.createBaselineLog({ baselineLookbackCandles });
   const zoneStates = new Map(zones.map(z => [z.id, false])); // armed state per zone
@@ -350,6 +356,7 @@ function runEventStudy(candles, oiRows, zones, opts) {
     meta: {
       totalCandles: timestamps.length,
       alertModel,
+      signalWindow,
       oiRecencyFilterEnabled,
       minimumRecentOIChangePct,
       oiRecencyWindow,

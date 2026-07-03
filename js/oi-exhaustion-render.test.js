@@ -16,6 +16,46 @@ const FIVE_MIN = 5 * 60 * 1000;
 
 // ── validateSettings ─────────────────────────────────────────────────────
 
+// ── migrateStaleCadenceSettings (one-time localStorage migration) ────────
+
+section('migrateStaleCadenceSettings: replaces EXACT old 5m-era defaults with the new 15m-era defaults');
+(function () {
+  const stale = { signalWindow: 144, baselineLookbackCandles: 8640, entryPercentile: 95 };
+  const migrated = R.migrateStaleCadenceSettings(stale);
+  assert('signalWindow 144 -> 48', migrated.signalWindow === 48);
+  assert('baselineLookbackCandles 8640 -> 2880', migrated.baselineLookbackCandles === 2880);
+  assert('unrelated fields untouched', migrated.entryPercentile === 95);
+})();
+
+section('migrateStaleCadenceSettings: does NOT touch a value that is not exactly the old default (a deliberate user choice)');
+(function () {
+  const deliberate = { signalWindow: 96, baselineLookbackCandles: 5000 };
+  const migrated = R.migrateStaleCadenceSettings(deliberate);
+  assert('a deliberately different signalWindow is left alone', migrated.signalWindow === 96);
+  assert('a deliberately different baselineLookbackCandles is left alone', migrated.baselineLookbackCandles === 5000);
+})();
+
+section('migrateStaleCadenceSettings: a user who deliberately re-sets a value BACK to the old number (144/8640) after migration is not the concern of this pure function — that is handled by the one-time localStorage gate in loadSettings, not here');
+(function () {
+  // This function is deliberately unconditional/stateless — it always
+  // converts an exact-144/8640 match. The "only once, ever" guarantee
+  // comes from the SETTINGS_MIGRATION_KEY flag checked by loadSettings
+  // before calling this, not from this function itself.
+  const stale = { signalWindow: 144 };
+  const migrated = R.migrateStaleCadenceSettings(stale);
+  assert('144 always maps to 48 when this function is actually invoked', migrated.signalWindow === 48);
+})();
+
+section('migrateStaleCadenceSettings: does not mutate the input, handles null/non-object gracefully');
+(function () {
+  const original = { signalWindow: 144 };
+  const originalCopy = Object.assign({}, original);
+  R.migrateStaleCadenceSettings(original);
+  assert('input object unchanged after migration call', JSON.stringify(original) === JSON.stringify(originalCopy));
+  assert('null input returns null, no throw', R.migrateStaleCadenceSettings(null) === null);
+  assert('non-object input returned as-is, no throw', R.migrateStaleCadenceSettings('garbage') === 'garbage');
+})();
+
 section('validateSettings: fills in defaults for missing/undefined fields');
 (function () {
   const s = R.validateSettings({});
@@ -339,17 +379,19 @@ section('mapAlertToContainingChartPoint: alert outside fetched chart range maps 
 
 section('latestCompletedCandleStart: excludes the still-forming current candle');
 (function () {
-  const currentCandleStart = Math.floor(T0 / FIVE_MIN) * FIVE_MIN;
+  const FIFTEEN_MIN = R.CHART_INTERVAL_MS;
+  const currentCandleStart = Math.floor(T0 / FIFTEEN_MIN) * FIFTEEN_MIN;
   const nowInsideThatCandle = currentCandleStart + 2 * 60 * 1000; // 2 min into the current candle
   const result = R.latestCompletedCandleStart(nowInsideThatCandle);
-  assert('returns the PREVIOUS candle start, not the in-progress one', result === currentCandleStart - FIVE_MIN);
+  assert('returns the PREVIOUS candle start, not the in-progress one', result === currentCandleStart - FIFTEEN_MIN);
 })();
 
 section('latestCompletedCandleStart: exactly on a candle boundary still excludes it (still forming)');
 (function () {
-  const boundary = T0 - (T0 % FIVE_MIN); // exact 5m boundary
+  const FIFTEEN_MIN = R.CHART_INTERVAL_MS;
+  const boundary = T0 - (T0 % FIFTEEN_MIN); // exact 15m boundary
   const result = R.latestCompletedCandleStart(boundary);
-  assert('at the exact boundary, the candle just starting is still excluded', result === boundary - FIVE_MIN);
+  assert('at the exact boundary, the candle just starting is still excluded', result === boundary - FIFTEEN_MIN);
 })();
 
 // ── Fetch reliability: rate-limit retry, backoff, cache ──────────────────

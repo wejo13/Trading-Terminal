@@ -20,25 +20,25 @@ function assert(desc, cond) {
 function approx(a, b, eps) { return Math.abs(a - b) < (eps || 1e-9); }
 function section(name) { console.log('\n' + name); }
 
-const FIVE_MIN = 5 * 60 * 1000;
+const FIFTEEN_MIN = 15 * 60 * 1000;
 const T0 = 1750000000000;
 
 // ── alignCandlesAndOI ────────────────────────────────────────────────────
 
 section('alignCandlesAndOI: exact-match inner join, unmatched rows dropped');
 (function () {
-  const candles = [{ ts: T0, close: 100 }, { ts: T0 + FIVE_MIN, close: 101 }, { ts: T0 + 2 * FIVE_MIN, close: 102 }];
-  const oi = [{ ts: T0, oi: 1000 }, { ts: T0 + 2 * FIVE_MIN, oi: 1010 }]; // missing middle OI sample
+  const candles = [{ ts: T0, close: 100 }, { ts: T0 + FIFTEEN_MIN, close: 101 }, { ts: T0 + 2 * FIFTEEN_MIN, close: 102 }];
+  const oi = [{ ts: T0, oi: 1000 }, { ts: T0 + 2 * FIFTEEN_MIN, oi: 1010 }]; // missing middle OI sample
   const { timestamps, closes, ois } = alignCandlesAndOI(candles, oi);
   assert('unmatched candle dropped', timestamps.length === 2);
-  assert('correct rows kept', timestamps[0] === T0 && timestamps[1] === T0 + 2 * FIVE_MIN);
+  assert('correct rows kept', timestamps[0] === T0 && timestamps[1] === T0 + 2 * FIFTEEN_MIN);
   assert('closes/ois aligned correctly', closes[1] === 102 && ois[1] === 1010);
 })();
 
 section('alignCandlesAndOI: gap flagged via validFlags when joined series skips a timestamp');
 (function () {
-  const candles = [{ ts: T0, close: 100 }, { ts: T0 + FIVE_MIN, close: 101 }, { ts: T0 + 2 * FIVE_MIN, close: 102 }];
-  const oi = [{ ts: T0, oi: 1000 }, { ts: T0 + 2 * FIVE_MIN, oi: 1010 }];
+  const candles = [{ ts: T0, close: 100 }, { ts: T0 + FIFTEEN_MIN, close: 101 }, { ts: T0 + 2 * FIFTEEN_MIN, close: 102 }];
+  const oi = [{ ts: T0, oi: 1000 }, { ts: T0 + 2 * FIFTEEN_MIN, oi: 1010 }];
   const { validFlags } = alignCandlesAndOI(candles, oi);
   assert('first row always valid', validFlags[0] === true);
   assert('second (post-gap) row flagged invalid', validFlags[1] === false);
@@ -46,10 +46,10 @@ section('alignCandlesAndOI: gap flagged via validFlags when joined series skips 
 
 section('alignCandlesAndOI: hasOHLC true only when every candle has numeric high/low');
 (function () {
-  const withOHLC = [{ ts: T0, close: 100, high: 101, low: 99 }, { ts: T0 + FIVE_MIN, close: 101, high: 102, low: 100 }];
-  const withoutOHLC = [{ ts: T0, close: 100 }, { ts: T0 + FIVE_MIN, close: 101 }];
-  const mixed = [{ ts: T0, close: 100, high: 101, low: 99 }, { ts: T0 + FIVE_MIN, close: 101 }];
-  const oi = [{ ts: T0, oi: 1000 }, { ts: T0 + FIVE_MIN, oi: 1010 }];
+  const withOHLC = [{ ts: T0, close: 100, high: 101, low: 99 }, { ts: T0 + FIFTEEN_MIN, close: 101, high: 102, low: 100 }];
+  const withoutOHLC = [{ ts: T0, close: 100 }, { ts: T0 + FIFTEEN_MIN, close: 101 }];
+  const mixed = [{ ts: T0, close: 100, high: 101, low: 99 }, { ts: T0 + FIFTEEN_MIN, close: 101 }];
+  const oi = [{ ts: T0, oi: 1000 }, { ts: T0 + FIFTEEN_MIN, oi: 1010 }];
 
   assert('full OHLC -> hasOHLC true', alignCandlesAndOI(withOHLC, oi).hasOHLC === true);
   assert('no OHLC -> hasOHLC false', alignCandlesAndOI(withoutOHLC, oi).hasOHLC === false);
@@ -60,10 +60,10 @@ section('alignCandlesAndOI: hasOHLC true only when every candle has numeric high
 
 section('findExactIndex: exact match only, no "nearest after" substitution');
 (function () {
-  const ts = [T0, T0 + FIVE_MIN, T0 + 2 * FIVE_MIN, T0 + 3 * FIVE_MIN];
-  assert('exact match returns that index', findExactIndex(ts, T0 + 2 * FIVE_MIN) === 2);
-  assert('non-existent timestamp between candles returns -1', findExactIndex(ts, T0 + FIVE_MIN + 1) === -1);
-  assert('target past end returns -1', findExactIndex(ts, T0 + 100 * FIVE_MIN) === -1);
+  const ts = [T0, T0 + FIFTEEN_MIN, T0 + 2 * FIFTEEN_MIN, T0 + 3 * FIFTEEN_MIN];
+  assert('exact match returns that index', findExactIndex(ts, T0 + 2 * FIFTEEN_MIN) === 2);
+  assert('non-existent timestamp between candles returns -1', findExactIndex(ts, T0 + FIFTEEN_MIN + 1) === -1);
+  assert('target past end returns -1', findExactIndex(ts, T0 + 100 * FIFTEEN_MIN) === -1);
 })();
 
 // ── computeHorizonOutcomes: OHLC boundary detection ─────────────────────
@@ -71,7 +71,7 @@ section('findExactIndex: exact match only, no "nearest after" substitution');
 function buildLinearOHLC(n, opts) {
   // builds a simple ascending timestamp series with caller-supplied
   // close/high/low arrays for hand-crafted boundary scenarios
-  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIVE_MIN);
+  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIFTEEN_MIN);
   const validFlags = Array.from({ length: n }, () => true);
   return { timestamps, validFlags, closes: opts.closes, highs: opts.highs, lows: opts.lows };
 }
@@ -117,45 +117,48 @@ section('computeHorizonOutcomes: both boundaries touched within the same candle 
 
 section('computeHorizonOutcomes: close-only proxy fallback when OHLC absent, marked accordingly');
 (function () {
-  const closes = [100, 103, 104, 109]; // never dips/wicks, just closes; index 3 closes at/above top
-  const { timestamps, validFlags } = buildLinearOHLC(4, {});
+  // At 15m-per-candle spacing, the 1h horizon is 4 candles ahead of the alert.
+  const closes = [100, 101, 102, 103, 109]; // index 4 closes at/above top — the 1h-horizon candle
+  const { timestamps, validFlags } = buildLinearOHLC(5, {});
   const zoneBounds = { top: 108, bottom: 90 };
 
   const outcomes = computeHorizonOutcomes(0, timestamps, closes, null, null, false, validFlags, zoneBounds);
-  assert('close-only proxy still detects a close-based crossing', outcomes['15m'].firstBoundaryHit === 'top');
-  assert('boundaryMethod marked close_only_proxy', outcomes['15m'].boundaryMethod === 'close_only_proxy');
+  assert('close-only proxy still detects a close-based crossing', outcomes['1h'].firstBoundaryHit === 'top');
+  assert('boundaryMethod marked close_only_proxy', outcomes['1h'].boundaryMethod === 'close_only_proxy');
 })();
 
 // ── computeHorizonOutcomes: gap-strictness ──────────────────────────────
 
 section('computeHorizonOutcomes: exact-timestamp requirement — missing target candle is invalid_forward_gap, not substituted');
 (function () {
-  // 5 candles but candle at exactly +15m (index 3) is simply absent from
-  // the array (simulating a hole) while later data exists.
-  const timestamps = [T0, T0 + FIVE_MIN, T0 + 2 * FIVE_MIN, T0 + 4 * FIVE_MIN, T0 + 5 * FIVE_MIN];
-  const closes = [100, 101, 102, 104, 105];
-  const validFlags = [true, true, true, false, true]; // gap flagged going into index 3
+  // At 15m-per-candle spacing, the 15m horizon target is exactly 1 candle
+  // ahead. Here that candle is entirely absent from the array — index 1
+  // actually represents T0+30m, not T0+15m — simulating a hole exactly at
+  // the horizon target.
+  const timestamps = [T0, T0 + 2 * FIFTEEN_MIN, T0 + 3 * FIFTEEN_MIN];
+  const closes = [100, 102, 104];
+  const validFlags = [true, false, true]; // gap flagged going into index 1 (30m jump, not 15m)
   const outcomes = computeHorizonOutcomes(0, timestamps, closes, null, null, false, validFlags, null);
-  assert('15m horizon (target = index 3, missing) is invalid_forward_gap, not silently using index 4', outcomes['15m'].dataQuality === 'invalid_forward_gap');
+  assert('15m horizon (exact target candle missing) is invalid_forward_gap, not silently using the next available candle', outcomes['15m'].dataQuality === 'invalid_forward_gap');
 })();
 
 section('computeHorizonOutcomes: gap INSIDE the horizon window (target candle exists, but a gap occurred before it) is invalid_forward_gap');
 (function () {
   const n = 20;
-  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIVE_MIN);
+  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIFTEEN_MIN);
   const closes = Array.from({ length: n }, (_, i) => 100 + i);
   const validFlags = Array.from({ length: n }, () => true);
-  validFlags[2] = false; // a gap occurred at index 2, inside the 15m (3-candle) horizon from index 0
+  validFlags[2] = false; // a gap at index 2 — inside the 1h horizon span (candles 1..4) from index 0
 
   const outcomes = computeHorizonOutcomes(0, timestamps, closes, null, null, false, validFlags, null);
-  assert('15m horizon spans the gap at index 2 -> invalid_forward_gap', outcomes['15m'].dataQuality === 'invalid_forward_gap');
-  // 1h horizon (12 candles ahead) also spans it -> also invalid
-  assert('1h horizon also spans the gap -> invalid_forward_gap', outcomes['1h'].dataQuality === 'invalid_forward_gap');
+  assert('1h horizon spans the gap at index 2 -> invalid_forward_gap', outcomes['1h'].dataQuality === 'invalid_forward_gap');
+  // 4h horizon (16 candles ahead) also spans it -> also invalid
+  assert('4h horizon also spans the gap -> invalid_forward_gap', outcomes['4h'].dataQuality === 'invalid_forward_gap');
 })();
 
 section('computeHorizonOutcomes: insufficient_forward_data vs invalid_forward_gap are distinct outcomes');
 (function () {
-  const timestamps = [T0, T0 + FIVE_MIN, T0 + 2 * FIVE_MIN];
+  const timestamps = [T0, T0 + FIFTEEN_MIN, T0 + 2 * FIFTEEN_MIN];
   const closes = [100, 101, 102];
   const validFlags = [true, true, true];
   const outcomes = computeHorizonOutcomes(2, timestamps, closes, null, null, false, validFlags, null); // alert on last candle, no data past it at all
@@ -205,7 +208,7 @@ section('summarizeHorizonOutcomes: all-invalid group returns zero valid count wi
 
 function buildSyntheticSeries(n, opts) {
   opts = opts || {};
-  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIVE_MIN);
+  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIFTEEN_MIN);
   const closes = [];
   const ois = [];
   let close = 100, oi = 1000;
@@ -226,7 +229,7 @@ function buildSyntheticSeries(n, opts) {
 section('runEventStudy: flat price + flat OI never alerts after warm-up (score always 0)');
 (function () {
   const n = 700;
-  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIVE_MIN);
+  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIFTEEN_MIN);
   const candles = timestamps.map(ts => ({ ts, close: 100 })); // perfectly flat
   const oiRows = timestamps.map(ts => ({ ts, oi: 1000 }));    // perfectly flat
   const zones = [{ id: 'z1', label: 'wide', type: 'range', top: 1000000, bottom: 0, active: true }];
@@ -243,7 +246,7 @@ section('runEventStudy: negative score at a high relative percentile never alert
   // negative" than others — those would rank at a high percentile under a
   // pure relative-baseline scheme, but must never fire since score <= 0.
   const n = 700;
-  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIVE_MIN);
+  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIFTEEN_MIN);
   const closes = [100];
   const ois = [1000];
   for (let i = 1; i < n; i++) {
@@ -309,7 +312,7 @@ section('runEventStudy: zone temporal gating — no alert before availableAtTs, 
   // must NOT fire even though price/score conditions are met, because the
   // zone wasn't "known" yet at that point in time.
   const spikeTs = timestamps[600];
-  const zoneTooLate = [{ id: 'z1', label: 'late zone', type: 'range', top: 1e12, bottom: 0, active: true, availableAtTs: spikeTs + FIVE_MIN }];
+  const zoneTooLate = [{ id: 'z1', label: 'late zone', type: 'range', top: 1e12, bottom: 0, active: true, availableAtTs: spikeTs + FIFTEEN_MIN }];
   const resultBlocked = runEventStudy(candles, oiRows, zoneTooLate, { minBaselineSamples: 50 });
   const blockedAtSpike = resultBlocked.alerts.find(a => a.timestamp === spikeTs);
   assert('no alert at the spike candle when zone becomes available only after it', !blockedAtSpike);
@@ -332,7 +335,7 @@ section('runEventStudy: meta.positiveScorePct reflects the actual fraction of po
   // so the diagnostic should land close to 50% (not exactly, due to warm-up
   // candles before the window fills, but well within a wide tolerance here).
   const n = 700;
-  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIVE_MIN);
+  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIFTEEN_MIN);
   const closes = [100];
   const ois = [1000];
   for (let i = 1; i < n; i++) {
@@ -357,7 +360,7 @@ section('runEventStudy: meta.positiveScorePct reflects the actual fraction of po
 section('runEventStudy: meta.positiveScorePct is 0 (not null/NaN) when every score is negative');
 (function () {
   const n = 700;
-  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIVE_MIN);
+  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIFTEEN_MIN);
   const closes = [100];
   const ois = [1000];
   for (let i = 1; i < n; i++) {
@@ -417,7 +420,7 @@ section('runEventStudy: choppy-but-flat synthetic dataset — netProgressScore p
   // Build 700 candles that chop hard (alternating +3%/-3%) while OI grinds
   // up steadily throughout — the scenario WEJO specifically flagged.
   const n = 700;
-  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIVE_MIN);
+  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIFTEEN_MIN);
   const closes = [100];
   const ois = [1000];
   for (let i = 1; i < n; i++) {
@@ -466,7 +469,7 @@ section('Alert model: netProgress selection uses netProgressScore for percentile
   // strict, and every fired alert's score must be positive under the
   // netProgress definition specifically.
   const n = 700;
-  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIVE_MIN);
+  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIFTEEN_MIN);
   const closes = [100];
   const ois = [1000];
   for (let i = 1; i < n; i++) {
@@ -548,7 +551,7 @@ section('OI-RECENCY FILTER REGRESSION: alert fires under unfiltered V2, but is r
   // stalled must NOT fire, even though their netProgressScore/percentile
   // still qualify.
   const n = 800;
-  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIVE_MIN);
+  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIFTEEN_MIN);
   const closes = [];
   const ois = [];
   let close = 100, oi = 1000;
@@ -602,7 +605,7 @@ section('OI-recency filter: deterministic proof of rejection — the exact candl
   // stepZoneState directly with a baseline that ranks it at a high
   // percentile — the same mechanics runEventStudy itself uses internally.
   const n = 145;
-  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIVE_MIN);
+  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIFTEEN_MIN);
   const closes = [];
   const ois = [];
   let close = 100, oi = 1000;
@@ -669,6 +672,23 @@ section('OI-recency filter: disabled by default — omitting the option changes 
 
   assert('omitting the flag matches explicitly disabling it', JSON.stringify(noOptionPassed.alerts) === JSON.stringify(explicitlyDisabled.alerts));
   assert('meta.oiRecencyFilterEnabled is false by default', noOptionPassed.meta.oiRecencyFilterEnabled === false);
+})();
+
+section('REGRESSION: signalWindow option actually reaches the engine — was silently discarded before, always using Engine.SIGNAL_WINDOW regardless of the requested value');
+(function () {
+  const Engine = require('./oi-exhaustion-engine.js');
+  const n = 700;
+  const { timestamps, closes, ois } = buildSyntheticSeries(n, {});
+  const candles = timestamps.map((ts, i) => ({ ts, close: closes[i] }));
+  const oiRows = timestamps.map((ts, i) => ({ ts, oi: ois[i] }));
+  const zones = [{ id: 'z1', label: 'wide', type: 'range', top: 1e12, bottom: 0, active: true }];
+
+  const resultDefault = runEventStudy(candles, oiRows, zones, { minBaselineSamples: 50 }); // no signalWindow -> Engine default
+  const resultSmallWindow = runEventStudy(candles, oiRows, zones, { minBaselineSamples: 50, signalWindow: 10 });
+
+  assert('meta.signalWindow reports the engine default when not specified', resultDefault.meta.signalWindow === Engine.SIGNAL_WINDOW);
+  assert('meta.signalWindow reports the REQUESTED value when specified — was previously always the engine default regardless', resultSmallWindow.meta.signalWindow === 10);
+  assert('a smaller signalWindow produces MORE valid scored candles (window fills sooner), proving it actually changed the computation, not just the reported number', resultSmallWindow.meta.validScoreCount > resultDefault.meta.validScoreCount);
 })();
 
 // ── summary ───────────────────────────────────────────────────────────────

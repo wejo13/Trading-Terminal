@@ -1,0 +1,65 @@
+{
+  "window": {
+    "startTime": 1782815400000,
+    "endTime": 1783074600000,
+    "lookbackDays": 3,
+    "hourStepHours": 1
+  },
+  "binanceCandleCount": 288,
+  "cryptoHft": {
+    "rawRowCount": 119079,
+    "totalRequests": 219,
+    "skipped404Count": 3,
+    "coverage": {
+      "totalBucketsSeen": 454,
+      "completeBuckets": 288,
+      "incompleteBuckets": 166,
+      "venuesSeen": [
+        "binance_futures",
+        "bybit",
+        "okx_futures"
+      ]
+    },
+    "oiRowCount": 288
+  },
+  "v1": {
+    "alerts": 0,
+    "meta": {
+      "totalCandles": 288,
+      "alertModel": "strict",
+      "signalWindow": 48,
+      "oiRecencyFilterEnabled": false,
+      "minimumRecentOIChangePct": 0,
+      "oiRecencyWindow": "1h",
+      "validScoreCount": 240,
+      "positiveScoreCount": 72,
+      "positiveScorePct": 30,
+      "finalBaselineSize": 240,
+      "baselineLookbackCandles": 2880,
+      "minBaselineSamples": 500,
+      "entryPercentile": 95,
+      "rearmPercentile": 80,
+      "hasOHLC": false
+    }
+  },
+  "v2": {
+    "alerts": 0,
+    "meta": {
+      "totalCandles": 288,
+      "alertModel": "netProgress",
+      "signalWindow": 48,
+      "oiRecencyFilterEnabled": false,
+      "minimumRecentOIChangePct": 0,
+      "oiRecencyWindow": "1h",
+      "validScoreCount": 240,
+      "positiveScoreCount": 72,
+      "positiveScorePct": 30,
+      "finalBaselineSize": 240,
+      "baselineLookbackCandles": 2880,
+      "minBaselineSamples": 500,
+      "entryPercentile": 95,
+      "rearmPercentile": 80,
+      "hasOHLC": false
+    }
+  }
+}

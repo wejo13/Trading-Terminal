@@ -777,7 +777,136 @@ section('BINANCE_PAGE_DELAY_MS: a real, defined constant (not the removed REQUES
   assert('BINANCE_PAGE_DELAY_MS is a positive finite number', typeof R.BINANCE_PAGE_DELAY_MS === 'number' && R.BINANCE_PAGE_DELAY_MS > 0);
 })();
 
-// ── summary ───────────────────────────────────────────────────────────────
+// ── Chart display resampling (UTC-aligned) ──────────────────────────────
+// getUtcBucketStart / resampleCandlesForDisplay / buildDisplayCandleIndex /
+// findDisplayCandleForAlert — replaces the old fixed-count chunking, which
+// grouped every N candles from the first FETCHED candle rather than real
+// UTC clock boundaries.
+
+const HOUR_MS = 60 * 60 * 1000;
+const FOUR_HOUR_MS = 4 * HOUR_MS;
+const DAY_MS = 24 * HOUR_MS;
+
+function mkCandle(ts, base) {
+  return { ts, open: base, close: base + 0.5, high: base + 1, low: base - 1 };
+}
+
+section('getUtcBucketStart: buckets align to real UTC clock boundaries, not fetch start');
+(function () {
+  const unaligned = Date.UTC(2026, 0, 1, 23, 47, 0); // 23:47 UTC — deliberately not on any boundary
+  assert('1h bucket floors to the hour', R.getUtcBucketStart(unaligned, '1h') === Date.UTC(2026, 0, 1, 23, 0, 0));
+  assert('4h bucket floors to 20:00 UTC (00/04/08/12/16/20 grid)', R.getUtcBucketStart(unaligned, '4h') === Date.UTC(2026, 0, 1, 20, 0, 0));
+  assert('1d bucket floors to UTC midnight', R.getUtcBucketStart(unaligned, '1d') === Date.UTC(2026, 0, 1, 0, 0, 0));
+  assert('15m bucket is the identity (already 15m-aligned)', R.getUtcBucketStart(Date.UTC(2026, 0, 1, 23, 45, 0), '15m') === Date.UTC(2026, 0, 1, 23, 45, 0));
+})();
+
+section('resampleCandlesForDisplay(15m): identity OHLC, normalized to {timestamp,...} shape');
+(function () {
+  const candles = [mkCandle(T0, 100), mkCandle(T0 + FIVE_MIN * 3, 101)];
+  const out = R.resampleCandlesForDisplay(candles, '15m');
+  assert('same candle count', out.length === candles.length);
+  assert('timestamp field populated from ts', out[0].timestamp === T0);
+  assert('OHLC values unchanged', out[0].open === 100 && out[0].close === 100.5 && out[0].high === 101 && out[0].low === 99);
+})();
+
+section('resampleCandlesForDisplay(1h): unaligned 23:45 UTC fetch start still buckets on real hour boundaries');
+(function () {
+  // 12 fifteen-minute candles starting 23:45 UTC 2026-01-01, running through
+  // 02:30 UTC 2026-01-02. Real hour buckets: [23:00]=1 candle, [00:00]=4,
+  // [01:00]=4, [02:00]=3 (partial, series just ends there) — NOT four
+  // neat groups of 3 counted from the fetch start, which is what the old
+  // fixed-count chunking would have produced.
+  const start = Date.UTC(2026, 0, 1, 23, 45, 0);
+  const candles = [];
+  for (let i = 0; i < 12; i++) candles.push(mkCandle(start + i * FIFTEEN_MIN(), 100 + i));
+
+  const out = R.resampleCandlesForDisplay(candles, '1h');
+  assert('4 real hour buckets produced (1 + 4 + 4 + 3), not 3 fixed-count groups of 4', out.length === 4);
+  assert('first bucket is the 23:00 UTC hour (contains only the 23:45 candle)', out[0].timestamp === Date.UTC(2026, 0, 1, 23, 0, 0));
+  assert('first bucket OHLC = just candle 0 (100/100.5/101/99)', out[0].open === 100 && out[0].close === 100.5 && out[0].high === 101 && out[0].low === 99);
+  assert('second bucket is 00:00 UTC Jan 2', out[1].timestamp === Date.UTC(2026, 0, 2, 0, 0, 0));
+  assert('second bucket aggregates candles 1-4: open=101, close=104.5, high=105, low=100', out[1].open === 101 && out[1].close === 104.5 && out[1].high === 105 && out[1].low === 100);
+  assert('third bucket is 01:00 UTC: open=105, close=108.5, high=109, low=104', out[2].timestamp === Date.UTC(2026, 0, 2, 1, 0, 0) && out[2].open === 105 && out[2].close === 108.5 && out[2].high === 109 && out[2].low === 104);
+  assert('fourth (partial) bucket is 02:00 UTC: open=109, close=111.5, high=112, low=108', out[3].timestamp === Date.UTC(2026, 0, 2, 2, 0, 0) && out[3].open === 109 && out[3].close === 111.5 && out[3].high === 112 && out[3].low === 108);
+  assert('buckets strictly ascending', out.every((b, i) => i === 0 || b.timestamp > out[i - 1].timestamp));
+})();
+function FIFTEEN_MIN() { return 15 * 60 * 1000; }
+
+section('resampleCandlesForDisplay(4h/1d): exact OHLC aggregation over an aligned full day, no candle split across buckets');
+(function () {
+  // A full UTC day, 96 candles at 15m, starting exactly at midnight — the
+  // clean case, used to check the aggregation MATH precisely (open=first,
+  // close=last, high=max, low=min) once boundary-finding itself is already
+  // covered by the unaligned-start test above.
+  const dayStart = Date.UTC(2026, 2, 10, 0, 0, 0); // 2026-03-10 UTC
+  const candles = [];
+  for (let i = 0; i < 96; i++) candles.push(mkCandle(dayStart + i * FIFTEEN_MIN(), 1000 + i));
+
+  const h4 = R.resampleCandlesForDisplay(candles, '4h');
+  assert('exactly 6 four-hour buckets (00/04/08/12/16/20 UTC)', h4.length === 6);
+  for (let k = 0; k < 6; k++) {
+    const expectedTs = dayStart + k * FOUR_HOUR_MS;
+    const firstIdx = k * 16, lastIdx = k * 16 + 15;
+    assert(`4h bucket ${k} timestamp on the real 4h grid`, h4[k].timestamp === expectedTs);
+    assert(`4h bucket ${k} open = first candle's open`, h4[k].open === 1000 + firstIdx);
+    assert(`4h bucket ${k} close = last candle's close`, h4[k].close === 1000 + lastIdx + 0.5);
+    assert(`4h bucket ${k} high = max of the 16`, h4[k].high === 1000 + lastIdx + 1);
+    assert(`4h bucket ${k} low = min of the 16`, h4[k].low === 1000 + firstIdx - 1);
+  }
+
+  const d1 = R.resampleCandlesForDisplay(candles, '1d');
+  assert('exactly 1 daily bucket', d1.length === 1);
+  assert('1d bucket timestamp is UTC midnight', d1[0].timestamp === dayStart);
+  assert('1d bucket open = candle 0 open', d1[0].open === 1000);
+  assert('1d bucket close = candle 95 close', d1[0].close === 1095.5);
+  assert('1d bucket high = max of all 96', d1[0].high === 1096);
+  assert('1d bucket low = min of all 96', d1[0].low === 999);
+})();
+
+section('resampleCandlesForDisplay: empty/garbage input never throws');
+(function () {
+  assert('empty array -> []', R.resampleCandlesForDisplay([], '1h').length === 0);
+  assert('null -> []', R.resampleCandlesForDisplay(null, '1h').length === 0);
+  assert('unknown timeframe falls back to 15m identity', R.resampleCandlesForDisplay([mkCandle(T0, 5)], 'bogus').length === 1);
+})();
+
+section('findDisplayCandleForAlert: correctly places an alert on its containing displayed candle at every timeframe');
+(function () {
+  const dayStart = Date.UTC(2026, 2, 10, 0, 0, 0);
+  const candles = [];
+  for (let i = 0; i < 96; i++) candles.push(mkCandle(dayStart + i * FIFTEEN_MIN(), 1000 + i));
+  // Alert sits inside 15m candle index 37 (00:00 + 9h15m) — not on any
+  // coarser boundary itself, which is exactly the case that broke overlay
+  // placement before this fix.
+  const alertTs = dayStart + 37 * FIFTEEN_MIN();
+
+  const h1Candles = R.resampleCandlesForDisplay(candles, '1h');
+  const h1Index = R.buildDisplayCandleIndex(h1Candles);
+  const h1Match = R.findDisplayCandleForAlert(alertTs, h1Index, '1h');
+  assert('1h: alert maps to the 09:00 UTC hour candle', h1Match && h1Match.timestamp === dayStart + 9 * HOUR_MS);
+  assert('1h: mapped candle covers candle indices 36-39 (open=1036, close=1039.5)', h1Match.open === 1036 && h1Match.close === 1039.5);
+
+  const h4Candles = R.resampleCandlesForDisplay(candles, '4h');
+  const h4Index = R.buildDisplayCandleIndex(h4Candles);
+  const h4Match = R.findDisplayCandleForAlert(alertTs, h4Index, '4h');
+  assert('4h: alert maps to the 08:00 UTC 4h candle', h4Match && h4Match.timestamp === dayStart + 2 * FOUR_HOUR_MS);
+  assert('4h: mapped candle covers candle indices 32-47 (open=1032, close=1047.5)', h4Match.open === 1032 && h4Match.close === 1047.5);
+
+  const d1Candles = R.resampleCandlesForDisplay(candles, '1d');
+  const d1Index = R.buildDisplayCandleIndex(d1Candles);
+  const d1Match = R.findDisplayCandleForAlert(alertTs, d1Index, '1d');
+  assert('1d: alert maps to the single daily candle at UTC midnight', d1Match && d1Match.timestamp === dayStart);
+
+  assert('findDisplayCandleForAlert returns null for a bucket with no displayed candle', R.findDisplayCandleForAlert(dayStart - HOUR_MS, h1Index, '1h') === null);
+})();
+
+section('nextHelpTooltipState: only one tooltip open at a time');
+(function () {
+  assert('opening from closed returns the clicked id', R.nextHelpTooltipState(null, 'a') === 'a');
+  assert('clicking the already-open icon closes it (returns null)', R.nextHelpTooltipState('a', 'a') === null);
+  assert('clicking a different icon switches to it (closes the old one)', R.nextHelpTooltipState('a', 'b') === 'b');
+})();
+
 
 (async () => {
   await Promise.all(asyncTests);

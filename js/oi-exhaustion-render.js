@@ -6,10 +6,11 @@
  *
  * Data source rule (REPLACED — Bybit-only OI is no longer the live source):
  *  - OI SIGNAL SOURCE: CryptoHFT major-venue aggregate (Binance Futures +
- *    Bybit + OKX + Bitget BTC perpetuals, sum_open_interest_value only),
- *    bucketed to 15m UTC. See oi-exhaustion-cryptohft-source.js for the
- *    aggregation rules (last-observation-per-bucket, all-four-venues
- *    required, no forward-fill, no partial aggregate).
+ *    Bybit + OKX BTC perpetuals, sum_open_interest_value only; Bitget is
+ *    deliberately excluded — see CRYPTOHFT_REQUIRED_VENUES below), bucketed
+ *    to 15m UTC. See oi-exhaustion-cryptohft-source.js for the aggregation
+ *    rules (last-observation-per-bucket, all-three-venues required, no
+ *    forward-fill, no partial aggregate).
  *  - PRICE SOURCE (both signal AND chart): Binance BTCUSDT spot candles,
  *    now fetched at 15m to match the OI bucket interval exactly — there is
  *    only one candle series now, used for both scoring and display.
@@ -621,11 +622,11 @@
   }
 
   /**
-   * Maps an alert (Bybit-timestamped, 5m-aligned) to the Binance candle used
-   * for chart display at that same timestamp. Returns null if no exact-
-   * timestamp Binance candle exists (chart simply won't plot that marker
-   * rather than guessing a position). Used when the chart candle interval
-   * matches the signal interval exactly (5m).
+   * Maps an alert (CryptoHFT-signal-timestamped, 15m-aligned) to the
+   * Binance candle used for chart display at that same timestamp. Returns
+   * null if no exact-timestamp Binance candle exists (chart simply won't
+   * plot that marker rather than guessing a position). Used when the chart
+   * candle interval matches the signal interval exactly (15m).
    */
   function mapAlertToChartPoint(alert, binanceCandlesByTs) {
     const candle = binanceCandlesByTs.get(alert.timestamp);
@@ -681,6 +682,134 @@
     return map;
   }
 
+  // ── Chart display resampling (UTC-aligned) ──────────────────────────────
+  // The signal/backtest always runs on the raw 15m series (untouched by any
+  // of this). These helpers only govern what the KLineChart widget DISPLAYS
+  // when the person picks a coarser timeframe (1H/4H/1D), and how an
+  // alert's raw 15m timestamp is mapped onto whichever displayed candle
+  // actually contains it.
+  //
+  // Bucket width in ms per display timeframe. All three coarser buckets
+  // are exact multiples of CHART_INTERVAL_MS (15m), so a single raw 15m
+  // candle can never straddle two buckets. Epoch (1970-01-01T00:00:00Z) is
+  // itself a 1h/4h/1d boundary, so floor(ts / bucketMs) * bucketMs lands
+  // exactly on real UTC boundaries — hourly on the hour, 4h on
+  // 00/04/08/12/16/20 UTC, daily on UTC midnight — regardless of where the
+  // fetched candle series happens to start (e.g. an unaligned 23:45 UTC
+  // first candle).
+  const CHART_BUCKET_MS = {
+    '15m': CHART_INTERVAL_MS,
+    '1h': 60 * 60 * 1000,
+    '4h': 4 * 60 * 60 * 1000,
+    '1d': 24 * 60 * 60 * 1000,
+  };
+
+  /** The UTC bucket-start timestamp (ms) that `tsMs` falls into for the given display timeframe. */
+  function getUtcBucketStart(tsMs, timeframe) {
+    const bucketMs = CHART_BUCKET_MS[timeframe] || CHART_INTERVAL_MS;
+    return Math.floor(tsMs / bucketMs) * bucketMs;
+  }
+
+  /**
+   * Resamples the raw 15m candle series for chart DISPLAY only, grouping by
+   * each candle's own real UTC bucket (per getUtcBucketStart) rather than
+   * by position/count from the first fetched candle. This is what makes an
+   * unaligned fetch start, or a gap in the underlying series, bucket
+   * correctly — every 15m candle is placed by its actual timestamp, so a
+   * bucket only ever contains candles that genuinely share that UTC window,
+   * and no candle is ever split across two buckets.
+   *
+   * '15m' is the identity case (no aggregation) but is still normalized to
+   * the same {timestamp, open, high, low, close, volume} shape the
+   * aggregated cases produce, since raw candles use a `ts` field rather
+   * than `timestamp` and downstream chart code (zone overlays, alert
+   * overlays) reads `.timestamp`.
+   *
+   * @param {Array<{ts:number, open:number, high:number, low:number, close:number}>} candles ascending by ts
+   * @param {string} timeframe one of '15m' | '1h' | '4h' | '1d'
+   * @returns {Array<{timestamp:number, open:number, high:number, low:number, close:number, volume:number}>} ascending by timestamp
+   */
+  function resampleCandlesForDisplay(candles, timeframe) {
+    if (!Array.isArray(candles) || candles.length === 0) return [];
+    const bucketMs = CHART_BUCKET_MS[timeframe] || CHART_INTERVAL_MS;
+
+    if (bucketMs <= CHART_INTERVAL_MS) {
+      // 15m identity case — same OHLC values, normalized field name only.
+      return candles.map(c => ({
+        timestamp: c.ts,
+        open: c.open != null ? c.open : c.close,
+        high: c.high != null ? c.high : c.close,
+        low: c.low != null ? c.low : c.close,
+        close: c.close,
+        volume: 0,
+      }));
+    }
+
+    // Group by real UTC bucket, keyed by bucket start — NOT by position.
+    const bucketByStart = new Map();
+    for (const c of candles) {
+      if (!c || typeof c.ts !== 'number') continue;
+      const bucketStart = Math.floor(c.ts / bucketMs) * bucketMs;
+      let bucket = bucketByStart.get(bucketStart);
+      if (!bucket) { bucket = []; bucketByStart.set(bucketStart, bucket); }
+      bucket.push(c);
+    }
+
+    const out = [];
+    for (const [bucketStart, bucketCandles] of bucketByStart) {
+      // Preserve real chronological order within the bucket regardless of
+      // input order, so open/close pick the true first/last candle.
+      bucketCandles.sort((a, b) => a.ts - b.ts);
+      const first = bucketCandles[0];
+      const last = bucketCandles[bucketCandles.length - 1];
+      out.push({
+        timestamp: bucketStart,
+        open: first.open != null ? first.open : first.close,
+        close: last.close,
+        high: Math.max.apply(null, bucketCandles.map(c => (c.high != null ? c.high : c.close))),
+        low: Math.min.apply(null, bucketCandles.map(c => (c.low != null ? c.low : c.close))),
+        volume: 0,
+      });
+    }
+
+    out.sort((a, b) => a.timestamp - b.timestamp);
+    return out;
+  }
+
+  /** Index of displayed candles by their `timestamp` field, for O(1) alert-to-candle lookup. */
+  function buildDisplayCandleIndex(displayCandles) {
+    const map = new Map();
+    for (const c of displayCandles) map.set(c.timestamp, c);
+    return map;
+  }
+
+  // ── Help tooltip ("?") system — shared across Parameters & Zones ────────
+  // Pure state transition only one tooltip open at a time: clicking the
+  // currently-open icon closes it; clicking a different icon closes
+  // whichever was open and opens the new one instead. No DOM here — the
+  // browser-only toggleHelpTooltip (below the Node/browser split) is a
+  // thin wrapper around this.
+  function nextHelpTooltipState(currentOpenId, clickedId) {
+    return currentOpenId === clickedId ? null : clickedId;
+  }
+
+  /**
+   * Maps a raw alert timestamp (always 15m-aligned) onto the displayed
+   * candle that actually contains it, for the given display timeframe —
+   * i.e. the fix for "overlays/tooltip/focus used the raw 15m alert
+   * timestamp even when the chart is showing 1H/4H/1D candles". Returns
+   * null if that UTC bucket isn't present in the displayed series (e.g. a
+   * gap in the underlying data), rather than guessing a nearby candle.
+   *
+   * @param {number} alertTs raw (15m-aligned) alert timestamp
+   * @param {Map<number, object>} displayCandleIndex from buildDisplayCandleIndex
+   * @param {string} timeframe one of '15m' | '1h' | '4h' | '1d'
+   */
+  function findDisplayCandleForAlert(alertTs, displayCandleIndex, timeframe) {
+    const bucketStart = getUtcBucketStart(alertTs, timeframe);
+    return displayCandleIndex.get(bucketStart) || null;
+  }
+
   /** Start timestamp of the latest fully completed 15m candle, given "now". */
   function latestCompletedCandleStart(nowMs) {
     const currentCandleStart = Math.floor(nowMs / CHART_INTERVAL_MS) * CHART_INTERVAL_MS;
@@ -706,6 +835,12 @@
     mapAlertToContainingChartPoint,
     buildBinanceCandleIndex,
     latestCompletedCandleStart,
+    CHART_BUCKET_MS,
+    getUtcBucketStart,
+    resampleCandlesForDisplay,
+    buildDisplayCandleIndex,
+    findDisplayCandleForAlert,
+    nextHelpTooltipState,
     // Fetch reliability — exported for Node testing (all dependency-injected,
     // no real network/DOM required to exercise them).
     RATE_LIMIT_RETCODE,
@@ -783,7 +918,7 @@
     lastRunAt: null, // Date.now() of the last SUCCESSFUL run, for the stale-results banner
     lastRunFailed: false, // true when the most recent attempt failed — results shown (if any) are from an earlier run
     rawDataCache: null, // { lookbackDays, startTime, endTime, oiRows, binanceCandles, coverage, cachedAt }
-    chart: { instance: null, timeframe: '15m' },
+    chart: { instance: null, timeframe: '15m', displayIndex: null },
   };
 
   function loadSettings() {
@@ -1247,26 +1382,9 @@
   // Candles are always computed/scored on the true 15m series (unchanged).
   // The chart DISPLAYS a resampled view (15m/1h/4h/1d) purely for visual
   // convenience — resampling here never touches V1/V2 math or alert data.
-
-  const CHART_TIMEFRAMES = { '15m': 1, '1h': 4, '4h': 16, '1d': 96 }; // group size in underlying 15m candles
-
-  function resampleCandlesForDisplay(candles, groupSize) {
-    if (groupSize <= 1) return candles;
-    const out = [];
-    for (let i = 0; i < candles.length; i += groupSize) {
-      const slice = candles.slice(i, i + groupSize);
-      if (!slice.length) continue;
-      out.push({
-        timestamp: slice[0].ts,
-        open: slice[0].open != null ? slice[0].open : slice[0].close,
-        close: slice[slice.length - 1].close,
-        high: Math.max.apply(null, slice.map(c => (c.high != null ? c.high : c.close))),
-        low: Math.min.apply(null, slice.map(c => (c.low != null ? c.low : c.close))),
-        volume: 0,
-      });
-    }
-    return out;
-  }
+  // resampleCandlesForDisplay / CHART_BUCKET_MS / getUtcBucketStart /
+  // buildDisplayCandleIndex / findDisplayCandleForAlert are defined above
+  // in the shared/testable section (already in scope via closure).
 
   function chartError(context, err) {
     console.error(`[OI Exhaustion chart] ${context}:`, err);
@@ -1352,8 +1470,13 @@
     if (!chart || !run || !run.binanceCandles.length) return;
 
     try {
-      const groupSize = CHART_TIMEFRAMES[state.chart.timeframe] || 1;
-      const displayCandles = resampleCandlesForDisplay(run.binanceCandles, groupSize);
+      const timeframe = state.chart.timeframe;
+      const displayCandles = resampleCandlesForDisplay(run.binanceCandles, timeframe);
+      if (!displayCandles.length) return;
+      const displayIndex = buildDisplayCandleIndex(displayCandles);
+      // Stashed for wireChartTooltip's hit-testing, which needs the same
+      // alert -> displayed-candle mapping used here for overlay placement.
+      state.chart.displayIndex = displayIndex;
       chart.applyNewData(displayCandles);
 
       chart.removeOverlay();
@@ -1373,12 +1496,18 @@
 
       run.chartPoints.forEach(p => {
         const a = p.alert;
+        // Map the alert's raw 15m timestamp onto whichever DISPLAYED candle
+        // actually contains it — at 1H/4H/1D the raw timestamp won't land
+        // on an exact displayed-candle boundary, so the overlay must use
+        // the containing bucket's timestamp instead.
+        const displayCandle = findDisplayCandleForAlert(a.timestamp, displayIndex, timeframe);
+        if (!displayCandle) return; // alert's UTC bucket isn't present in the currently displayed series
         const isUp = a.contextDirection === 'bearish-exhaustion'; // up-move-oi-expansion
         const color = isUp ? '#e2645f' : '#3ddc97';
         chart.createOverlay({
           name: 'verticalRayLine',
           lock: true,
-          points: [{ timestamp: a.timestamp, value: a.price }],
+          points: [{ timestamp: displayCandle.timestamp, value: a.price }],
           styles: { line: { color, style: 'dashed', size: 1.4, dashedValue: [4, 3] } },
           extendData: a,
         });
@@ -1389,7 +1518,7 @@
   }
 
   function setChartTimeframe(tf) {
-    if (!CHART_TIMEFRAMES[tf]) return;
+    if (!CHART_BUCKET_MS[tf]) return;
     state.chart.timeframe = tf;
     document.querySelectorAll('.oix-tf-btn').forEach(b => {
       const active = b.getAttribute('data-tf') === tf;
@@ -1407,13 +1536,22 @@
     wrap.onmousemove = (e) => {
       const run = state.lastRun;
       if (!run || !run.chartPoints.length) { tooltip.style.display = 'none'; return; }
+      const displayIndex = state.chart.displayIndex;
+      const timeframe = state.chart.timeframe;
+      if (!displayIndex) { tooltip.style.display = 'none'; return; }
       const rect = wrap.getBoundingClientRect();
       const mx = e.clientX - rect.left, my = e.clientY - rect.top;
 
       let nearest = null, nearestDist = Infinity;
       try {
         for (const p of run.chartPoints) {
-          const px = chart.convertToPixel({ timestamp: p.alert.timestamp }, { absolute: false });
+          // Hit-test against the displayed candle's timestamp (matches
+          // where the overlay was actually drawn), not the raw 15m alert
+          // timestamp — those diverge at 1H/4H/1D. The tooltip TEXT below
+          // still reports the alert's real raw timestamp/price.
+          const displayCandle = findDisplayCandleForAlert(p.alert.timestamp, displayIndex, timeframe);
+          if (!displayCandle) continue;
+          const px = chart.convertToPixel({ timestamp: displayCandle.timestamp }, { absolute: false });
           if (!px || px.x == null) continue;
           const dist = Math.abs(mx - px.x);
           if (dist < 8 && dist < nearestDist) { nearest = p; nearestDist = dist; }
@@ -1454,6 +1592,42 @@
     wrap.onmouseleave = () => { tooltip.style.display = 'none'; };
   }
 
+  // ── Help tooltip ("?") system — browser wiring ───────────────────────────
+  // nextHelpTooltipState (pure/testable) lives in the shared section above.
+  let helpTooltipOpenId = null;
+
+  function closeAllHelpTooltips() {
+    document.querySelectorAll('.oix-help.oix-help-open').forEach(el => el.classList.remove('oix-help-open'));
+    helpTooltipOpenId = null;
+  }
+
+  /** Keeps the popover from overflowing off-screen on narrow viewports by nudging it, not resizing it. */
+  function positionHelpPopover(iconEl) {
+    const pop = iconEl.querySelector('.oix-help-pop');
+    if (!pop) return;
+    pop.style.transform = 'translateX(-50%)';
+    const rect = pop.getBoundingClientRect();
+    const margin = 8;
+    if (rect.left < margin) {
+      pop.style.transform = `translateX(calc(-50% + ${(margin - rect.left).toFixed(1)}px))`;
+    } else if (rect.right > window.innerWidth - margin) {
+      pop.style.transform = `translateX(calc(-50% - ${(rect.right - (window.innerWidth - margin)).toFixed(1)}px))`;
+    }
+  }
+
+  function toggleHelpTooltip(id) {
+    const next = nextHelpTooltipState(helpTooltipOpenId, id);
+    closeAllHelpTooltips();
+    if (next) {
+      const el = document.getElementById(next);
+      if (el) {
+        el.classList.add('oix-help-open');
+        positionHelpPopover(el);
+        helpTooltipOpenId = next;
+      }
+    }
+  }
+
   function focusChartOnAlert(alertIdx) {
     const run = state.lastRun;
     const chart = state.chart.instance;
@@ -1461,7 +1635,10 @@
     const alert = run.result.alerts[alertIdx];
     if (!alert) return;
     try {
-      chart.scrollToTimestamp(alert.timestamp, 300);
+      // At 1H/4H/1D the raw 15m alert timestamp doesn't land on a displayed
+      // candle boundary — scroll to the containing displayed candle instead.
+      const bucketTs = getUtcBucketStart(alert.timestamp, state.chart.timeframe);
+      chart.scrollToTimestamp(bucketTs, 300);
     } catch (err) {
       chartError('focusChartOnAlert', err);
     }
@@ -1476,6 +1653,15 @@
     renderZoneEditor();
     renderStaleBanner();
     setStatus('Not yet run. Configure zones/parameters above, then Fetch data &amp; run analysis.');
+
+    // Help tooltip system: click outside any "?" icon, or Escape, closes
+    // whichever one is open. Registered once here rather than per-icon.
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.oix-help')) closeAllHelpTooltips();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeAllHelpTooltips();
+    });
   }
 
   function refreshRawData() {
@@ -1886,7 +2072,7 @@
     }
 
     if (!anyMatched) {
-      console.warn('None of the requested timestamps matched an exact 5m candle in the cached data — check the ISO strings are on a 5-minute boundary and within the cached window shown above.');
+      console.warn('None of the requested timestamps matched an exact 15m candle in the cached data — check the ISO strings are on a 15-minute boundary and within the cached window shown above.');
     }
   }
 
@@ -1943,6 +2129,8 @@
     init, runAnalysis, refreshRawData, diagnoseAlert, dumpRawOI, directionalOiShock, directionalOiImpulse, addZoneRow, removeZone, updateZoneField, readSettingsFromForm,
     focusChartOnAlert,
     setChartTimeframe,
+    toggleHelpTooltip,
+    closeAllHelpTooltips,
     fetchBybitOI, fetchBybitCandles, fetchBinanceCandles, // exposed for console debugging
   });
 

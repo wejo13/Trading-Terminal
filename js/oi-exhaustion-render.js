@@ -49,6 +49,10 @@
     ? require('./oi-exhaustion-probe.js')
     : window.OIExhaustionProbe;
 
+  const IdbCache = (typeof module !== 'undefined' && module.exports)
+    ? require('./oi-exhaustion-idb-cache.js')
+    : window.OIExhaustionIdbCache;
+
   const CryptoHFTSource = (typeof module !== 'undefined' && module.exports)
     ? require('./oi-exhaustion-cryptohft-source.js')
     : window.OIExhaustionCryptoHFTSource;
@@ -398,6 +402,13 @@
     const bucketMs = options.bucketMs != null ? options.bucketMs : CRYPTOHFT_BUCKET_MS;
     const hourStepHours = options.hourStepHours != null ? options.hourStepHours : 1;
     const symbolByVenue = options.symbolByVenue || CRYPTOHFT_SYMBOL_BY_VENUE;
+    // Resume support: venues already present here (e.g. loaded from the
+    // IndexedDB cache) are used as-is and never re-fetched.
+    const existingPerVenueOI = options.existingPerVenueOI || {};
+    // Called with (venue, bucketedOIForThatVenue) immediately after a venue
+    // finishes fetching — lets the caller persist it right away, so a
+    // crash/refresh mid-fetch never loses an already-completed venue.
+    const onVenueComplete = options.onVenueComplete || null;
 
     if (!apiKey) throw new Error('CryptoHFTData API key is required — enter it in Parameters before fetching.');
     if (typeof decodeZst !== 'function' || typeof parseParquet !== 'function') {
@@ -409,14 +420,25 @@
     const firstHour = Math.floor(startTime / HOUR_MS) * HOUR_MS;
     const hourStamps = [];
     for (let h = firstHour; h <= endTime; h += stepMs) hourStamps.push(h);
-    const totalRequests = venues.length * hourStamps.length;
 
-    const allRawRows = [];
+    const venuesToFetch = venues.filter(v => !(Array.isArray(existingPerVenueOI[v]) && existingPerVenueOI[v].length > 0));
+    const totalRequests = venuesToFetch.length * hourStamps.length;
+
+    const perVenueOI = {};
+    for (const v of venues) {
+      if (Array.isArray(existingPerVenueOI[v]) && existingPerVenueOI[v].length > 0) {
+        perVenueOI[v] = existingPerVenueOI[v]; // resumed from cache — no fetch at all
+      }
+    }
+
     let requestIndex = 0;
+    let totalRawRowCount = 0;
     let skipped404Count = 0;
 
-    for (const venue of venues) {
+    for (const venue of venuesToFetch) {
       const symbol = symbolByVenue[venue] || 'BTCUSDT';
+      const rawRowsForVenue = [];
+
       for (const hourStart of hourStamps) {
         requestIndex++;
         const d = new Date(hourStart);
@@ -425,7 +447,7 @@
         const path = `${venue}/${dateStr}/${hh}/${symbol}_open_interest.parquet.zst`;
         const url = `https://api.cryptohftdata.com/download?file=${encodeURIComponent(path)}&api_key=${encodeURIComponent(apiKey)}`;
 
-        if (onProgress) onProgress({ type: 'page', source: 'cryptohft', venue, path, requestIndex, totalRequests, rowsSoFar: allRawRows.length });
+        if (onProgress) onProgress({ type: 'page', source: 'cryptohft', venue, path, requestIndex, totalRequests, rowsSoFar: totalRawRowCount + rawRowsForVenue.length });
 
         let res;
         try {
@@ -437,7 +459,7 @@
         if (res.status === 404) {
           skipped404Count++;
           // No file for this venue/hour — legitimate absence, not a fatal
-          // error. bucketAndAggregateOI already handles missing coverage
+          // error. The aggregation step already handles missing coverage
           // transparently (fewer complete buckets), no fabrication needed.
         } else if (!res.ok) {
           throw new Error(`CryptoHFTData fetch failed for ${path}: httpStatus=${res.status}`);
@@ -465,18 +487,26 @@
           }
 
           for (const r of rows) {
-            allRawRows.push(Object.assign({ exchange: venue }, r));
+            rawRowsForVenue.push(Object.assign({ exchange: venue }, r));
           }
         }
 
         await sleepFn(pageDelayMs);
       }
+
+      totalRawRowCount += rawRowsForVenue.length;
+      // Bucket THIS venue's data now, discard its raw rows immediately —
+      // raw per-snapshot data is never retained across venues or returned.
+      const bucketed = CryptoHFTSource.bucketSingleVenueOI(rawRowsForVenue, bucketMs);
+      perVenueOI[venue] = bucketed;
+      if (onVenueComplete) await onVenueComplete(venue, bucketed);
+      if (onProgress) onProgress({ type: 'venue_complete', source: 'cryptohft', venue, bucketsForVenue: bucketed.length });
     }
 
-    const oiRows = CryptoHFTSource.bucketAndAggregateOI(allRawRows, bucketMs, venues);
-    const coverage = CryptoHFTSource.summarizeBucketCoverage(allRawRows, bucketMs, venues);
+    const oiRows = CryptoHFTSource.aggregateFromPerVenueBuckets(perVenueOI, venues);
+    const coverage = CryptoHFTSource.summarizeBucketCoverageFromPerVenue(perVenueOI, venues);
 
-    return { oiRows, rawRowCount: allRawRows.length, coverage, skipped404Count, totalRequests };
+    return { oiRows, perVenueOI, rawRowCount: totalRawRowCount, coverage, skipped404Count, totalRequests };
   }
 
   // ── Pure logic (no DOM) — exported for Node tests ───────────────────────
@@ -753,7 +783,7 @@
     lastRunAt: null, // Date.now() of the last SUCCESSFUL run, for the stale-results banner
     lastRunFailed: false, // true when the most recent attempt failed — results shown (if any) are from an earlier run
     rawDataCache: null, // { lookbackDays, startTime, endTime, oiRows, binanceCandles, coverage, cachedAt }
-    chart: { scale: 0.3, offsetX: 0, dragging: false },
+    chart: { instance: null, timeframe: '15m' },
   };
 
   function loadSettings() {
@@ -875,6 +905,33 @@
     if (el) el.innerHTML = html;
   }
 
+  /**
+   * Fetches Binance candles + CryptoHFT aggregate OI fresh, no caching at
+   * all — used only as a fallback if the IndexedDB module itself failed to
+   * load (e.g. script blocked), so the tab still functions without the
+   * persistence layer rather than breaking outright.
+   */
+  async function fetchFreshDataset(startTime, endTime, s, progress) {
+    const binancePromise = fetchBinanceCandles(startTime, endTime, { onProgress: progress, pageDelayMs: BINANCE_PAGE_DELAY_MS });
+    const cryptoHftResult = await fetchCryptoHFTAggregateOI(startTime, endTime, s.cryptoHftApiKey, {
+      onProgress: progress,
+      decodeZst: decodeZstBrowser,
+      parseParquet: parseParquetBrowser,
+    });
+    const binanceCandles = await binancePromise;
+    const oiRows = cryptoHftResult.oiRows;
+    const coverage = cryptoHftResult.coverage;
+
+    if (oiRows.length === 0 || binanceCandles.length === 0) {
+      throw new Error(
+        `Zero usable rows returned — CryptoHFT aggregate buckets: ${oiRows.length}, Binance candles: ${binanceCandles.length}. ` +
+        `Raw rows collected: ${cryptoHftResult.rawRowCount}, complete buckets: ${coverage.completeBuckets}/${coverage.totalBucketsSeen} seen, ` +
+        `venues seen: ${coverage.venuesSeen.join(', ') || 'none'}. Aborting rather than running on partial data.`
+      );
+    }
+    return { oiRows, binanceCandles, coverage };
+  }
+
   async function runAnalysis(opts) {
     opts = opts || {};
     const forceRefresh = opts.forceRefresh === true;
@@ -908,39 +965,93 @@
       };
 
       let oiRows, binanceCandles, coverage;
-      const cached = forceRefresh ? null : getCachedRawData(state.rawDataCache, s.lookbackDays);
+      const memCached = forceRefresh ? null : getCachedRawData(state.rawDataCache, s.lookbackDays);
 
-      if (cached) {
-        const cachedWindow = `${safeUtcDateString(cached.startTime)} → ${safeUtcDateString(cached.endTime)}`;
-        const cachedAtStr = safeUtcDateString(cached.cachedAt);
+      if (memCached) {
+        const cachedWindow = `${safeUtcDateString(memCached.startTime)} → ${safeUtcDateString(memCached.endTime)}`;
+        const cachedAtStr = safeUtcDateString(memCached.cachedAt);
         setStatus(
           `Reusing already-downloaded raw data (lookback days unchanged, cache still fresh) — rerunning analysis with current parameters, no new fetch. ` +
           `Cached window: ${cachedWindow} &middot; fetched at ${cachedAtStr}.`
         );
-        ({ oiRows, binanceCandles, coverage } = cached);
+        ({ oiRows, binanceCandles, coverage } = memCached);
+      } else if (!IdbCache) {
+        // IndexedDB module didn't load (script missing/blocked) — degrade
+        // to the old always-fetch behavior rather than failing outright.
+        setStatus('Fetching CryptoHFT 3-venue aggregate OI and Binance 15m price candles (persistent cache unavailable this session)…');
+        const fetched = await fetchFreshDataset(startTime, endTime, s, progress);
+        ({ oiRows, binanceCandles, coverage } = fetched);
+        state.rawDataCache = { lookbackDays: s.lookbackDays, startTime, endTime, oiRows, binanceCandles, coverage, cachedAt: Date.now() };
       } else {
-        setStatus('Fetching CryptoHFT 3-venue aggregate OI (Binance + Bybit + OKX; Bitget excluded — null OI data) and Binance 15m price candles…');
+        const idbKey = IdbCache.buildCacheKey({ venues: CRYPTOHFT_REQUIRED_VENUES, bucketMs: CRYPTOHFT_BUCKET_MS, lookbackDays: s.lookbackDays });
 
-        const binancePromise = fetchBinanceCandles(startTime, endTime, { onProgress: progress, pageDelayMs: BINANCE_PAGE_DELAY_MS });
-        const cryptoHftResult = await fetchCryptoHFTAggregateOI(startTime, endTime, s.cryptoHftApiKey, {
-          onProgress: progress,
-          decodeZst: decodeZstBrowser,
-          parseParquet: parseParquetBrowser,
-        });
-        binanceCandles = await binancePromise;
-        oiRows = cryptoHftResult.oiRows;
-        coverage = cryptoHftResult.coverage;
-
-        if (oiRows.length === 0 || binanceCandles.length === 0) {
-          throw new Error(
-            `Zero usable rows returned — CryptoHFT aggregate buckets: ${oiRows.length}, Binance candles: ${binanceCandles.length}. ` +
-            `Raw rows collected: ${cryptoHftResult.rawRowCount}, complete buckets: ${coverage.completeBuckets}/${coverage.totalBucketsSeen} seen, ` +
-            `venues seen: ${coverage.venuesSeen.join(', ') || 'none'}. Aborting rather than running on partial data.`
-          );
+        if (forceRefresh) {
+          setStatus('Refresh requested — deleting the cached dataset and starting a full re-fetch…');
+          try { await IdbCache.deleteCacheEntry(idbKey); } catch (e) { /* non-fatal */ }
         }
 
-        // Only cache on a fully successful fetch — a failed/partial attempt
-        // must never poison the cache with incomplete data.
+        let idbEntry = null;
+        try { idbEntry = await IdbCache.getCacheEntry(idbKey); } catch (e) { idbEntry = null; }
+
+        if (idbEntry && IdbCache.isCacheEntryComplete(idbEntry, CRYPTOHFT_REQUIRED_VENUES)) {
+          const ageMin = Math.round((Date.now() - idbEntry.updatedAt) / 60000);
+          setStatus(
+            `<span style="color:var(--teal);">Loaded cached data.</span> ` +
+            `Cache age: ${ageMin} min &middot; Coverage range: ${safeUtcDateString(idbEntry.startTime)} → ${safeUtcDateString(idbEntry.endTime)} &middot; ` +
+            `${safeNumber(idbEntry.aggregateOI.length)} OI buckets / ${safeNumber(idbEntry.binanceCandles.length)} candles — rerunning parameters locally, no fetch.`
+          );
+          oiRows = idbEntry.aggregateOI;
+          binanceCandles = idbEntry.binanceCandles;
+          coverage = idbEntry.coverage;
+        } else {
+          const resuming = idbEntry && (IdbCache.completedVenues(idbEntry, CRYPTOHFT_REQUIRED_VENUES).length > 0 || (Array.isArray(idbEntry.binanceCandles) && idbEntry.binanceCandles.length > 0));
+          setStatus(resuming
+            ? 'Fetching missing data — resuming a previously interrupted pull, already-completed venues will not be re-fetched…'
+            : 'Fetching missing data — this is a fresh dataset, first pull may take a while…');
+
+          if (!idbEntry) {
+            idbEntry = IdbCache.makeEmptyEntry(idbKey, { lookbackDays: s.lookbackDays, startTime, endTime });
+          }
+          try { await IdbCache.putCacheEntry(idbEntry); } catch (e) { /* non-fatal — proceeds without persistence if IDB write fails */ }
+
+          if (Array.isArray(idbEntry.binanceCandles) && idbEntry.binanceCandles.length > 0) {
+            binanceCandles = idbEntry.binanceCandles;
+          } else {
+            binanceCandles = await fetchBinanceCandles(startTime, endTime, { onProgress: progress, pageDelayMs: BINANCE_PAGE_DELAY_MS });
+            idbEntry.binanceCandles = binanceCandles;
+            try { await IdbCache.putCacheEntry(idbEntry); } catch (e) { /* non-fatal */ }
+          }
+
+          const cryptoHftResult = await fetchCryptoHFTAggregateOI(startTime, endTime, s.cryptoHftApiKey, {
+            onProgress: progress,
+            decodeZst: decodeZstBrowser,
+            parseParquet: parseParquetBrowser,
+            existingPerVenueOI: idbEntry.perVenueOI || {},
+            onVenueComplete: async (venue, bucketed) => {
+              idbEntry.perVenueOI[venue] = bucketed;
+              try { await IdbCache.putCacheEntry(idbEntry); } catch (e) { /* non-fatal — this venue's work is still in memory for this run */ }
+            },
+          });
+          oiRows = cryptoHftResult.oiRows;
+          coverage = cryptoHftResult.coverage;
+
+          if (oiRows.length === 0 || binanceCandles.length === 0) {
+            throw new Error(
+              `Zero usable rows returned — CryptoHFT aggregate buckets: ${oiRows.length}, Binance candles: ${binanceCandles.length}. ` +
+              `Raw rows collected this run: ${cryptoHftResult.rawRowCount}, complete buckets: ${coverage.completeBuckets}/${coverage.totalBucketsSeen} seen, ` +
+              `venues seen: ${coverage.venuesSeen.join(', ') || 'none'}. Aborting rather than running on partial data — the cache entry stays marked incomplete, so nothing invalid can be reused.`
+            );
+          }
+
+          idbEntry.aggregateOI = oiRows;
+          idbEntry.coverage = coverage;
+          idbEntry.status = 'complete';
+          try { await IdbCache.putCacheEntry(idbEntry); } catch (e) { /* non-fatal for this run, but future reruns won't get the cache benefit */ }
+          setStatus(`<span style="color:var(--teal);">Cached dataset complete.</span> ${safeNumber(oiRows.length)} OI buckets / ${safeNumber(binanceCandles.length)} candles saved for instant reruns.`);
+        }
+
+        // Populate the in-memory (session) cache too, for the fastest
+        // possible immediate rerun — unchanged fast path.
         state.rawDataCache = { lookbackDays: s.lookbackDays, startTime, endTime, oiRows, binanceCandles, coverage, cachedAt: Date.now() };
       }
 
@@ -1132,237 +1243,228 @@
       </table>`;
   }
 
-  // ── Chart (canvas, reusing the EMA backtester's zoom/pan/tooltip pattern) ──
+  // ── Chart (KLineChart — real zoom/pan/timeframe, pinned v9.8.10) ────────
+  // Candles are always computed/scored on the true 15m series (unchanged).
+  // The chart DISPLAYS a resampled view (15m/1h/4h/1d) purely for visual
+  // convenience — resampling here never touches V1/V2 math or alert data.
 
-  const OIX_BASE_VISIBLE = 300;
+  const CHART_TIMEFRAMES = { '15m': 1, '1h': 4, '4h': 16, '1d': 96 }; // group size in underlying 15m candles
+
+  function resampleCandlesForDisplay(candles, groupSize) {
+    if (groupSize <= 1) return candles;
+    const out = [];
+    for (let i = 0; i < candles.length; i += groupSize) {
+      const slice = candles.slice(i, i + groupSize);
+      if (!slice.length) continue;
+      out.push({
+        timestamp: slice[0].ts,
+        open: slice[0].open != null ? slice[0].open : slice[0].close,
+        close: slice[slice.length - 1].close,
+        high: Math.max.apply(null, slice.map(c => (c.high != null ? c.high : c.close))),
+        low: Math.min.apply(null, slice.map(c => (c.low != null ? c.low : c.close))),
+        volume: 0,
+      });
+    }
+    return out;
+  }
+
+  function chartError(context, err) {
+    console.error(`[OI Exhaustion chart] ${context}:`, err);
+    const wrap = document.getElementById('oix-price-chart-wrap');
+    if (wrap) {
+      const banner = document.createElement('div');
+      banner.style.cssText = 'padding:8px 12px;margin-bottom:8px;border-radius:6px;background:rgba(226,100,95,0.12);color:#e2645f;font-size:11px;font-family:monospace;';
+      banner.textContent = `Chart error (${context}): ${err && err.message ? err.message : String(err)}`;
+      wrap.parentNode.insertBefore(banner, wrap);
+    }
+  }
 
   function initChart() {
-    const canvas = document.getElementById('oix-price-canvas');
-    if (!canvas) return;
-    const wrap = document.getElementById('oix-price-chart-wrap');
-    const newCanvas = canvas.cloneNode(false);
-    wrap.replaceChild(newCanvas, canvas);
-
-    const run = state.lastRun;
-    state.chart.scale = run && run.binanceCandles && run.binanceCandles.length
-      ? Math.max(0.05, Math.min(1, OIX_BASE_VISIBLE / run.binanceCandles.length))
-      : 0.3;
-    state.chart.offsetX = 0;
-
-    newCanvas.addEventListener('wheel', chartWheel, { passive: false });
-    newCanvas.addEventListener('mousedown', chartMouseDown);
-    newCanvas.addEventListener('mousemove', chartMouseMove);
-    newCanvas.addEventListener('mouseup', () => { state.chart.dragging = false; });
-    newCanvas.addEventListener('mouseleave', () => {
-      state.chart.dragging = false;
-      const tt = document.getElementById('oix-chart-tooltip');
-      if (tt) tt.style.display = 'none';
-    });
-
-    drawChart();
-  }
-
-  function chartWheel(e) {
-    e.preventDefault();
-    const cs = state.chart;
-    const run = state.lastRun;
-    if (!run) return;
-    const delta = e.deltaY > 0 ? 0.85 : 1.18;
-    const newScale = Math.max(0.1, Math.min(10, cs.scale * delta));
-    const visible = OIX_BASE_VISIBLE / cs.scale;
-    const centerCandle = cs.offsetX + visible / 2;
-    cs.scale = newScale;
-    const newVisible = OIX_BASE_VISIBLE / newScale;
-    cs.offsetX = Math.max(0, Math.min(run.binanceCandles.length - 1, centerCandle - newVisible / 2));
-    drawChart();
-  }
-  function chartMouseDown(e) {
-    state.chart.dragging = true;
-    state.chart.dragStartX = e.clientX;
-    state.chart.dragStartOffset = state.chart.offsetX;
-  }
-  function chartMouseMove(e) {
-    const cs = state.chart;
-    const run = state.lastRun;
-    const canvas = document.getElementById('oix-price-canvas');
-    if (!canvas || !run) return;
-    const W = canvas.offsetWidth;
-    const visible = Math.round(OIX_BASE_VISIBLE / cs.scale);
-
-    if (cs.dragging) {
-      const dxPx = e.clientX - cs.dragStartX;
-      const candlesPerPx = visible / W;
-      cs.offsetX = Math.max(0, Math.min(run.binanceCandles.length - visible, cs.dragStartOffset - dxPx * candlesPerPx));
-      drawChart();
+    if (typeof klinecharts === 'undefined') {
+      chartError('library load', new Error('window.klinecharts is undefined — check the CDN <script> tag in index.html'));
       return;
     }
+    try {
+      if (state.chart.instance) {
+        klinecharts.dispose('oix-price-canvas');
+        state.chart.instance = null;
+      }
+      const chart = klinecharts.init('oix-price-canvas');
+      if (!chart) { chartError('init', new Error('klinecharts.init returned null')); return; }
+      state.chart.instance = chart;
 
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-    const padL = 8, padR = 60;
-    const plotW = W - padL - padR;
-    const candleW = plotW / visible;
-    const tooltip = document.getElementById('oix-chart-tooltip');
-    if (!run.chartPoints.length) { if (tooltip) tooltip.style.display = 'none'; return; }
+      chart.setStyles({
+        grid: { horizontal: { color: 'rgba(255,255,255,0.05)' }, vertical: { show: false } },
+        candle: { bar: { upColor: '#3ddc97', downColor: '#e2645f', noChangeColor: '#888', upBorderColor: '#3ddc97', downBorderColor: '#e2645f', upWickColor: '#3ddc97', downWickColor: '#e2645f' } },
+      });
 
-    const startIdx = Math.max(0, Math.floor(cs.offsetX));
-    const endIdx = Math.min(run.binanceCandles.length - 1, startIdx + visible);
-
-    let nearest = null, nearestDist = Infinity;
-    for (const p of run.chartPoints) {
-      const ci = run.binanceCandles.findIndex(c => c.ts === p.ts);
-      if (ci < startIdx || ci > endIdx) continue;
-      const x = padL + (ci - startIdx + 0.5) * candleW;
-      const dist = Math.abs(mx - x);
-      if (dist < Math.max(6, candleW * 0.6) && dist < nearestDist) { nearest = p; nearestDist = dist; }
+      applyChartData();
+      wireChartTooltip(chart);
+    } catch (err) {
+      chartError('init', err);
     }
-    if (!nearest) { if (tooltip) tooltip.style.display = 'none'; return; }
+  }
 
-    const a = nearest.alert;
-    const html = `<div style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:11px;">
-      <span style="color:var(--text-faint);">Date</span><span>${new Date(a.timestamp).toISOString().slice(0, 16).replace('T', ' ')}</span>
-      <span style="color:var(--text-faint);">Model</span><span>${a.alertModel === 'netProgress' ? 'Net progress score (V2)' : 'Strict path score (V1)'}</span>
-      <span style="color:var(--text-faint);">Price</span><span>$${safeNumber(a.price, { maximumFractionDigits: 0 })}</span>
-      <span style="color:var(--text-faint);">Score</span><span>${a.score.toFixed(6)}</span>
-      <span style="color:var(--text-faint);">Percentile</span><span>${a.percentile != null ? a.percentile.toFixed(1) : '—'}</span>
-      <span style="color:var(--text-faint);">Z-score</span><span>${a.zScore != null ? a.zScore.toFixed(2) : '—'}</span>
-      <span style="color:var(--text-faint);">OI Δ12h</span><span>${a.oiChange12hPct != null ? a.oiChange12hPct.toFixed(1) + '%' : '—'}</span>
-      <span style="color:var(--text-faint);">OI Δ1h</span><span>${a.oiChange1hPct != null ? a.oiChange1hPct.toFixed(2) + '%' : '—'}</span>
-      <span style="color:var(--text-faint);">OI Δ2h</span><span>${a.oiChange2hPct != null ? a.oiChange2hPct.toFixed(2) + '%' : '—'}</span>
-      <span style="color:var(--text-faint);">OI Δ4h</span><span>${a.oiChange4hPct != null ? a.oiChange4hPct.toFixed(2) + '%' : '—'}</span>
-      <span style="color:var(--text-faint);">OI Δ last 3 candles</span><span>${a.oiChangeLast3CandlesPct != null ? a.oiChangeLast3CandlesPct.toFixed(2) + '%' : '—'}</span>
-      <span style="color:var(--text-faint);">OI slope (1h)</span><span style="color:${a.oiSlopeRecent != null ? (a.oiSlopeRecent >= 0 ? 'var(--green)' : 'var(--red)') : 'inherit'};">${a.oiSlopeRecent != null ? a.oiSlopeRecent.toFixed(2) : '—'}</span>
-      <span style="color:var(--text-faint);">Price Δ1h</span><span>${a.priceChange1hPct != null ? a.priceChange1hPct.toFixed(2) + '%' : '—'}</span>
-      <span style="color:var(--text-faint);">Price Δ4h</span><span>${a.priceChange4hPct != null ? a.priceChange4hPct.toFixed(2) + '%' : '—'}</span>
-      <span style="color:var(--text-faint);">Travel 12h</span><span>${a.priceTravel12hAbsPct != null ? a.priceTravel12hAbsPct.toFixed(1) + '%' : '—'}</span>
-      <span style="color:var(--text-faint);">Context</span><span>${a.contextDirection}</span>
-      <span style="color:var(--text-faint);">Zone</span><span>${escapeHtml(a.zoneBounds.label || a.zoneId)}</span>
-      ${a.oiRecencyFilter ? `<span style="color:var(--text-faint);">Recency filter</span><span>${escapeHtml(a.oiRecencyFilter.window)} window, min ${a.oiRecencyFilter.minimumRecentOIChangePct}%</span>` : ''}
-    </div>`;
-    tooltip.innerHTML = html;
-    tooltip.style.display = 'block';
-    const tx = mx + 12 > rect.width - 200 ? mx - 195 : mx + 12;
-    tooltip.style.left = tx + 'px';
-    tooltip.style.top = (my - 10) + 'px';
+  // v9's built-in overlay set does NOT include a plain shaded-rectangle
+  // type (confirmed against the official overlay list: horizontalRayLine,
+  // horizontalSegment, horizontalStraightLine, verticalRayLine,
+  // verticalSegment, verticalStraightLine, rayLine, segment, straightLine,
+  // priceLine, priceChannelLine, parallelStraightLine, simpleAnnotation,
+  // simpleTag — no "rectangle"). Zone shading needs a small custom overlay
+  // using the built-in 'polygon' FIGURE primitive, per the documented
+  // registerOverlay/createPointFigures pattern.
+  let zoneOverlayRegistered = false;
+  function ensureZoneOverlayRegistered() {
+    if (zoneOverlayRegistered || typeof klinecharts === 'undefined') return;
+    try {
+      klinecharts.registerOverlay({
+        name: 'oixZoneBand',
+        needDefaultPointFigure: false,
+        needDefaultXAxisFigure: false,
+        needDefaultYAxisFigure: false,
+        createPointFigures: ({ coordinates }) => {
+          if (coordinates.length < 2) return [];
+          const [p1, p2] = coordinates;
+          return [{
+            type: 'polygon',
+            attrs: {
+              coordinates: [
+                { x: p1.x, y: p1.y },
+                { x: p2.x, y: p1.y },
+                { x: p2.x, y: p2.y },
+                { x: p1.x, y: p2.y },
+              ],
+            },
+            styles: { style: 'fill', color: 'rgba(40,215,200,0.07)' },
+            ignoreEvent: true,
+          }];
+        },
+      });
+      zoneOverlayRegistered = true;
+    } catch (err) {
+      chartError('registerOverlay(oixZoneBand)', err);
+    }
+  }
+
+  function applyChartData() {
+    const chart = state.chart.instance;
+    const run = state.lastRun;
+    if (!chart || !run || !run.binanceCandles.length) return;
+
+    try {
+      const groupSize = CHART_TIMEFRAMES[state.chart.timeframe] || 1;
+      const displayCandles = resampleCandlesForDisplay(run.binanceCandles, groupSize);
+      chart.applyNewData(displayCandles);
+
+      chart.removeOverlay();
+      ensureZoneOverlayRegistered();
+
+      const zones = state.zones.map(normalizeZone).filter(z => isFinite(z.top) && isFinite(z.bottom));
+      zones.forEach(z => {
+        chart.createOverlay({
+          name: 'oixZoneBand',
+          lock: true,
+          points: [
+            { timestamp: displayCandles[0].timestamp, value: z.top },
+            { timestamp: displayCandles[displayCandles.length - 1].timestamp, value: z.bottom },
+          ],
+        });
+      });
+
+      run.chartPoints.forEach(p => {
+        const a = p.alert;
+        const isUp = a.contextDirection === 'bearish-exhaustion'; // up-move-oi-expansion
+        const color = isUp ? '#e2645f' : '#3ddc97';
+        chart.createOverlay({
+          name: 'verticalRayLine',
+          lock: true,
+          points: [{ timestamp: a.timestamp, value: a.price }],
+          styles: { line: { color, style: 'dashed', size: 1.4, dashedValue: [4, 3] } },
+          extendData: a,
+        });
+      });
+    } catch (err) {
+      chartError('applyChartData', err);
+    }
+  }
+
+  function setChartTimeframe(tf) {
+    if (!CHART_TIMEFRAMES[tf]) return;
+    state.chart.timeframe = tf;
+    document.querySelectorAll('.oix-tf-btn').forEach(b => {
+      const active = b.getAttribute('data-tf') === tf;
+      b.style.background = active ? 'var(--teal)' : 'transparent';
+      b.style.color = active ? '#07060c' : 'var(--text)';
+    });
+    applyChartData();
+  }
+
+  function wireChartTooltip(chart) {
+    const wrap = document.getElementById('oix-price-chart-wrap');
+    const tooltip = document.getElementById('oix-chart-tooltip');
+    if (!wrap || !tooltip) return;
+
+    wrap.onmousemove = (e) => {
+      const run = state.lastRun;
+      if (!run || !run.chartPoints.length) { tooltip.style.display = 'none'; return; }
+      const rect = wrap.getBoundingClientRect();
+      const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+
+      let nearest = null, nearestDist = Infinity;
+      try {
+        for (const p of run.chartPoints) {
+          const px = chart.convertToPixel({ timestamp: p.alert.timestamp }, { absolute: false });
+          if (!px || px.x == null) continue;
+          const dist = Math.abs(mx - px.x);
+          if (dist < 8 && dist < nearestDist) { nearest = p; nearestDist = dist; }
+        }
+      } catch (err) {
+        tooltip.style.display = 'none';
+        return;
+      }
+      if (!nearest) { tooltip.style.display = 'none'; return; }
+
+      const a = nearest.alert;
+      const html = `<div style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:11px;">
+        <span style="color:var(--text-faint);">Date</span><span>${new Date(a.timestamp).toISOString().slice(0, 16).replace('T', ' ')}</span>
+        <span style="color:var(--text-faint);">Model</span><span>${a.alertModel === 'netProgress' ? 'Net progress score (V2)' : 'Strict path score (V1)'}</span>
+        <span style="color:var(--text-faint);">Price</span><span>$${safeNumber(a.price, { maximumFractionDigits: 0 })}</span>
+        <span style="color:var(--text-faint);">Score</span><span>${a.score.toFixed(6)}</span>
+        <span style="color:var(--text-faint);">Percentile</span><span>${a.percentile != null ? a.percentile.toFixed(1) : '—'}</span>
+        <span style="color:var(--text-faint);">Z-score</span><span>${a.zScore != null ? a.zScore.toFixed(2) : '—'}</span>
+        <span style="color:var(--text-faint);">OI Δ12h</span><span>${a.oiChange12hPct != null ? a.oiChange12hPct.toFixed(1) + '%' : '—'}</span>
+        <span style="color:var(--text-faint);">OI Δ1h</span><span>${a.oiChange1hPct != null ? a.oiChange1hPct.toFixed(2) + '%' : '—'}</span>
+        <span style="color:var(--text-faint);">OI Δ2h</span><span>${a.oiChange2hPct != null ? a.oiChange2hPct.toFixed(2) + '%' : '—'}</span>
+        <span style="color:var(--text-faint);">OI Δ4h</span><span>${a.oiChange4hPct != null ? a.oiChange4hPct.toFixed(2) + '%' : '—'}</span>
+        <span style="color:var(--text-faint);">OI Δ last 3 candles</span><span>${a.oiChangeLast3CandlesPct != null ? a.oiChangeLast3CandlesPct.toFixed(2) + '%' : '—'}</span>
+        <span style="color:var(--text-faint);">OI slope (1h)</span><span style="color:${a.oiSlopeRecent != null ? (a.oiSlopeRecent >= 0 ? 'var(--green)' : 'var(--red)') : 'inherit'};">${a.oiSlopeRecent != null ? a.oiSlopeRecent.toFixed(2) : '—'}</span>
+        <span style="color:var(--text-faint);">Price Δ1h</span><span>${a.priceChange1hPct != null ? a.priceChange1hPct.toFixed(2) + '%' : '—'}</span>
+        <span style="color:var(--text-faint);">Price Δ4h</span><span>${a.priceChange4hPct != null ? a.priceChange4hPct.toFixed(2) + '%' : '—'}</span>
+        <span style="color:var(--text-faint);">Travel 12h</span><span>${a.priceTravel12hAbsPct != null ? a.priceTravel12hAbsPct.toFixed(1) + '%' : '—'}</span>
+        <span style="color:var(--text-faint);">Context</span><span>${a.contextDirection}</span>
+        <span style="color:var(--text-faint);">Zone</span><span>${escapeHtml(a.zoneBounds.label || a.zoneId)}</span>
+        ${a.oiRecencyFilter ? `<span style="color:var(--text-faint);">Recency filter</span><span>${escapeHtml(a.oiRecencyFilter.window)} window, min ${a.oiRecencyFilter.minimumRecentOIChangePct}%</span>` : ''}
+      </div>`;
+      tooltip.innerHTML = html;
+      tooltip.style.display = 'block';
+      const tx = mx + 12 > rect.width - 200 ? mx - 195 : mx + 12;
+      tooltip.style.left = tx + 'px';
+      tooltip.style.top = (my - 10) + 'px';
+    };
+    wrap.onmouseleave = () => { tooltip.style.display = 'none'; };
   }
 
   function focusChartOnAlert(alertIdx) {
     const run = state.lastRun;
-    if (!run) return;
+    const chart = state.chart.instance;
+    if (!run || !chart) return;
     const alert = run.result.alerts[alertIdx];
     if (!alert) return;
-    const ci = run.binanceCandles.findIndex(c => c.ts === alert.timestamp);
-    if (ci === -1) return;
-    const visible = Math.round(OIX_BASE_VISIBLE / state.chart.scale);
-    state.chart.offsetX = Math.max(0, Math.min(run.binanceCandles.length - visible, ci - visible / 2));
-    drawChart();
-  }
-
-  function drawChart() {
-    const cs = state.chart;
-    const run = state.lastRun;
-    const canvas = document.getElementById('oix-price-canvas');
-    if (!canvas || !run || !run.binanceCandles.length) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    const W = canvas.offsetWidth, H = canvas.offsetHeight || 340;
-    canvas.width = W * dpr; canvas.height = H * dpr;
-    const ctx = canvas.getContext('2d');
-    ctx.scale(dpr, dpr);
-
-    const visible = Math.round(OIX_BASE_VISIBLE / cs.scale);
-    const startIdx = Math.max(0, Math.floor(cs.offsetX));
-    const endIdx = Math.min(run.binanceCandles.length - 1, startIdx + visible);
-    const slice = run.binanceCandles.slice(startIdx, endIdx + 1);
-    if (!slice.length) return;
-
-    const padL = 8, padR = 60, padT = 16, padB = 24;
-    const plotW = W - padL - padR, plotH = H - padT - padB;
-
-    let minP = Math.min(...slice.map(c => c.low));
-    let maxP = Math.max(...slice.map(c => c.high));
-    const zones = state.zones.map(normalizeZone).filter(z => isFinite(z.top) && isFinite(z.bottom));
-    zones.forEach(z => { minP = Math.min(minP, z.bottom); maxP = Math.max(maxP, z.top); });
-    const pRange = (maxP - minP) || 1;
-    const pad5 = pRange * 0.05;
-    minP -= pad5; maxP += pad5;
-    const range = maxP - minP;
-    const yOf = p => padT + plotH - ((p - minP) / range) * plotH;
-    const candleW = plotW / slice.length;
-    const bodyW = Math.max(1, candleW * 0.6);
-
-    ctx.fillStyle = '#0a090f';
-    ctx.fillRect(0, 0, W, H);
-
-    // Zones (translucent bands)
-    zones.forEach(z => {
-      const yTop = yOf(z.top), yBot = yOf(z.bottom);
-      ctx.fillStyle = 'rgba(40,215,200,0.06)';
-      ctx.fillRect(padL, yTop, plotW, yBot - yTop);
-      ctx.strokeStyle = 'rgba(40,215,200,0.25)';
-      ctx.lineWidth = 0.5;
-      ctx.strokeRect(padL, yTop, plotW, yBot - yTop);
-      if (z.label) {
-        ctx.fillStyle = 'rgba(40,215,200,0.6)';
-        ctx.font = '9px Inter,sans-serif';
-        ctx.textAlign = 'left';
-        ctx.fillText(z.label, padL + 4, yTop + 10);
-      }
-    });
-
-    // Grid + price labels
-    for (let g = 0; g <= 5; g++) {
-      const p = minP + (g / 5) * range;
-      const y = yOf(p);
-      ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.lineWidth = 0.5;
-      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
-      ctx.fillStyle = 'rgba(155,160,166,0.5)'; ctx.font = '9px Inter,sans-serif'; ctx.textAlign = 'left';
-      ctx.fillText('$' + safeNumber(p, { maximumFractionDigits: 0 }), W - padR + 4, y + 3);
+    try {
+      chart.scrollToTimestamp(alert.timestamp, 300);
+    } catch (err) {
+      chartError('focusChartOnAlert', err);
     }
-
-    // Candles
-    slice.forEach((c, i) => {
-      const x = padL + (i + 0.5) * candleW;
-      const isBull = c.close >= c.open;
-      const col = isBull ? '#3ddc97' : '#e2645f';
-      ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 0.8;
-      ctx.beginPath(); ctx.moveTo(x, yOf(c.high)); ctx.lineTo(x, yOf(c.low)); ctx.stroke();
-      const yTop = yOf(Math.max(c.open, c.close)), yBot = yOf(Math.min(c.open, c.close));
-      const bodyH = Math.max(1, yBot - yTop);
-      if (isBull) ctx.fillRect(x - bodyW / 2, yTop, bodyW, bodyH);
-      else ctx.strokeRect(x - bodyW / 2, yTop, bodyW, bodyH);
-    });
-
-    // Alert markers — dashed vertical lines (easier to spot than dots on a
-    // compressed multi-day chart), colored by context direction.
-    cs._lastMarkerXByTs = {};
-    run.chartPoints.forEach(p => {
-      const ci = run.binanceCandles.findIndex(c => c.ts === p.ts);
-      if (ci < startIdx || ci > endIdx) return;
-      const i = ci - startIdx;
-      const x = padL + (i + 0.5) * candleW;
-      cs._lastMarkerXByTs[p.ts] = x;
-      const isUp = p.alert.contextDirection === 'bearish-exhaustion'; // up-move-oi-expansion
-      const col = isUp ? '#e2645f' : '#3ddc97';
-      ctx.save();
-      ctx.strokeStyle = col;
-      ctx.lineWidth = 1.4;
-      ctx.setLineDash([4, 3]);
-      ctx.beginPath();
-      ctx.moveTo(x, padT);
-      ctx.lineTo(x, padT + plotH);
-      ctx.stroke();
-      ctx.restore();
-      // small triangle flag at the top so the line is spottable even when
-      // several sit close together at this zoom level
-      ctx.beginPath();
-      ctx.moveTo(x - 4, padT);
-      ctx.lineTo(x + 4, padT);
-      ctx.lineTo(x, padT + 7);
-      ctx.closePath();
-      ctx.fillStyle = col;
-      ctx.fill();
-    });
   }
 
   // ── Public API + init ────────────────────────────────────────────────
@@ -1840,6 +1942,7 @@
   Object.assign(OIExhaustionRender, {
     init, runAnalysis, refreshRawData, diagnoseAlert, dumpRawOI, directionalOiShock, directionalOiImpulse, addZoneRow, removeZone, updateZoneField, readSettingsFromForm,
     focusChartOnAlert,
+    setChartTimeframe,
     fetchBybitOI, fetchBybitCandles, fetchBinanceCandles, // exposed for console debugging
   });
 

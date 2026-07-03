@@ -1169,6 +1169,240 @@
   // Console usage:
   //   OIExhaustionRender.dumpRawOI('2026-06-25T12:00:00Z', '2026-06-25T17:00:00Z')
 
+  // ── TEMPORARY console diagnostic: directionalOiShock (30m/1h/2h) ───────
+  // Investigates whether a short-window analog of V2's own formula
+  // (oiChangePct - abs(priceChangePct)) shows a spike that the 12h window
+  // misses because an earlier decline elsewhere in the 12h period dragged
+  // the net-12h OI change negative. This does NOT change V2, does NOT gate
+  // any alert, and is not wired into the engine/backtest at all — it's a
+  // read-only, same-formula-shorter-window investigation using only Bybit's
+  // own already-cached data. Remove once the June 25 question is settled.
+  //
+  // Console usage:
+  //   OIExhaustionRender.directionalOiShock('2026-06-25T12:00:00Z', '2026-06-25T17:00:00Z')
+
+  function directionalOiShock(startIso, endIso) {
+    const cache = state.rawDataCache;
+    if (!cache) {
+      console.warn('No raw data cached yet — click "Fetch data & run analysis" at least once first.');
+      return;
+    }
+    const startTs = new Date(startIso).getTime();
+    const endTs = new Date(endIso).getTime();
+    if (!isFinite(startTs) || !isFinite(endTs)) {
+      console.warn('Could not parse startIso/endIso — use ISO strings, e.g. "2026-06-25T12:00:00Z".');
+      return;
+    }
+
+    const { timestamps, closes, ois, validFlags } = Backtest.alignCandlesAndOI(cache.bybitCandles, cache.oiRows);
+    const series = Engine.computeExhaustionSeries(timestamps, closes, ois, { validFlags });
+
+    const WINDOWS = { '30m': 6, '1h': 12, '2h': 24 }; // candle counts
+    const rows = [];
+    let peak = { '30m': null, '1h': null, '2h': null };
+
+    for (let t = 0; t < series.length; t++) {
+      const ts = timestamps[t];
+      if (ts < startTs || ts > endTs) continue;
+      const entry = series[t];
+      if (!entry.valid) {
+        rows.push({ time: new Date(ts).toISOString(), price: closes[t], note: 'window invalid (gap)' });
+        continue;
+      }
+
+      const row = { time: new Date(ts).toISOString(), price: closes[t] };
+      for (const [label, candles] of Object.entries(WINDOWS)) {
+        // Reuse the already-computed 1h/2h OI-change fields where they
+        // exist on the series entry; compute 30m directly since it's not
+        // otherwise stored. Price-change windows aren't pre-computed for
+        // 30m/2h at all, so those come straight from the exported pure
+        // helper — same function the engine itself uses internally.
+        const oiChangePct = label === '1h' ? entry.oiChange1hPct
+          : label === '2h' ? entry.oiChange2hPct
+          : entry.oiChange30mPct;
+        const priceChangePct = Engine.computeChangeOverCandles(closes, t, candles);
+        const shock = (oiChangePct !== null && priceChangePct !== null) ? oiChangePct - Math.abs(priceChangePct) : null;
+
+        row[`oiChange${label}`] = oiChangePct !== null ? oiChangePct.toFixed(3) + '%' : 'n/a';
+        row[`priceChange${label}`] = priceChangePct !== null ? priceChangePct.toFixed(3) + '%' : 'n/a';
+        row[`shock${label}`] = shock !== null ? shock.toFixed(3) : 'n/a';
+
+        if (shock !== null && (peak[label] === null || shock > peak[label].shock)) {
+          peak[label] = { shock, ts, oiChangePct, priceChangePct };
+        }
+      }
+      rows.push(row);
+    }
+
+    if (rows.length === 0) {
+      console.warn('No cached candles fall inside that window. Cached window is: ' +
+        `${safeUtcDateString(cache.startTime)} → ${safeUtcDateString(cache.endTime)}`);
+      return;
+    }
+
+    console.log(`directionalOiShock (TEMPORARY diagnostic, does not affect V2) — ${startIso} → ${endIso}`);
+    console.log('shockXm = oiChangeXm - abs(priceChangeXm)  — same formula V2 uses at 12h, applied at 30m/1h/2h instead.');
+    console.table(rows);
+
+    console.log('');
+    for (const label of Object.keys(WINDOWS)) {
+      const p = peak[label];
+      if (!p) { console.log(`Peak ${label} shock: n/a`); continue; }
+      console.log(`Peak ${label} shock: ${p.shock.toFixed(3)} at ${new Date(p.ts).toISOString()} ` +
+        `(oiChange${label}=${p.oiChangePct.toFixed(3)}%, priceChange${label}=${p.priceChangePct.toFixed(3)}%)`);
+    }
+  }
+
+  // ── TEMPORARY console diagnostic: directionalOiImpulse ─────────────────
+  // Deliberately NOT a shorter-window version of V2. V2's formula
+  // (oiChangePct - abs(priceChangePct)) structurally rejects any event
+  // where price moves more than OI in percentage terms — which is exactly
+  // the June 25 case. This diagnostic evaluates OI-change and price-move
+  // as two INDEPENDENT percentile series against their own trailing
+  // history (never subtracted from each other), then classifies the
+  // quadrant of directional behavior. It is a directional-expansion
+  // context model, not an exhaustion/reversal trigger, and is not wired
+  // into V1/V2, any alert, or any UI element. Read-only, temporary.
+  //
+  // Console usage:
+  //   OIExhaustionRender.directionalOiImpulse('2026-06-25T12:00:00Z', '2026-06-25T17:00:00Z')
+
+  function directionalOiImpulse(startIso, endIso) {
+    const cache = state.rawDataCache;
+    if (!cache) {
+      console.warn('No raw data cached yet — click "Fetch data & run analysis" at least once first.');
+      return;
+    }
+    const startTs = new Date(startIso).getTime();
+    const endTs = new Date(endIso).getTime();
+    if (!isFinite(startTs) || !isFinite(endTs)) {
+      console.warn('Could not parse startIso/endIso — use ISO strings, e.g. "2026-06-25T12:00:00Z".');
+      return;
+    }
+
+    const { timestamps, closes, ois, validFlags } = Backtest.alignCandlesAndOI(cache.bybitCandles, cache.oiRows);
+    const series = Engine.computeExhaustionSeries(timestamps, closes, ois, { validFlags });
+
+    const WINDOWS = { '30m': 6, '1h': 12, '2h': 24 };
+    const EPS = 1e-9; // treat exactly-zero as flat, not up/down
+
+    // Pass 1: build the two INDEPENDENT full-dataset distributions per
+    // window — oiChangePct values, and abs(priceChangePct) values — so
+    // percentiles reflect "how extreme is this vs the whole fetched
+    // history," not vs a live trailing alert baseline (this is offline
+    // investigation, not a causal alerting simulation).
+    const oiDist = {}, priceDist = {};
+    for (const label of Object.keys(WINDOWS)) { oiDist[label] = Engine.createBaselineLog({ baselineLookbackCandles: series.length + 1 }); priceDist[label] = Engine.createBaselineLog({ baselineLookbackCandles: series.length + 1 }); }
+
+    const perCandle = new Array(series.length).fill(null);
+    for (let t = 0; t < series.length; t++) {
+      if (!series[t].valid) continue;
+      const row = {};
+      for (const [label, candles] of Object.entries(WINDOWS)) {
+        const oiChangePct = Engine.computeChangeOverCandles(ois, t, candles);
+        const signedPriceChangePct = Engine.computeChangeOverCandles(closes, t, candles);
+        const absPriceChangePct = signedPriceChangePct !== null ? Math.abs(signedPriceChangePct) : null;
+        row[label] = { oiChangePct, signedPriceChangePct, absPriceChangePct };
+        if (oiChangePct !== null) oiDist[label].insert(oiChangePct);
+        if (absPriceChangePct !== null) priceDist[label].insert(absPriceChangePct);
+      }
+      perCandle[t] = row;
+    }
+
+    // Pass 2: for the requested window, compute percentiles (now that the
+    // full distributions are built) and classify.
+    function classify(oiChangePct, signedPriceChangePct) {
+      const oiUp = oiChangePct > EPS, oiDown = oiChangePct < -EPS;
+      const priceUp = signedPriceChangePct > EPS, priceDown = signedPriceChangePct < -EPS;
+      if (priceDown && oiUp) return 'short-build selloff';
+      if (priceUp && oiUp) return 'long-build rally';
+      if (priceDown && oiDown) return 'long liquidation / deleveraging';
+      if (priceUp && oiDown) return 'short covering / deleveraging';
+      return 'flat/ambiguous';
+    }
+
+    const resultsByWindow = {};
+    for (const label of Object.keys(WINDOWS)) {
+      const rows = [];
+      let firstQualifying = null, peakOiPercentile = null, peakPricePercentile = null;
+
+      for (let t = 0; t < series.length; t++) {
+        const ts = timestamps[t];
+        if (ts < startTs || ts > endTs) continue;
+        const c = perCandle[t];
+        if (!c) continue;
+        const { oiChangePct, signedPriceChangePct, absPriceChangePct } = c[label];
+        if (oiChangePct === null || signedPriceChangePct === null) continue;
+
+        const oiPercentile = oiDist[label].percentileRank(oiChangePct);
+        const pricePercentile = priceDist[label].percentileRank(absPriceChangePct);
+        const cls = classify(oiChangePct, signedPriceChangePct);
+
+        rows.push({
+          time: new Date(ts).toISOString(), price: closes[t],
+          oiChangePct: oiChangePct.toFixed(3) + '%',
+          signedPriceChangePct: signedPriceChangePct.toFixed(3) + '%',
+          absPriceChangePct: absPriceChangePct.toFixed(3) + '%',
+          oiPercentile: oiPercentile.toFixed(1),
+          pricePercentile: pricePercentile.toFixed(1),
+          classification: cls,
+        });
+
+        if (firstQualifying === null && oiPercentile >= 95 && pricePercentile >= 80) {
+          firstQualifying = { ts, oiPercentile, pricePercentile, cls, t };
+        }
+        if (peakOiPercentile === null || oiPercentile > peakOiPercentile.value) peakOiPercentile = { value: oiPercentile, ts };
+        if (peakPricePercentile === null || pricePercentile > peakPricePercentile.value) peakPricePercentile = { value: pricePercentile, ts };
+      }
+
+      resultsByWindow[label] = { rows, firstQualifying, peakOiPercentile, peakPricePercentile };
+    }
+
+    if (Object.values(resultsByWindow).every(r => r.rows.length === 0)) {
+      console.warn('No cached candles fall inside that window. Cached window is: ' +
+        `${safeUtcDateString(cache.startTime)} → ${safeUtcDateString(cache.endTime)}`);
+      return;
+    }
+
+    console.log(`directionalOiImpulse (TEMPORARY diagnostic, independent from V1/V2, no subtraction) — ${startIso} → ${endIso}`);
+    console.log('OI-change and price-move percentiles are each independent, vs the full cached dataset\'s own distribution for that window.');
+    console.log('');
+
+    for (const label of Object.keys(WINDOWS)) {
+      const r = resultsByWindow[label];
+      console.log(`── ${label} window ──────────────────────────`);
+      if (r.rows.length === 0) { console.log('  (no valid candles in range)\n'); continue; }
+      console.table(r.rows);
+
+      if (r.firstQualifying) {
+        const fq = r.firstQualifying;
+        console.log(`1. First timestamp OI percentile>=95 AND price-move percentile>=80: ${new Date(fq.ts).toISOString()} ` +
+          `(oiPctile=${fq.oiPercentile.toFixed(1)}, pricePctile=${fq.pricePercentile.toFixed(1)}, class=${fq.cls})`);
+
+        // Acceleration check: compare this candle's window-change values to
+        // 3 candles (15 min) earlier — still growing = accelerating, flat
+        // or reversed = stalled. This is a simple local-derivative check,
+        // not a new score.
+        const tRef = Math.max(0, fq.t - 3);
+        const cNow = perCandle[fq.t][label], cRef = perCandle[tRef] ? perCandle[tRef][label] : null;
+        let accelNote = 'insufficient data to assess';
+        if (cRef && cNow.oiChangePct !== null && cRef.oiChangePct !== null && cNow.absPriceChangePct !== null && cRef.absPriceChangePct !== null) {
+          const oiAccelerating = cNow.oiChangePct > cRef.oiChangePct;
+          const priceAccelerating = cNow.absPriceChangePct > cRef.absPriceChangePct;
+          accelNote = `OI ${oiAccelerating ? 'still accelerating' : 'had stalled/plateaued'}, price ${priceAccelerating ? 'still accelerating' : 'had stalled/plateaued'} (vs 15m earlier)`;
+        }
+        console.log(`5. ${accelNote}`);
+      } else {
+        console.log('1. No candle in this window reached OI percentile>=95 AND price-move percentile>=80.');
+      }
+      console.log(`2. Peak OI-change percentile: ${r.peakOiPercentile.value.toFixed(1)} at ${new Date(r.peakOiPercentile.ts).toISOString()}`);
+      console.log(`3. Peak price-move percentile: ${r.peakPricePercentile.value.toFixed(1)} at ${new Date(r.peakPricePercentile.ts).toISOString()}`);
+      const lastRow = r.rows[r.rows.length - 1];
+      console.log(`4. Classification (at last candle in window): ${lastRow.classification}`);
+      console.log('');
+    }
+  }
+
   function dumpRawOI(startIso, endIso) {
     const cache = state.rawDataCache;
     if (!cache) {
@@ -1365,7 +1599,7 @@
   }
 
   Object.assign(OIExhaustionRender, {
-    init, runAnalysis, refreshRawData, diagnoseAlert, dumpRawOI, addZoneRow, removeZone, updateZoneField, readSettingsFromForm,
+    init, runAnalysis, refreshRawData, diagnoseAlert, dumpRawOI, directionalOiShock, directionalOiImpulse, addZoneRow, removeZone, updateZoneField, readSettingsFromForm,
     focusChartOnAlert,
     fetchBybitOI, fetchBybitCandles, fetchBinanceCandles, // exposed for console debugging
   });

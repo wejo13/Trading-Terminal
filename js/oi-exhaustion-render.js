@@ -349,7 +349,7 @@
     let ts = startTime;
     let pageIndex = 0;
     while (ts <= endTime && pageIndex < MAX_PAGES) {
-      const url = `https://api.binance.com/api/v3/klines?symbol=${SYMBOL}&interval=4h&limit=1000&startTime=${ts}&endTime=${endTime}`;
+      const url = `https://api.binance.com/api/v3/klines?symbol=${SYMBOL}&interval=15m&limit=1000&startTime=${ts}&endTime=${endTime}`;
       const res = await fetchFn(url);
       if (!res.ok) throw new Error(`Binance candle fetch failed at page ${pageIndex}: httpStatus=${res.status} ${await res.text()}`);
       const list = await res.json();

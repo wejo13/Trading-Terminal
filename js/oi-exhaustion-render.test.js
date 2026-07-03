@@ -665,6 +665,21 @@ section('REGRESSION: initial empty state — no cache, no prior run — cache lo
 
 // ── REGRESSION: fetchBinanceCandles page-delay ReferenceError ────────────
 
+section('REGRESSION: fetchBinanceCandles requests interval=15m, matching CHART_INTERVAL_MS — a stale interval=4h silently produced 16x too few candles and was only caught by a real user run');
+asyncTests.push((async function () {
+  const requestedUrls = [];
+  const fetchFn = async (url) => {
+    requestedUrls.push(url);
+    return { ok: true, status: 200, json: async () => [], text: async () => '' };
+  };
+  const sleepFn = async () => {};
+  await R.fetchBinanceCandles(0, 1000, { fetchFn, sleepFn, pageDelayMs: 0 });
+
+  assert('at least one request was made', requestedUrls.length > 0);
+  assert('every request uses interval=15m, matching the shared signal/chart candle series', requestedUrls.every(u => u.includes('interval=15m')));
+  assert('no request uses a stale interval=4h', requestedUrls.every(u => !u.includes('interval=4h')));
+})());
+
 section('REGRESSION: fetchBinanceCandles executes a multi-page fetch with an injected sleepFn — no ReferenceError on the page-delay constant');
 asyncTests.push((async function () {
   // This is the exact bug: fetchBinanceCandles used to call

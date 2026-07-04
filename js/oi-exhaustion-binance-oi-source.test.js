@@ -215,24 +215,54 @@ function makeFakeFetch(pages) {
   };
 }
 
-section('fetchBinanceOpenInterestHist: the intended endTime reading is not dropped by a strict/exclusive API boundary');
-asyncTests.push((async () => {
-  const start = Date.UTC(2026, 2, 10, 0, 0, 0);
-  const intendedEnd = start + FIFTEEN_MIN_MS * 3; // caller wants readings through exactly this timestamp
-
-  // Simulate a Binance-like server that treats `endTime` as EXCLUSIVE —
-  // it only returns rows strictly before the requested endTime param.
-  const fakeFetch = async (url) => {
+/**
+ * Realistic backward-pagination fake: given a full ascending dataset,
+ * rejects any request carrying `startTime` (HTTP 400/-1130, matching the
+ * real confirmed Binance behavior), and otherwise returns the most recent
+ * `limit` rows at or before the requested `endTime` (or the most recent
+ * `limit` rows overall, if no endTime is given).
+ */
+function makeBackwardFakeFetch(allRowsSorted, limit) {
+  limit = limit || 500;
+  return async function fakeFetch(url) {
     const params = new URL(url);
-    const reqStart = Number(params.searchParams.get('startTime'));
-    const reqEnd = Number(params.searchParams.get('endTime'));
-    const allRows = [0, 1, 2, 3, 4].map(i => row(start + i * FIFTEEN_MIN_MS, 1000 + i));
-    const page = allRows.filter(r => Number(r.timestamp) >= reqStart && Number(r.timestamp) < reqEnd); // strictly exclusive on endTime
+    if (params.searchParams.has('startTime')) {
+      return { ok: false, status: 400, text: async () => '{"code":-1130,"msg":"parameter \'startTime\' is invalid."}' };
+    }
+    const endTime = params.searchParams.has('endTime') ? Number(params.searchParams.get('endTime')) : Infinity;
+    const eligible = allRowsSorted.filter(r => Number(r.timestamp) <= endTime);
+    const page = eligible.slice(Math.max(0, eligible.length - limit));
     return { ok: true, status: 200, json: async () => page };
   };
+}
 
-  const result = await S.fetchBinanceOpenInterestHist({ startTime: start, endTime: intendedEnd, fetchFn: fakeFetch });
-  assert('the reading exactly AT the intended endTime is still present despite an exclusive-boundary server', result.some(r => r.ts === intendedEnd));
+section('fetchBinanceOpenInterestHist: the intended endTime reading is not dropped by a strict/exclusive API boundary');
+section('fetchBinanceOpenInterestHist: NEVER sends startTime — the confirmed fix for the real -1130 rejection');
+asyncTests.push((async () => {
+  const start = Date.UTC(2026, 2, 10, 0, 0, 0);
+  const end = start + FIFTEEN_MIN_MS * 3;
+  const urls = [];
+  const fetchFn = async (url) => {
+    urls.push(url);
+    return { ok: true, status: 200, json: async () => [] };
+  };
+  await S.fetchBinanceOpenInterestHist({ startTime: start, endTime: end, fetchFn, log: false });
+  assert('at least one request was made', urls.length > 0);
+  assert('NOT ONE request URL ever includes startTime, across every page', urls.every(u => !u.includes('startTime=')));
+})());
+
+section('fetchBinanceOpenInterestHist: the first page pads endTime by one period step (guards an exclusive-endTime server)');
+asyncTests.push((async () => {
+  const start = Date.UTC(2026, 2, 10, 0, 0, 0);
+  const end = start + FIFTEEN_MIN_MS * 2;
+  const requestedEndTimes = [];
+  const fetchFn = async (url) => {
+    const params = new URL(url);
+    requestedEndTimes.push(Number(params.searchParams.get('endTime')));
+    return { ok: true, status: 200, json: async () => [] };
+  };
+  await S.fetchBinanceOpenInterestHist({ startTime: start, endTime: end, fetchFn, log: false });
+  assert('the first request pads endTime by exactly one 15m step', requestedEndTimes[0] === end + FIFTEEN_MIN_MS);
 })());
 
 section('fetchBinanceOpenInterestHist: explicitly filters out any rows the server returned beyond the intended range');
@@ -244,7 +274,7 @@ asyncTests.push((async () => {
     ok: true, status: 200,
     json: async () => [0, 1, 2, 3, 4, 5].map(i => row(start + i * FIFTEEN_MIN_MS, 1000 + i)),
   });
-  const result = await S.fetchBinanceOpenInterestHist({ startTime: start, endTime: intendedEnd, fetchFn: oversharingFetch });
+  const result = await S.fetchBinanceOpenInterestHist({ startTime: start, endTime: intendedEnd, fetchFn: oversharingFetch, log: false });
   assert('every returned row is within [startTime, endTime] — nothing beyond the intended range leaks through', result.every(r => r.ts >= start && r.ts <= intendedEnd));
   assert('exactly the 3 intended readings (0,1,2 = start..intendedEnd inclusive)', result.length === 3);
 })());
@@ -275,19 +305,20 @@ section('alignToPeriodBoundary: floors to the exact period grid');
   assert('unknown period falls back to 15m granularity', S.alignToPeriodBoundary(unaligned, 'bogus') === Date.UTC(2026, 5, 4, 13, 0, 0));
 })();
 
-section('fetchBinanceOpenInterestHist: startTime/endTime are aligned to the period boundary before being sent');
+section('fetchBinanceOpenInterestHist: endTime is aligned to the period boundary before being sent');
 asyncTests.push((async () => {
   const unalignedStart = Date.UTC(2026, 5, 4, 13, 7, 0); // 7 minutes into the 15m bucket
   const unalignedEnd = unalignedStart + FIFTEEN_MIN_MS + (3 * 60 * 1000); // a few minutes past the next boundary
-  const sentParams = [];
+  const sentEndTimes = [];
   const fetchFn = async (url) => {
     const params = new URL(url);
-    sentParams.push({ startTime: params.searchParams.get('startTime'), endTime: params.searchParams.get('endTime') });
+    sentEndTimes.push(params.searchParams.get('endTime'));
     return { ok: true, status: 200, json: async () => [] };
   };
   await S.fetchBinanceOpenInterestHist({ startTime: unalignedStart, endTime: unalignedEnd, fetchFn, log: false });
-  const expectedAlignedStart = String(Date.UTC(2026, 5, 4, 13, 0, 0));
-  assert('the actual startTime sent on the wire is aligned to the 15m grid, not the raw unaligned input', sentParams[0].startTime === expectedAlignedStart);
+  const alignedEnd = Date.UTC(2026, 5, 4, 13, 15, 0); // unalignedEnd floored to the 15m grid
+  const expectedFirstRequestEndTime = String(alignedEnd + FIFTEEN_MIN_MS); // plus the first-page pad
+  assert('the actual endTime sent on the wire is aligned to the 15m grid (then padded once)', sentEndTimes[0] === expectedFirstRequestEndTime);
 })());
 
 section('probeOpenInterestHistParams: tries all 4 combinations (none / startTime only / endTime only / both) and reports each outcome');
@@ -322,18 +353,71 @@ asyncTests.push((async () => {
   assert('all 4 attempts recorded as failed', results.every(r => r.ok === false));
 })());
 
-section('fetchBinanceOpenInterestHist: paginates until a short page signals the end');
+section('fetchBinanceOpenInterestHist: endTime-only single-page request works (the confirmed-working combination)');
 asyncTests.push((async () => {
   const start = Date.UTC(2026, 2, 10, 0, 0, 0);
-  const page1 = Array.from({ length: 500 }, (_, i) => row(start + i * FIFTEEN_MIN_MS, 1000 + i));
-  const page2 = Array.from({ length: 3 }, (_, i) => row(start + (500 + i) * FIFTEEN_MIN_MS, 2000 + i)); // short page = last
-
+  const rows = Array.from({ length: 10 }, (_, i) => row(start + i * FIFTEEN_MIN_MS, 1000 + i));
   const result = await S.fetchBinanceOpenInterestHist({
-    startTime: start, endTime: start + 10000 * FIFTEEN_MIN_MS,
-    fetchFn: makeFakeFetch([page1, page2]),
+    startTime: start, endTime: start + 9 * FIFTEEN_MIN_MS,
+    fetchFn: makeBackwardFakeFetch(rows, 500), log: false,
   });
-  assert('combined pages into one normalized, sorted series', result.length === 503);
-  assert('ascending order preserved across the page boundary', result[499].ts < result[500].ts);
+  assert('all 10 readings returned', result.length === 10);
+  assert('sorted ascending', result.every((r, i) => i === 0 || r.ts > result[i - 1].ts));
+})());
+
+section('fetchBinanceOpenInterestHist: multi-page BACKWARD pagination covers the full target range');
+asyncTests.push((async () => {
+  const start = Date.UTC(2026, 2, 1, 0, 0, 0);
+  // 1200 fifteen-minute readings (12.5 days) — needs 3 pages at limit=500 to cover fully.
+  const rows = Array.from({ length: 1200 }, (_, i) => row(start + i * FIFTEEN_MIN_MS, 1000 + i));
+  const targetEnd = start + 1199 * FIFTEEN_MIN_MS;
+  const fetchFn = makeBackwardFakeFetch(rows, 500);
+  const result = await S.fetchBinanceOpenInterestHist({ startTime: start, endTime: targetEnd, fetchFn, log: false });
+  assert('the full 1200-reading range is covered by backward pagination', result.length === 1200);
+  assert('the oldest returned reading reaches back to the target start', result[0].ts === start);
+  assert('the newest returned reading reaches the target end', result[result.length - 1].ts === targetEnd);
+  assert('sorted ascending after merging pages fetched in reverse order', result.every((r, i) => i === 0 || r.ts > result[i - 1].ts));
+})());
+
+section('fetchBinanceOpenInterestHist: duplicate rows at page boundaries are deduplicated');
+asyncTests.push((async () => {
+  const start = Date.UTC(2026, 2, 1, 0, 0, 0);
+  const rows = Array.from({ length: 700 }, (_, i) => row(start + i * FIFTEEN_MIN_MS, 1000 + i));
+  // A server quirk: each page after the first re-includes its last row's
+  // exact timestamp at the START of the next page too (off-by-one overlap).
+  let call = 0;
+  const overlappingFetch = async (url) => {
+    const params = new URL(url);
+    if (params.searchParams.has('startTime')) return { ok: false, status: 400, text: async () => '{"code":-1130}' };
+    const endTime = Number(params.searchParams.get('endTime'));
+    const eligible = rows.filter(r => Number(r.timestamp) <= endTime);
+    let page = eligible.slice(Math.max(0, eligible.length - 500));
+    if (call > 0 && page.length) page = [page[page.length - 1], ...page]; // duplicate the boundary row
+    call++;
+    return { ok: true, status: 200, json: async () => page };
+  };
+  const result = await S.fetchBinanceOpenInterestHist({
+    startTime: start, endTime: start + 699 * FIFTEEN_MIN_MS,
+    fetchFn: overlappingFetch, log: false,
+  });
+  const timestamps = result.map(r => r.ts);
+  assert('no duplicate timestamps in the final merged result', new Set(timestamps).size === timestamps.length);
+  assert('the full range is still covered despite the overlap', result.length === 700);
+})());
+
+section('fetchBinanceOpenInterestHist: local final filtering excludes data outside the intended visible range');
+asyncTests.push((async () => {
+  const start = Date.UTC(2026, 2, 1, 0, 0, 0);
+  // Server has MORE history than requested (200 readings), but only 50 are in range.
+  const allRows = Array.from({ length: 200 }, (_, i) => row(start + i * FIFTEEN_MIN_MS, 1000 + i));
+  const targetStart = start + 100 * FIFTEEN_MIN_MS;
+  const targetEnd = start + 149 * FIFTEEN_MIN_MS;
+  const result = await S.fetchBinanceOpenInterestHist({
+    startTime: targetStart, endTime: targetEnd,
+    fetchFn: makeBackwardFakeFetch(allRows, 500), log: false,
+  });
+  assert('every returned row is within the intended visible range', result.every(r => r.ts >= targetStart && r.ts <= targetEnd));
+  assert('exactly the 50 intended readings, not the full 200 available', result.length === 50);
 })());
 
 section('fetchBinanceOpenInterestHist: throws a clear error on a failed HTTP response');
@@ -343,6 +427,7 @@ asyncTests.push((async () => {
     await S.fetchBinanceOpenInterestHist({
       startTime: 0, endTime: 1000,
       fetchFn: async () => ({ ok: false, status: 451 }),
+      log: false,
     });
   } catch (e) { threw = true; message = e.message; }
   assert('throws rather than silently returning partial/empty data', threw);
@@ -356,46 +441,17 @@ asyncTests.push((async () => {
     await S.fetchBinanceOpenInterestHist({
       startTime: 0, endTime: 1000,
       fetchFn: async () => ({ ok: false, status: 400, text: async () => '{"code":-1130,"msg":"Data sent for parameter \'startTime\' is not valid."}' }),
+      log: false,
     });
   } catch (e) { message = e.message; }
   assert('error message includes Binance\'s own error code', message.includes('-1130'));
   assert('error message includes Binance\'s own error text', message.includes('is not valid'));
 })());
 
-section('fetchBinanceOpenInterestHist: the endTime pad is skipped if it would push the request over the 30-day ceiling');
-asyncTests.push((async () => {
-  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-  const start = 0;
-  // Exactly at the 30-day span already — padding by 15m would tip it over.
-  const end = THIRTY_DAYS_MS;
-  const requestedEndTimes = [];
-  const fetchFn = async (url) => {
-    const params = new URL(url);
-    requestedEndTimes.push(Number(params.searchParams.get('endTime')));
-    return { ok: true, status: 200, json: async () => [] };
-  };
-  await S.fetchBinanceOpenInterestHist({ startTime: start, endTime: end, fetchFn });
-  assert('the request endTime was NOT padded past the 30-day span', requestedEndTimes[0] === end);
-})());
-
-section('fetchBinanceOpenInterestHist: the endTime pad IS applied when it safely stays under the 30-day ceiling');
-asyncTests.push((async () => {
-  const start = 0;
-  const end = 10 * FIFTEEN_MIN_MS; // well under 30 days — padding is safe
-  const requestedEndTimes = [];
-  const fetchFn = async (url) => {
-    const params = new URL(url);
-    requestedEndTimes.push(Number(params.searchParams.get('endTime')));
-    return { ok: true, status: 200, json: async () => [] };
-  };
-  await S.fetchBinanceOpenInterestHist({ startTime: start, endTime: end, fetchFn });
-  assert('the request endTime WAS padded by 15 minutes', requestedEndTimes[0] === end + FIFTEEN_MIN_MS);
-})());
-
 section('fetchBinanceOpenInterestHist: requires startTime and endTime');
 asyncTests.push((async () => {
   let threw = false;
-  try { await S.fetchBinanceOpenInterestHist({ fetchFn: makeFakeFetch([[]]) }); } catch (e) { threw = true; }
+  try { await S.fetchBinanceOpenInterestHist({ fetchFn: makeFakeFetch([[]]), log: false }); } catch (e) { threw = true; }
   assert('throws when startTime/endTime are missing', threw);
 })());
 
@@ -405,3 +461,4 @@ asyncTests.push((async () => {
   console.log('oi-exhaustion-binance-oi-source: ' + passed + ' passed, ' + failed + ' failed');
   if (failed > 0) process.exit(1);
 })();
+

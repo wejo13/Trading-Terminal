@@ -1937,7 +1937,7 @@
       ? `<span style="color:var(--amber);">clamped — Binance only retains ~30 days</span>`
       : `<span style="color:var(--text-faint);">not clamped</span>`;
     return `<div style="color:var(--text-faint);margin-top:2px;">Visible analysis range: ${visible} &middot; ` +
-      `Binance request range: ${effective} &middot; ${clampedNote}</div>`;
+      `Local target range (filter only — startTime is never sent to Binance): ${effective} &middot; ${clampedNote}</div>`;
   }
 
   function renderBinanceOIStatus() {

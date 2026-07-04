@@ -189,24 +189,32 @@
 
   /**
    * Paginated fetch of Binance's openInterestHist for the intended
-   * [startTime, endTime] range (inclusive on both ends).
+   * [startTime, endTime] target range (inclusive on both ends).
    *
-   * Binance's own inclusive/exclusive boundary semantics for this
-   * endpoint aren't something to take on faith — the request itself pads
-   * `endTime` by one 15m step so a reading landing exactly on the
-   * intended boundary is never silently dropped by an off-by-one on
-   * Binance's side, and the padded/over-fetched result is then filtered
-   * back to the CALLER's actual intended range explicitly before
-   * returning.
+   * IMPORTANT: this endpoint rejects `startTime` outright — confirmed via
+   * the isolated 4-combination probe (probeOpenInterestHistParams): a
+   * bare request and an endTime-only request both return HTTP 200, while
+   * startTime-only and startTime+endTime both return HTTP 400 with
+   * `{"code":-1130,"msg":"parameter 'startTime' is invalid."}`. This is
+   * not a value/type/alignment/range-length problem — the parameter
+   * itself is rejected by this endpoint from this environment. So
+   * `startTime` is NEVER sent to Binance, full stop.
    *
-   * Every startTime/endTime sent on the wire is: coerced to a plain
-   * integer ms value (toBinanceTimestampMs), aligned to the requested
-   * period's real boundary (alignToPeriodBoundary), and logged (URL +
-   * typeof) immediately before the request — per the investigation into
-   * Binance's "-1130 parameter 'startTime' is invalid" rejection, which
-   * is NOT a range-length error (a correctly-under-30-days request still
-   * got it), so the value/type/alignment of the timestamp itself is what
-   * this hardens against.
+   * Coverage is instead built by paging BACKWARD using `endTime` alone:
+   * request the most recent page, find the oldest timestamp it returned,
+   * then request the next page with endTime = (that oldest timestamp - 1
+   * period step), repeating until the returned data reaches back to (or
+   * past) the target startTime, or Binance stops returning rows. The
+   * `startTime`/`endTime` the CALLER passes in remain exactly what
+   * computeBinanceOIReferenceRange produced (including its 30-day clamp)
+   * — they're just used as the LOCAL target range for when to stop
+   * paging and what to filter the final merged result down to, never as
+   * a value sent on the wire.
+   *
+   * Every endTime sent on the wire is: coerced to a plain integer ms
+   * value (toBinanceTimestampMs), aligned to the requested period's real
+   * boundary (alignToPeriodBoundary), and logged (URL + type) immediately
+   * before the request.
    *
    * `fetchFn` is dependency-injected (defaults to global `fetch`) so this
    * is testable in Node without a real network call.
@@ -220,43 +228,38 @@
     const log = options.log !== false; // set log:false in tests to keep output quiet
 
     if (!fetchFn) throw new Error('fetchBinanceOpenInterestHist requires a fetch function (none available in this environment).');
-    if (options.startTime == null || options.endTime == null) throw new Error('fetchBinanceOpenInterestHist requires both startTime and endTime.');
+    if (options.startTime == null || options.endTime == null) throw new Error('fetchBinanceOpenInterestHist requires both startTime and endTime (as the local target range — startTime is never sent to Binance).');
 
-    const startTime = alignToPeriodBoundary(toBinanceTimestampMs(options.startTime, 'startTime'), period);
-    const endTime = alignToPeriodBoundary(toBinanceTimestampMs(options.endTime, 'endTime'), period);
-
-    // Pad the actual HTTP request range — never assume endTime is
-    // inclusive on Binance's side — but ONLY if doing so still keeps the
-    // total requested span under Binance's own ~30-day retention ceiling.
-    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-    const paddedEndTime = endTime + FIFTEEN_MIN_MS;
-    const requestEndTime = (paddedEndTime - startTime) < THIRTY_DAYS_MS ? paddedEndTime : endTime;
+    const targetStartTime = alignToPeriodBoundary(toBinanceTimestampMs(options.startTime, 'startTime'), period);
+    const targetEndTime = alignToPeriodBoundary(toBinanceTimestampMs(options.endTime, 'endTime'), period);
+    const periodStepMs = PERIOD_STEP_MS[period] || FIFTEEN_MIN_MS;
 
     const allRows = [];
-    let cursor = startTime;
+    // Pad only the FIRST request's endTime by one period step, in case
+    // endTime itself is exclusive on Binance's side — guards against
+    // silently losing the exact target-end reading. Every subsequent
+    // page's cursor is already (oldest - 1), which needs no such pad.
+    let cursorEnd = targetEndTime + periodStepMs;
     let pages = 0;
+    let prevOldest = null;
 
-    while (cursor < requestEndTime && pages < maxPages) {
-      const cursorMs = toBinanceTimestampMs(cursor, 'startTime (cursor)');
-      const endMs = toBinanceTimestampMs(requestEndTime, 'endTime');
+    while (pages < maxPages) {
+      const endMs = toBinanceTimestampMs(cursorEnd, 'endTime');
+      // NOTE: startTime is deliberately never included in this URL.
       const url = `${BINANCE_OI_HIST_URL}?symbol=${encodeURIComponent(symbol)}&period=${encodeURIComponent(period)}` +
-        `&limit=${MAX_LIMIT_PER_REQUEST}&startTime=${cursorMs}&endTime=${endMs}`;
+        `&limit=${MAX_LIMIT_PER_REQUEST}&endTime=${endMs}`;
 
       if (log && typeof console !== 'undefined') {
-        console.log('[BinanceOI] request', {
-          url,
-          startTime: cursorMs, startTimeType: typeof cursorMs, startTimeIsInteger: Number.isInteger(cursorMs),
+        console.log('[BinanceOI] request (endTime-only, paging backward)', {
+          url, page: pages,
           endTime: endMs, endTimeType: typeof endMs, endTimeIsInteger: Number.isInteger(endMs),
         });
       }
 
       const res = await fetchFn(url);
+      pages++;
       if (!res || !res.ok) {
         const status = res ? res.status : 'no response';
-        // Surface Binance's actual response body (usually a JSON error
-        // object with a code/msg) rather than just the HTTP status — this
-        // is what actually explains a 400 (e.g. "startTime is invalid")
-        // instead of leaving it a mystery.
         let bodyText = '';
         if (res && typeof res.text === 'function') {
           try { bodyText = await res.text(); } catch (e) { bodyText = '(could not read response body)'; }
@@ -265,22 +268,26 @@
         throw new Error(`Binance openInterestHist request failed (HTTP ${status}): ${bodyText || '(empty response body)'} — url: ${url}`);
       }
       const json = await res.json();
-      if (!Array.isArray(json) || json.length === 0) break;
+      if (!Array.isArray(json) || json.length === 0) break; // no more data
 
       allRows.push(...json);
-      pages++;
 
-      const lastTs = Number(json[json.length - 1].timestamp);
-      if (!Number.isFinite(lastTs) || lastTs <= cursor) break; // non-advancing response — stop rather than loop forever
-      cursor = lastTs + FIFTEEN_MIN_MS;
+      const parsedPage = normalizeBinanceOpenInterestRows(json); // sorted ascending
+      if (!parsedPage.length) break;
+      const oldestInPage = parsedPage[0].ts;
+
+      if (oldestInPage <= targetStartTime) break; // reached back far enough
+      if (prevOldest != null && oldestInPage >= prevOldest) break; // non-advancing response — stop rather than loop forever
+      prevOldest = oldestInPage;
+      cursorEnd = oldestInPage - periodStepMs; // next page ends just before this page's oldest reading
 
       if (json.length < MAX_LIMIT_PER_REQUEST) break; // short page = reached the end of what Binance has
     }
 
-    // Explicit filter back to the caller's ACTUAL intended range — never
-    // trust that the padded over-fetch didn't also pull in rows outside
-    // [startTime, endTime].
-    return normalizeBinanceOpenInterestRows(allRows).filter(r => r.ts >= startTime && r.ts <= endTime);
+    // Merge, de-dupe, sort — then explicit local filter to the intended
+    // target range. This filtering is the ONLY place startTime is ever
+    // used; it never touches the wire.
+    return normalizeBinanceOpenInterestRows(allRows).filter(r => r.ts >= targetStartTime && r.ts <= targetEndTime);
   }
 
   /**

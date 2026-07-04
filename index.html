@@ -2713,6 +2713,21 @@
           <div id="oix-diagnostics-body" style="font-size:11px;color:var(--text-faint);">Run analysis to populate.</div>
         </div>
 
+        <!-- V2 parameter study (research) — locked spec, candidate comparison, in-memory data only -->
+        <details style="background:var(--card);border-radius:var(--radius-card);padding:16px;margin-bottom:16px;border:0.5px solid var(--line-old);">
+          <summary style="font-size:12px;font-weight:600;color:var(--text);cursor:pointer;">V2 parameter study <span style="font-weight:400;color:var(--text-faint);">&middot; research &middot; candidate comparison, not a winner ranking</span></summary>
+          <div style="margin-top:10px;font-size:11px;color:var(--text-faint);">
+            Runs the locked 54-combo grid against the data already loaded in memory — zero fetches. Event/ignition labeling is retrospective research only.
+            Inspect the stable group of strong rows; do not blindly select row one.
+          </div>
+          <div style="margin-top:10px;display:flex;gap:10px;align-items:center;">
+            <button id="oix-study-run" class="oix-btn" onclick="OIExhaustionRender.runV2ParameterStudy()">Run parameter study</button>
+            <span id="oix-study-status" style="font-size:11px;color:var(--text-faint);"></span>
+          </div>
+          <div id="oix-study-events" style="margin-top:12px;font-size:11px;color:var(--text-faint);"></div>
+          <div id="oix-study-results" style="margin-top:12px;overflow-x:auto;"></div>
+        </details>
+
         <!-- Chart -->
         <div style="background:var(--card);border-radius:var(--radius-card);padding:16px;margin-bottom:16px;border:0.5px solid var(--line-old);">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
@@ -3388,6 +3403,7 @@
     window.__oixChartLibAttempts.push({ url: 'https://unpkg.com/klinecharts@9.8.10/dist/umd/klinecharts.min.js', ok: typeof klinecharts !== 'undefined' });
   }
 </script>
+<script src="js/oi-exhaustion-study.js"></script>
 <script src="js/oi-exhaustion-render.js"></script>
 <script>
 if(typeof OIExhaustionRender!=="undefined"){

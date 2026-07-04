@@ -512,6 +512,63 @@
     return Array.from(byTs.values()).sort((a, b) => a.ts - b.ts);
   }
 
+  // ── CryptoHFT cache: main/staging two-key persistence ───────────────────
+  // The bug this fixes: starting a new fetch wrote the pending working
+  // entry straight onto the SINGLE cache key, destroying the last COMPLETE
+  // dataset the moment the fetch began. Interrupt that fetch (reload, tab
+  // close) and the good cache was gone — the next run saw only a pending
+  // entry whose range no longer matched (endTime drifts every 15 min), so
+  // it fell to full_fetch. Fix: the main key now holds COMPLETE entries
+  // only; all in-progress work lives under a separate staging key and is
+  // atomically promoted onto the main key only after full validation.
+
+  const CRYPTOHFT_STAGING_KEY_SUFFIX = '_staging';
+
+  /** Staging (in-progress work) key derived from a main cache key. */
+  function stagingCacheKeyFor(mainKey) {
+    return String(mainKey) + CRYPTOHFT_STAGING_KEY_SUFFIX;
+  }
+
+  /**
+   * Pure two-key cache decision. The main entry is consulted ONLY when
+   * complete (contained_slice / tail_refresh); the staging entry is
+   * consulted ONLY as an exact-range resume candidate when the main entry
+   * cannot serve the request. A pending/incomplete entry can therefore
+   * never hide or outrank a valid completed one. Returns
+   * `{ action, reason, source, gapMs? }` with source 'main' | 'staging' | null.
+   */
+  function resolveCryptoHFTCacheDecision(mainEntry, mainEntryIsComplete, stagingEntry, startTime, endTime, opts) {
+    const completeEntry = (mainEntry && mainEntryIsComplete) ? mainEntry : null;
+    const mainDecision = classifyCryptoHFTCacheAction(completeEntry, !!completeEntry, startTime, endTime, opts);
+    if (mainDecision.action === 'contained_slice' || mainDecision.action === 'tail_refresh') {
+      return Object.assign({}, mainDecision, { source: 'main' });
+    }
+    const stagingDecision = classifyCryptoHFTCacheAction(stagingEntry || null, false, startTime, endTime, opts);
+    if (stagingDecision.action === 'resume') {
+      return Object.assign({}, stagingDecision, { source: 'staging' });
+    }
+    return Object.assign({}, mainDecision, { source: null });
+  }
+
+  /**
+   * Builds the final COMPLETE entry to be written onto the main key in a
+   * single atomic put, from a validated staging working entry. Pure — the
+   * caller performs the put (and only then deletes the staging entry).
+   */
+  function buildPromotedCompleteEntry(workingEntry, mainKey, finals) {
+    const f = finals || {};
+    return Object.assign({}, workingEntry, {
+      key: mainKey,
+      status: 'complete',
+      startTime: f.startTime,
+      endTime: f.endTime,
+      binanceCandles: f.binanceCandles,
+      aggregateOI: f.aggregateOI,
+      coverage: f.coverage,
+      updatedAt: Date.now(),
+    });
+  }
+
   // ── Fetch: Bybit OI (signal source, public, no credentials) ────────────
   // Built on fetchWithRateLimitRetry so a 429/10006 mid-pagination retries
   // the SAME page rather than restarting the whole 90-day pull. fetchFn/
@@ -1330,6 +1387,10 @@
     DEFAULT_MAX_TAIL_GAP_MS,
     classifyCryptoHFTCacheAction,
     mergeTimestampedRows,
+    CRYPTOHFT_STAGING_KEY_SUFFIX,
+    stagingCacheKeyFor,
+    resolveCryptoHFTCacheDecision,
+    buildPromotedCompleteEntry,
     BINANCE_OI_MAX_LOOKBACK_MS,
     computeBinanceOIReferenceRange,
     RAW_DATA_PACK_SCHEMA,
@@ -1646,23 +1707,52 @@
         // requiring an exact lookbackDays match that previously forced a
         // full re-download for every different lookback value tried.
         const idbKey = IdbCache.buildCacheKey({ venues: CRYPTOHFT_REQUIRED_VENUES, bucketMs: CRYPTOHFT_BUCKET_MS });
+        const stagingKey = stagingCacheKeyFor(idbKey);
 
         if (forceRefresh) {
-          setStatus('Refresh requested — deleting the cached dataset and starting a full re-fetch…');
+          setStatus('Refresh requested — deleting the cached dataset (main + staging) and starting a full re-fetch…');
           try { await IdbCache.deleteCacheEntry(idbKey); } catch (e) { /* non-fatal */ }
+          try { await IdbCache.deleteCacheEntry(stagingKey); } catch (e) { /* non-fatal */ }
         }
 
         let idbEntry = null;
         try { idbEntry = await IdbCache.getCacheEntry(idbKey); } catch (e) { idbEntry = null; }
-        const idbEntryIsComplete = idbEntry && IdbCache.isCacheEntryComplete(idbEntry, CRYPTOHFT_REQUIRED_VENUES);
-        const classification = classifyCryptoHFTCacheAction(idbEntry, idbEntryIsComplete, startTime, endTime);
+        let stagingEntry = null;
+        try { stagingEntry = await IdbCache.getCacheEntry(stagingKey); } catch (e) { stagingEntry = null; }
+        const idbEntryIsComplete = !!(idbEntry && IdbCache.isCacheEntryComplete(idbEntry, CRYPTOHFT_REQUIRED_VENUES));
+
+        // Legacy migration: pre-staging versions wrote the pending working
+        // entry straight onto the main key. If such an artifact is found,
+        // move it to the staging key (only if staging is empty — never
+        // clobber newer staged work) so any partial per-venue data can
+        // still serve an exact-range resume, then clear the main key. The
+        // main key is COMPLETE-entries-only from here on.
+        if (idbEntry && !idbEntryIsComplete) {
+          console.log('[CryptoHFT cache] legacy pending entry found on main key — migrating to staging', {
+            legacyRange: { startTime: idbEntry.startTime, endTime: idbEntry.endTime },
+            stagingAlreadyOccupied: !!stagingEntry,
+          });
+          try {
+            if (!stagingEntry) {
+              stagingEntry = Object.assign({}, idbEntry, { key: stagingKey });
+              await IdbCache.putCacheEntry(stagingEntry);
+            }
+            await IdbCache.deleteCacheEntry(idbKey);
+          } catch (e) { /* non-fatal */ }
+          idbEntry = null;
+        }
+
+        const classification = resolveCryptoHFTCacheDecision(idbEntry, idbEntryIsComplete, stagingEntry, startTime, endTime);
 
         console.log('[CryptoHFT cache] IndexedDB lookup', {
           idbEntryExists: !!idbEntry,
           idbEntryStatus: idbEntry ? idbEntry.status : null,
           idbEntryRange: idbEntry ? { startTime: idbEntry.startTime, endTime: idbEntry.endTime, startTimeStr: safeUtcDateString(idbEntry.startTime), endTimeStr: safeUtcDateString(idbEntry.endTime) } : null,
           idbEntryIsComplete,
+          stagingEntryExists: !!stagingEntry,
+          stagingEntryRange: stagingEntry ? { startTime: stagingEntry.startTime, endTime: stagingEntry.endTime } : null,
           chosenAction: classification.action,
+          decisionSource: classification.source,
           reason: classification.reason,
           tailGapMs: classification.gapMs != null ? classification.gapMs : undefined,
           tailGapMinutes: classification.gapMs != null ? Math.round(classification.gapMs / 60000) : undefined,
@@ -1746,14 +1836,26 @@
           // silently merge two unrelated date ranges. Resuming an
           // in-progress entry only applies when its own stored
           // startTime/endTime exactly match the current request.
-          const resumableEntry = classification.action === 'resume' ? idbEntry : null;
+          const resumableEntry = (classification.action === 'resume' && classification.source === 'staging') ? stagingEntry : null;
           const resuming = resumableEntry && (IdbCache.completedVenues(resumableEntry, CRYPTOHFT_REQUIRED_VENUES).length > 0 ||
             (Array.isArray(resumableEntry.binanceCandles) && resumableEntry.binanceCandles.length > 0));
-          setStatus(resuming
-            ? 'Fetching missing data — resuming a previously interrupted pull, already-completed venues will not be re-fetched…'
-            : `Fetching missing data — ${classification.reason.replace(/_/g, ' ')}, first pull may take a while…`);
 
-          const workingEntry = resumableEntry || IdbCache.makeEmptyEntry(idbKey, { lookbackDays: s.lookbackDays, startTime, endTime });
+          const preservingComplete = !!(idbEntry && idbEntryIsComplete);
+          if (preservingComplete) {
+            console.log('[CryptoHFT cache] preserving last complete cache entry — new fetch is staged under a separate key and will only replace it after full validation', {
+              preservedRange: { startTime: idbEntry.startTime, endTime: idbEntry.endTime, startTimeStr: safeUtcDateString(idbEntry.startTime), endTimeStr: safeUtcDateString(idbEntry.endTime) },
+              stagingKey,
+            });
+          }
+          setStatus(
+            (preservingComplete
+              ? `<span style="color:var(--teal);">Preserving the last complete cached dataset</span> (${safeUtcDateString(idbEntry.startTime)} → ${safeUtcDateString(idbEntry.endTime)}) — the new fetch is staged separately and replaces it only after full validation. `
+              : '') +
+            (resuming
+              ? 'Fetching missing data — resuming a previously interrupted pull, already-completed venues will not be re-fetched…'
+              : `Fetching missing data — ${classification.reason.replace(/_/g, ' ')}, first pull may take a while…`));
+
+          const workingEntry = resumableEntry || IdbCache.makeEmptyEntry(stagingKey, { lookbackDays: s.lookbackDays, startTime, endTime });
           try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal — proceeds without persistence if IDB write fails */ }
 
           if (Array.isArray(workingEntry.binanceCandles) && workingEntry.binanceCandles.length > 0) {
@@ -1785,12 +1887,17 @@
             );
           }
 
-          workingEntry.aggregateOI = oiRows;
-          workingEntry.coverage = coverage;
-          workingEntry.status = 'complete';
-          workingEntry.startTime = startTime;
-          workingEntry.endTime = endTime;
-          try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal for this run, but future reruns won't get the cache benefit */ }
+          // Atomic promotion: everything above succeeded and validated, so
+          // the main key is replaced in ONE put; only after that succeeds
+          // is the staging entry deleted. An interruption anywhere before
+          // this line leaves the previous complete entry untouched.
+          const promotedEntry = buildPromotedCompleteEntry(workingEntry, idbKey, {
+            startTime, endTime, binanceCandles, aggregateOI: oiRows, coverage,
+          });
+          try {
+            await IdbCache.putCacheEntry(promotedEntry);
+            await IdbCache.deleteCacheEntry(stagingKey);
+          } catch (e) { /* non-fatal for this run, but future reruns won't get the cache benefit */ }
           setStatus(`<span style="color:var(--teal);">Cached dataset complete.</span> ${safeNumber(oiRows.length)} OI buckets / ${safeNumber(binanceCandles.length)} candles saved for instant reruns.`);
         }
 

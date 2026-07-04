@@ -1581,6 +1581,85 @@ section('portable raw-data pack: deduplicates and sorts imported rows without ac
   assert('duplicate timestamps are deterministically last-write-wins', imported.binanceCandles[0].close === 1.6 && imported.oiRows[0].oi === 11);
 })();
 
+// ── main/staging two-key cache persistence ───────────────────────────────
+// Simulated store: exactly how the orchestration uses IndexedDB — a plain
+// key -> entry map with put(entry) keyed by entry.key and delete(key).
+
+section('staging cache #1: complete cache exists -> a NEW fetch starts -> the complete entry remains available (staged writes never touch the main key)');
+(function () {
+  const IdbCache = require('./oi-exhaustion-idb-cache.js');
+  const VENUES = ['binance_futures', 'bybit', 'okx'];
+  const mainKey = IdbCache.buildCacheKey({ venues: VENUES, bucketMs: 900000 });
+  const stagingKey = R.stagingCacheKeyFor(mainKey);
+  const store = {};
+  const complete = {
+    key: mainKey, status: 'complete', startTime: 1000, endTime: 2000,
+    binanceCandles: [{ ts: 1000 }], aggregateOI: [{ ts: 1000, oi: 1 }],
+    perVenueOI: { binance_futures: [{ ts: 1000, oi: 1 }], bybit: [{ ts: 1000, oi: 1 }], okx: [{ ts: 1000, oi: 1 }] },
+  };
+  store[mainKey] = complete;
+  // New non-servable request (head before the cache) -> full_fetch, staged working entry
+  const decision = R.resolveCryptoHFTCacheDecision(store[mainKey], true, store[stagingKey] || null, 500, 2000);
+  assert('decision is full_fetch (main cannot serve, no staging)', decision.action === 'full_fetch' && decision.source === null);
+  const working = IdbCache.makeEmptyEntry(stagingKey, { startTime: 500, endTime: 2000 });
+  store[working.key] = working; // every in-progress put lands on the staging key
+  assert('staging key differs from main key', stagingKey !== mainKey);
+  assert('main complete entry is untouched by starting the fetch', store[mainKey] === complete && IdbCache.isCacheEntryComplete(store[mainKey], VENUES));
+})();
+
+section('staging cache #2: new fetch is interrupted -> reload -> the prior complete cache is still used (contained_slice / tail_refresh from main)');
+(function () {
+  const IdbCache = require('./oi-exhaustion-idb-cache.js');
+  const mainKey = 'oix_v1_test_900000_na';
+  const stagingKey = R.stagingCacheKeyFor(mainKey);
+  const complete = { key: mainKey, status: 'complete', startTime: 1000, endTime: 2000 };
+  const interruptedStaging = { key: stagingKey, status: 'pending', startTime: 900, endTime: 2100, perVenueOI: {} };
+  // Reload: identical request fully inside the complete range
+  const d1 = R.resolveCryptoHFTCacheDecision(complete, true, interruptedStaging, 1200, 1900);
+  assert('contained request served from main despite interrupted staging', d1.action === 'contained_slice' && d1.source === 'main');
+  // Reload a bit later: end drifted forward -> tail_refresh from main, still not full_fetch
+  const d2 = R.resolveCryptoHFTCacheDecision(complete, true, interruptedStaging, 1000, 2000 + 15 * 60 * 1000);
+  assert('drifted-end request is a tail_refresh from main, never a full refetch', d2.action === 'tail_refresh' && d2.source === 'main');
+})();
+
+section('staging cache #3: a successful new fetch atomically replaces the prior complete cache (single put on main key, then staging deleted)');
+(function () {
+  const IdbCache = require('./oi-exhaustion-idb-cache.js');
+  const VENUES = ['binance_futures', 'bybit', 'okx'];
+  const mainKey = IdbCache.buildCacheKey({ venues: VENUES, bucketMs: 900000 });
+  const stagingKey = R.stagingCacheKeyFor(mainKey);
+  const store = {};
+  store[mainKey] = { key: mainKey, status: 'complete', startTime: 1000, endTime: 2000, binanceCandles: [{ ts: 1000 }], aggregateOI: [{ ts: 1000, oi: 1 }], perVenueOI: { binance_futures: [{ ts: 1000, oi: 1 }], bybit: [{ ts: 1000, oi: 1 }], okx: [{ ts: 1000, oi: 1 }] } };
+  const working = { key: stagingKey, status: 'pending', startTime: 500, endTime: 3000, perVenueOI: { binance_futures: [{ ts: 500, oi: 2 }], bybit: [{ ts: 500, oi: 2 }], okx: [{ ts: 500, oi: 2 }] } };
+  store[stagingKey] = working;
+  const promoted = R.buildPromotedCompleteEntry(working, mainKey, {
+    startTime: 500, endTime: 3000,
+    binanceCandles: [{ ts: 500 }, { ts: 2900 }],
+    aggregateOI: [{ ts: 500, oi: 2 }, { ts: 2900, oi: 3 }],
+    coverage: { completeBuckets: 2 },
+  });
+  store[promoted.key] = promoted; // the single atomic put
+  delete store[stagingKey];        // only after the put succeeded
+  assert('promoted entry landed on the main key', store[mainKey] === promoted && promoted.key === mainKey);
+  assert('promoted entry is a valid complete entry', IdbCache.isCacheEntryComplete(store[mainKey], VENUES));
+  assert('promoted entry carries the new range', store[mainKey].startTime === 500 && store[mainKey].endTime === 3000);
+  assert('staging entry removed after promotion', store[stagingKey] === undefined);
+})();
+
+section('staging cache #4: a pending entry NEVER causes a valid completed entry to be ignored (even an exact-range resume candidate)');
+(function () {
+  const complete = { key: 'k', status: 'complete', startTime: 1000, endTime: 2000 };
+  // Staging pending entry exactly matches the request — main still wins.
+  const staging = { key: 'k_staging', status: 'pending', startTime: 1200, endTime: 1900 };
+  const d = R.resolveCryptoHFTCacheDecision(complete, true, staging, 1200, 1900);
+  assert('main complete entry outranks an exact-range pending staging entry', d.action === 'contained_slice' && d.source === 'main');
+  // And when main truly cannot serve, staging resume is only used on an exact range match.
+  const d2 = R.resolveCryptoHFTCacheDecision(complete, true, { key: 'k_staging', status: 'pending', startTime: 500, endTime: 2500 }, 500, 2500);
+  assert('staging resume used only when main cannot serve and range matches exactly', d2.action === 'resume' && d2.source === 'staging');
+  const d3 = R.resolveCryptoHFTCacheDecision(null, false, { key: 'k_staging', status: 'pending', startTime: 500, endTime: 2500 }, 400, 2500);
+  assert('non-matching staging range falls to full_fetch, never a bogus resume', d3.action === 'full_fetch');
+})();
+
 (async () => {
   await Promise.all(asyncTests);
   console.log('\n────────────────────────────────────────');

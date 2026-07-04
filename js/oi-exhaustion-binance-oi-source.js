@@ -150,6 +150,43 @@
     };
   }
 
+  // Binance-documented periods for this endpoint and their millisecond
+  // step — used only to align startTime/endTime to real period boundaries
+  // before sending them, per the investigation requirement that a
+  // misaligned boundary (not just an oversized range) could be behind a
+  // "startTime is invalid" rejection.
+  const PERIOD_STEP_MS = {
+    '5m': 5 * 60 * 1000,
+    '15m': FIFTEEN_MIN_MS,
+    '30m': 30 * 60 * 1000,
+    '1h': 60 * 60 * 1000,
+    '2h': 2 * 60 * 60 * 1000,
+    '4h': 4 * 60 * 60 * 1000,
+    '6h': 6 * 60 * 60 * 1000,
+    '12h': 12 * 60 * 60 * 1000,
+    '1d': 24 * 60 * 60 * 1000,
+  };
+
+  /**
+   * Coerces a timestamp to a plain, finite integer millisecond value —
+   * never a string, a value with decimals, a BigInt, or the result of an
+   * invalid Date conversion (NaN). Throws rather than silently sending a
+   * malformed value to Binance, since a bad timestamp TYPE is exactly one
+   * of the failure modes under investigation here.
+   */
+  function toBinanceTimestampMs(value, label) {
+    if (typeof value === 'bigint') throw new Error(`Binance ${label} must be a plain number, not a BigInt.`);
+    const num = Number(value);
+    if (!Number.isFinite(num)) throw new Error(`Binance ${label} is not a valid finite number: ${value}`);
+    return Math.round(num); // strip any decimal remainder — Binance expects a whole-millisecond integer
+  }
+
+  /** Floors `tsMs` to the exact boundary of Binance's own period grid (e.g. every 15 minutes on the UTC clock for period='15m'). */
+  function alignToPeriodBoundary(tsMs, period) {
+    const stepMs = PERIOD_STEP_MS[period] || FIFTEEN_MIN_MS;
+    return Math.floor(tsMs / stepMs) * stepMs;
+  }
+
   /**
    * Paginated fetch of Binance's openInterestHist for the intended
    * [startTime, endTime] range (inclusive on both ends).
@@ -160,9 +197,16 @@
    * intended boundary is never silently dropped by an off-by-one on
    * Binance's side, and the padded/over-fetched result is then filtered
    * back to the CALLER's actual intended range explicitly before
-   * returning. This is what guarantees the latest completed price candle
-   * can still receive its matching Binance OI reading, without relying on
-   * assumptions about how the API's boundary behaves.
+   * returning.
+   *
+   * Every startTime/endTime sent on the wire is: coerced to a plain
+   * integer ms value (toBinanceTimestampMs), aligned to the requested
+   * period's real boundary (alignToPeriodBoundary), and logged (URL +
+   * typeof) immediately before the request — per the investigation into
+   * Binance's "-1130 parameter 'startTime' is invalid" rejection, which
+   * is NOT a range-length error (a correctly-under-30-days request still
+   * got it), so the value/type/alignment of the timestamp itself is what
+   * this hardens against.
    *
    * `fetchFn` is dependency-injected (defaults to global `fetch`) so this
    * is testable in Node without a real network call.
@@ -171,21 +215,19 @@
     options = options || {};
     const symbol = options.symbol || DEFAULT_SYMBOL;
     const period = options.period || DEFAULT_PERIOD;
-    const startTime = options.startTime;
-    const endTime = options.endTime;
     const fetchFn = options.fetchFn || (typeof fetch !== 'undefined' ? fetch : null);
     const maxPages = options.maxPages != null ? options.maxPages : 20;
+    const log = options.log !== false; // set log:false in tests to keep output quiet
 
     if (!fetchFn) throw new Error('fetchBinanceOpenInterestHist requires a fetch function (none available in this environment).');
-    if (startTime == null || endTime == null) throw new Error('fetchBinanceOpenInterestHist requires both startTime and endTime.');
+    if (options.startTime == null || options.endTime == null) throw new Error('fetchBinanceOpenInterestHist requires both startTime and endTime.');
+
+    const startTime = alignToPeriodBoundary(toBinanceTimestampMs(options.startTime, 'startTime'), period);
+    const endTime = alignToPeriodBoundary(toBinanceTimestampMs(options.endTime, 'endTime'), period);
 
     // Pad the actual HTTP request range — never assume endTime is
     // inclusive on Binance's side — but ONLY if doing so still keeps the
     // total requested span under Binance's own ~30-day retention ceiling.
-    // Without this guard, a caller already requesting close to 30 days
-    // (e.g. after computeBinanceOIReferenceRange's own clamp) could have
-    // the pad alone push the request over the limit and trigger the exact
-    // HTTP 400 this is meant to avoid.
     const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
     const paddedEndTime = endTime + FIFTEEN_MIN_MS;
     const requestEndTime = (paddedEndTime - startTime) < THIRTY_DAYS_MS ? paddedEndTime : endTime;
@@ -195,19 +237,31 @@
     let pages = 0;
 
     while (cursor < requestEndTime && pages < maxPages) {
+      const cursorMs = toBinanceTimestampMs(cursor, 'startTime (cursor)');
+      const endMs = toBinanceTimestampMs(requestEndTime, 'endTime');
       const url = `${BINANCE_OI_HIST_URL}?symbol=${encodeURIComponent(symbol)}&period=${encodeURIComponent(period)}` +
-        `&limit=${MAX_LIMIT_PER_REQUEST}&startTime=${cursor}&endTime=${requestEndTime}`;
+        `&limit=${MAX_LIMIT_PER_REQUEST}&startTime=${cursorMs}&endTime=${endMs}`;
+
+      if (log && typeof console !== 'undefined') {
+        console.log('[BinanceOI] request', {
+          url,
+          startTime: cursorMs, startTimeType: typeof cursorMs, startTimeIsInteger: Number.isInteger(cursorMs),
+          endTime: endMs, endTimeType: typeof endMs, endTimeIsInteger: Number.isInteger(endMs),
+        });
+      }
+
       const res = await fetchFn(url);
       if (!res || !res.ok) {
         const status = res ? res.status : 'no response';
         // Surface Binance's actual response body (usually a JSON error
         // object with a code/msg) rather than just the HTTP status — this
-        // is what actually explains a 400 (e.g. "range too large") instead
-        // of leaving it a mystery.
+        // is what actually explains a 400 (e.g. "startTime is invalid")
+        // instead of leaving it a mystery.
         let bodyText = '';
         if (res && typeof res.text === 'function') {
           try { bodyText = await res.text(); } catch (e) { bodyText = '(could not read response body)'; }
         }
+        if (log && typeof console !== 'undefined') console.error('[BinanceOI] request failed', { url, status, body: bodyText });
         throw new Error(`Binance openInterestHist request failed (HTTP ${status}): ${bodyText || '(empty response body)'} — url: ${url}`);
       }
       const json = await res.json();
@@ -229,6 +283,59 @@
     return normalizeBinanceOpenInterestRows(allRows).filter(r => r.ts >= startTime && r.ts <= endTime);
   }
 
+  /**
+   * Isolated diagnostic: tries openInterestHist with (1) no startTime/
+   * endTime, (2) startTime only, (3) endTime only, (4) both — so a real
+   * -1130 rejection can be attributed to the timestamp value itself, the
+   * requested range, or this endpoint's handling of startTime/endTime at
+   * all, rather than guessed at. Returns every attempt's outcome; never
+   * throws itself (each combination's failure is captured, not fatal to
+   * the others). `fetchFn` dependency-injected — real usage should NOT
+   * pass one, so it hits the real network.
+   */
+  async function probeOpenInterestHistParams(options) {
+    options = options || {};
+    const symbol = options.symbol || DEFAULT_SYMBOL;
+    const period = options.period || DEFAULT_PERIOD;
+    const limit = options.limit != null ? options.limit : 500;
+    const startTime = options.startTime != null ? alignToPeriodBoundary(toBinanceTimestampMs(options.startTime, 'startTime'), period) : null;
+    const endTime = options.endTime != null ? alignToPeriodBoundary(toBinanceTimestampMs(options.endTime, 'endTime'), period) : null;
+    const fetchFn = options.fetchFn || (typeof fetch !== 'undefined' ? fetch : null);
+    if (!fetchFn) throw new Error('probeOpenInterestHistParams requires a fetch function (none available in this environment).');
+
+    const combinations = [
+      { label: 'no startTime/endTime', includeStart: false, includeEnd: false },
+      { label: 'startTime only', includeStart: true, includeEnd: false },
+      { label: 'endTime only', includeStart: false, includeEnd: true },
+      { label: 'startTime and endTime', includeStart: true, includeEnd: true },
+    ];
+
+    const results = [];
+    for (const combo of combinations) {
+      let url = `${BINANCE_OI_HIST_URL}?symbol=${encodeURIComponent(symbol)}&period=${encodeURIComponent(period)}&limit=${limit}`;
+      if (combo.includeStart && startTime != null) url += `&startTime=${startTime}`;
+      if (combo.includeEnd && endTime != null) url += `&endTime=${endTime}`;
+
+      let outcome;
+      try {
+        const res = await fetchFn(url);
+        let bodyText = '';
+        if (res && typeof res.text === 'function') {
+          try { bodyText = await res.text(); } catch (e) { bodyText = '(could not read response body)'; }
+        }
+        outcome = { label: combo.label, url, ok: !!(res && res.ok), status: res ? res.status : null, bodyPreview: bodyText.slice(0, 400) };
+      } catch (err) {
+        outcome = { label: combo.label, url, ok: false, status: null, bodyPreview: String((err && err.message) || err) };
+      }
+      if (typeof console !== 'undefined') {
+        console.log(`[BinanceOI probe] ${combo.label}: ${outcome.ok ? 'OK' : 'FAILED'} (status ${outcome.status})`, outcome.url);
+        if (!outcome.ok) console.log(`[BinanceOI probe]   body: ${outcome.bodyPreview}`);
+      }
+      results.push(outcome);
+    }
+    return results;
+  }
+
   const OIExhaustionBinanceOISource = {
     BINANCE_OI_HIST_URL,
     DEFAULT_SYMBOL,
@@ -241,6 +348,10 @@
     buildBinanceOIDisplaySeries,
     computeBinanceOICoverage,
     fetchBinanceOpenInterestHist,
+    PERIOD_STEP_MS,
+    toBinanceTimestampMs,
+    alignToPeriodBoundary,
+    probeOpenInterestHistParams,
   };
 
   if (typeof module !== 'undefined' && module.exports) {

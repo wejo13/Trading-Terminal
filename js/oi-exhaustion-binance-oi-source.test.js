@@ -249,6 +249,79 @@ asyncTests.push((async () => {
   assert('exactly the 3 intended readings (0,1,2 = start..intendedEnd inclusive)', result.length === 3);
 })());
 
+section('toBinanceTimestampMs: coerces to a plain integer, rejects malformed input');
+(function () {
+  assert('plain integer passes through unchanged', S.toBinanceTimestampMs(1780520400000, 'startTime') === 1780520400000);
+  assert('numeric string coerces to a number', S.toBinanceTimestampMs('1780520400000', 'startTime') === 1780520400000);
+  assert('a value with decimals is rounded to a whole millisecond', S.toBinanceTimestampMs(1780520400000.7, 'startTime') === 1780520400001);
+  let threw = false;
+  try { S.toBinanceTimestampMs(NaN, 'startTime'); } catch (e) { threw = true; }
+  assert('NaN (e.g. from an invalid Date conversion) throws rather than sending garbage', threw);
+  let threwOnBigInt = false;
+  try { S.toBinanceTimestampMs(1780520400000n, 'startTime'); } catch (e) { threwOnBigInt = true; }
+  assert('a BigInt throws rather than being silently coerced', threwOnBigInt);
+  let threwOnString = false;
+  try { S.toBinanceTimestampMs('not-a-timestamp', 'startTime'); } catch (e) { threwOnString = true; }
+  assert('a non-numeric string throws', threwOnString);
+})();
+
+section('alignToPeriodBoundary: floors to the exact period grid');
+(function () {
+  const unaligned = Date.UTC(2026, 5, 4, 13, 7, 0); // 13:07 — not on a 15m boundary
+  assert('15m period floors to 13:00', S.alignToPeriodBoundary(unaligned, '15m') === Date.UTC(2026, 5, 4, 13, 0, 0));
+  const at15 = Date.UTC(2026, 5, 4, 13, 15, 0);
+  assert('a value already exactly on the 15m grid is unchanged', S.alignToPeriodBoundary(at15, '15m') === at15);
+  assert('1h period floors to the hour', S.alignToPeriodBoundary(unaligned, '1h') === Date.UTC(2026, 5, 4, 13, 0, 0));
+  assert('unknown period falls back to 15m granularity', S.alignToPeriodBoundary(unaligned, 'bogus') === Date.UTC(2026, 5, 4, 13, 0, 0));
+})();
+
+section('fetchBinanceOpenInterestHist: startTime/endTime are aligned to the period boundary before being sent');
+asyncTests.push((async () => {
+  const unalignedStart = Date.UTC(2026, 5, 4, 13, 7, 0); // 7 minutes into the 15m bucket
+  const unalignedEnd = unalignedStart + FIFTEEN_MIN_MS + (3 * 60 * 1000); // a few minutes past the next boundary
+  const sentParams = [];
+  const fetchFn = async (url) => {
+    const params = new URL(url);
+    sentParams.push({ startTime: params.searchParams.get('startTime'), endTime: params.searchParams.get('endTime') });
+    return { ok: true, status: 200, json: async () => [] };
+  };
+  await S.fetchBinanceOpenInterestHist({ startTime: unalignedStart, endTime: unalignedEnd, fetchFn, log: false });
+  const expectedAlignedStart = String(Date.UTC(2026, 5, 4, 13, 0, 0));
+  assert('the actual startTime sent on the wire is aligned to the 15m grid, not the raw unaligned input', sentParams[0].startTime === expectedAlignedStart);
+})());
+
+section('probeOpenInterestHistParams: tries all 4 combinations (none / startTime only / endTime only / both) and reports each outcome');
+asyncTests.push((async () => {
+  const calls = [];
+  const fetchFn = async (url) => {
+    calls.push(url);
+    const hasStart = url.includes('startTime=');
+    // Simulate the real-world finding: only the combination WITH startTime fails.
+    if (hasStart) return { ok: false, status: 400, text: async () => '{"code":-1130,"msg":"Data sent for parameter \'startTime\' is not valid."}' };
+    return { ok: true, status: 200, json: async () => [{ timestamp: 1000, sumOpenInterestValue: '1' }] };
+  };
+  const results = await S.probeOpenInterestHistParams({ startTime: 1780520400000, endTime: 1780521300000, fetchFn });
+  assert('exactly 4 combinations attempted', calls.length === 4);
+  assert('labels identify all 4 combinations', results.map(r => r.label).join('|') === 'no startTime/endTime|startTime only|endTime only|startTime and endTime');
+  assert('"no startTime/endTime" succeeds', results[0].ok === true);
+  assert('"startTime only" fails with the real -1130 body captured', results[1].ok === false && results[1].bodyPreview.includes('-1130'));
+  assert('"endTime only" succeeds (isolates the failure to startTime specifically)', results[2].ok === true);
+  assert('"startTime and endTime" fails the same way as startTime-only', results[3].ok === false);
+  assert('the "no params" URL genuinely omits both', !calls[0].includes('startTime=') && !calls[0].includes('endTime='));
+  assert('the "startTime only" URL omits endTime', calls[1].includes('startTime=') && !calls[1].includes('endTime='));
+  assert('the "endTime only" URL omits startTime', !calls[2].includes('startTime=') && calls[2].includes('endTime='));
+})());
+
+section('probeOpenInterestHistParams: never throws even if every combination fails');
+asyncTests.push((async () => {
+  const fetchFn = async () => { throw new Error('network down'); };
+  let threw = false;
+  let results = null;
+  try { results = await S.probeOpenInterestHistParams({ startTime: 0, endTime: 1000, fetchFn }); } catch (e) { threw = true; }
+  assert('does not throw — captures each failure instead', threw === false);
+  assert('all 4 attempts recorded as failed', results.every(r => r.ok === false));
+})());
+
 section('fetchBinanceOpenInterestHist: paginates until a short page signals the end');
 asyncTests.push((async () => {
   const start = Date.UTC(2026, 2, 10, 0, 0, 0);

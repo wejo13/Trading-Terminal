@@ -1992,6 +1992,28 @@
     }
   }
 
+  /**
+   * Console diagnostic: runs the isolated 4-combination request test
+   * (no params / startTime only / endTime only / both) against Binance's
+   * REAL openInterestHist endpoint, using the actual current visible
+   * analysis range (or an explicit override). Prints each attempt's URL,
+   * status, and response body to the console and returns the results.
+   *
+   * Console usage: OIExhaustionRender.probeBinanceOI()
+   */
+  async function probeBinanceOI(overrideStart, overrideEnd) {
+    const run = state.lastRun;
+    let startTime = overrideStart, endTime = overrideEnd;
+    if (startTime == null || endTime == null) {
+      if (!run) { console.warn('No analysis run yet — run analysis first, or call probeBinanceOI(startTimeMs, endTimeMs) explicitly.'); return; }
+      const range = computeBinanceOIReferenceRange(run.analysisStartTime, run.analysisEndTime);
+      startTime = range.effectiveStart;
+      endTime = range.effectiveEnd;
+    }
+    console.log(`probeBinanceOI — testing symbol=BTCUSDT period=15m limit=500 against startTime=${startTime} (${safeUtcDateString(startTime)}), endTime=${endTime} (${safeUtcDateString(endTime)})`);
+    return BinanceOISource.probeOpenInterestHistParams({ startTime, endTime });
+  }
+
   /** Toggles the Binance OI reference pane on/off. Purely visual — never touches strategy state. */
   async function toggleBinanceOIReference() {
     const b = state.binanceOI;
@@ -2946,6 +2968,7 @@
     toggleHelpTooltip,
     closeAllHelpTooltips,
     toggleBinanceOIReference,
+    probeBinanceOI,
     fetchBybitOI, fetchBybitCandles, fetchBinanceCandles, // exposed for console debugging
   });
 

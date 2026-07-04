@@ -29,6 +29,8 @@ const EXPECTED_PARAM_HELP_IDS = [
   'oix-help-baselineLookback', 'oix-help-minBaselineSamples', 'oix-help-alertPercentile',
   'oix-help-rearmPercentile', 'oix-help-apiKey', 'oix-help-recencyEnable', 'oix-help-recencyWindow',
   'oix-help-recencyMinChange',
+  'oix-help-directionalEnable', 'oix-help-directionalWindow', 'oix-help-directionalPricePct',
+  'oix-help-directionalOiPct', 'oix-help-directionalRawFloor', 'oix-help-directionalRearm',
 ];
 const EXPECTED_ZONE_HELP_IDS = [
   'oix-help-zoneLabel', 'oix-help-zoneType', 'oix-help-zoneLevelTop', 'oix-help-zoneToleranceBottom',
@@ -49,7 +51,7 @@ section('All help-icon ids are unique across the page (no accidental duplicates)
 (function () {
   const ids = (html.match(/id="oix-help-[a-zA-Z]+"/g) || []);
   const unique = new Set(ids);
-  assert('found the expected number of icons (12 params + 7 zone columns = 19)', ids.length === 19);
+  assert('found the expected number of icons (18 params + 7 zone columns = 25)', ids.length === 25);
   assert('no duplicate ids', ids.length === unique.size);
 })();
 

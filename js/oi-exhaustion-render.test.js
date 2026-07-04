@@ -113,6 +113,38 @@ section('validateSettings: cryptoHftApiKey passthrough — trimmed string, defau
   assert('non-string cryptoHftApiKey falls back to default', s3.cryptoHftApiKey === '');
 })();
 
+section('validateSettings: directional-impulse fields default correctly and off by default');
+(function () {
+  const s = R.validateSettings({});
+  assert('directionalImpulseEnabled defaults to false', s.directionalImpulseEnabled === false);
+  assert('directionalImpulseWindow defaults to 15m', s.directionalImpulseWindow === '15m');
+  assert('directionalPriceEntryPercentile defaults to 95', s.directionalPriceEntryPercentile === 95);
+  assert('directionalOiEntryPercentile defaults to 95', s.directionalOiEntryPercentile === 95);
+  assert('directionalImpulseRearmPercentile defaults to 90', s.directionalImpulseRearmPercentile === 90);
+  assert('directionalMinRawOiIncreasePct defaults to 1', s.directionalMinRawOiIncreasePct === 1);
+})();
+
+section('validateSettings: directional-impulse fields validate/clamp/coerce correctly');
+(function () {
+  const s1 = R.validateSettings({ directionalImpulseEnabled: 'true' });
+  assert('string "true" coerces to boolean true', s1.directionalImpulseEnabled === true);
+
+  const s2 = R.validateSettings({ directionalImpulseWindow: 'garbage' });
+  assert('invalid window falls back to default (15m)', s2.directionalImpulseWindow === '15m');
+  const s3 = R.validateSettings({ directionalImpulseWindow: '2h' });
+  assert('valid window (2h) accepted', s3.directionalImpulseWindow === '2h');
+
+  const s4 = R.validateSettings({ directionalPriceEntryPercentile: 30, directionalOiEntryPercentile: 200 });
+  assert('price entry percentile clamped to >=50', s4.directionalPriceEntryPercentile === 50);
+  assert('OI entry percentile clamped to <=100', s4.directionalOiEntryPercentile === 100);
+
+  const s5 = R.validateSettings({ directionalPriceEntryPercentile: 90, directionalOiEntryPercentile: 92, directionalImpulseRearmPercentile: 95 });
+  assert('rearm percentile cannot exceed the LOWER of the two entry percentiles', s5.directionalImpulseRearmPercentile <= 90);
+
+  const s6 = R.validateSettings({ directionalMinRawOiIncreasePct: -5 });
+  assert('negative raw OI floor clamped to >=0', s6.directionalMinRawOiIncreasePct === 0);
+})();
+
 // ── fetchCryptoHFTAggregateOI (dependency-injected) ─────────────────────
 
 function mockCryptoHFTResponse({ status, rows }) {
@@ -1165,6 +1197,25 @@ section('describeChartLibLoadFailure: empty/garbage input never throws');
   assert('null -> explanatory fallback message, no throw', R.describeChartLibLoadFailure(null).length > 0);
 })();
 
+
+section('CAUSE_STYLES / causeBadgeHtml: all four alert causes have a distinct, valid style');
+(function () {
+  const causes = ['V1_EXHAUSTION', 'V2_EXHAUSTION', 'DOWNSIDE_OI_CHASE', 'UPSIDE_OI_CHASE'];
+  causes.forEach(c => assert(c + ' has a defined style', !!R.CAUSE_STYLES[c]));
+  const colors = causes.map(c => R.CAUSE_STYLES[c].color);
+  assert('all 4 causes use distinct colors (no two causes look alike)', new Set(colors).size === 4);
+  causes.forEach(c => {
+    const html = R.causeBadgeHtml(c);
+    assert(c + ' badge includes its own color', html.includes(R.CAUSE_STYLES[c].color));
+    assert(c + ' badge includes its own label', html.includes(R.CAUSE_STYLES[c].label));
+  });
+})();
+
+section('causeBadgeHtml: unknown/missing cause degrades gracefully rather than throwing');
+(function () {
+  assert('unknown cause renders as plain text, not a styled badge', !R.causeBadgeHtml('SOMETHING_ELSE').includes('oix-ctx-badge'));
+  assert('null cause does not throw and shows a placeholder', R.causeBadgeHtml(null).includes('—'));
+})();
 
 (async () => {
   await Promise.all(asyncTests);

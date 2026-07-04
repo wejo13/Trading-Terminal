@@ -128,6 +128,153 @@
     return entry ? entry[field] : null;
   }
 
+  // ── "Include fast directional OI builds" — a separate alert classification,
+  // deliberately NOT wired into V1/V2 score math. V1/V2 measure OI expansion
+  // AGAINST price movement (a subtraction/exhaustion lens) — that formula
+  // structurally rejects any candle where price moves more than OI in
+  // percentage terms, which is exactly the case this feature targets: price
+  // moving fast in one direction WHILE OI also rises fast, over a short
+  // window. Price-move and OI-growth are each independent percentile series
+  // against their OWN trailing history — never subtracted from each other.
+  // This mirrors the temporary directionalOiImpulse() console diagnostic in
+  // oi-exhaustion-render.js, made causal/backtestable/zone-gated/alertable.
+  var IMPULSE_WINDOWS = ['15m', '1h', '2h'];
+  var DEFAULT_IMPULSE_WINDOW = '15m';
+  var IMPULSE_WINDOW_CANDLES = { '15m': 1, '1h': 4, '2h': 8 }; // at 15m cadence
+  var DEFAULT_DIRECTIONAL_ENTRY_PERCENTILE = 95; // default for BOTH the price and the OI entry percentile (independently configurable)
+  var DEFAULT_DIRECTIONAL_REARM_PERCENTILE = 90;
+  var DEFAULT_MIN_RAW_OI_INCREASE_PCT = 1;
+
+  var ALERT_CAUSE_V1_EXHAUSTION = 'V1_EXHAUSTION';
+  var ALERT_CAUSE_V2_EXHAUSTION = 'V2_EXHAUSTION';
+  var ALERT_CAUSE_DOWNSIDE_OI_CHASE = 'DOWNSIDE_OI_CHASE';
+  var ALERT_CAUSE_UPSIDE_OI_CHASE = 'UPSIDE_OI_CHASE';
+
+  /**
+   * True only if every candle from `t - windowCandles + 1` through `t`
+   * (inclusive) is flagged gap-free — i.e. the impulse window is built
+   * entirely from completed, contiguous, validly-aligned candles. No
+   * forward-fill, no partial window: a single gap anywhere inside the
+   * window invalidates the whole reading for that t.
+   */
+  function isImpulseWindowGapFree(validFlags, t, windowCandles) {
+    var start = t - windowCandles + 1;
+    if (start < 0) return false;
+    for (var i = start; i <= t; i++) {
+      if (!validFlags[i]) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Classifies (and diagnoses) a single candle's directional-impulse
+   * candidacy. Price-move and OI-growth are independent percentile checks
+   * — never subtracted — so this can qualify exactly where V1/V2 cannot
+   * (price outpacing OI in percentage terms).
+   *
+   * `pricePercentile` must be the percentile of abs(priceReturnPct) against
+   * a trailing distribution of ABSOLUTE price returns (direction is
+   * classified separately, from the sign of priceReturnPct itself).
+   * `oiPercentile` must be the percentile of oiReturnPct against a trailing
+   * distribution built from ONLY POSITIVE OI-return observations — pass
+   * null here whenever oiReturnPct <= 0 (a falling/flat OI reading must
+   * never receive a percentile from a positive-only distribution, and
+   * therefore can never qualify no matter how large its magnitude is).
+   *
+   * Returns `failReasons`, an array (not a single value) since multiple
+   * conditions can fail simultaneously — this feeds the candle-inspection
+   * diagnostics, which need to show every failed condition, not just the
+   * first one checked.
+   */
+  function evaluateDirectionalImpulse(priceReturnPct, pricePercentile, oiReturnPct, oiPercentile, opts) {
+    opts = opts || {};
+    var priceEntryPct = opts.priceEntryPercentile != null ? opts.priceEntryPercentile : DEFAULT_DIRECTIONAL_ENTRY_PERCENTILE;
+    var oiEntryPct = opts.oiEntryPercentile != null ? opts.oiEntryPercentile : DEFAULT_DIRECTIONAL_ENTRY_PERCENTILE;
+    var minRawOiIncreasePct = opts.minRawOiIncreasePct != null ? opts.minRawOiIncreasePct : DEFAULT_MIN_RAW_OI_INCREASE_PCT;
+
+    var failReasons = [];
+
+    var priceDataOk = priceReturnPct !== null && pricePercentile !== null;
+    if (!priceDataOk) failReasons.push('price_data_unavailable');
+    var priceQualifies = priceDataOk && pricePercentile >= priceEntryPct;
+    if (priceDataOk && !priceQualifies) failReasons.push('price_percentile_below_threshold');
+
+    var oiDataOk = oiReturnPct !== null;
+    if (!oiDataOk) failReasons.push('oi_data_unavailable');
+    var oiPositive = oiDataOk && oiReturnPct > 0;
+    if (oiDataOk && !oiPositive) failReasons.push('oi_not_rising');
+    var oiMeetsFloor = oiPositive && oiReturnPct >= minRawOiIncreasePct;
+    if (oiPositive && !oiMeetsFloor) failReasons.push('oi_below_raw_floor');
+    // oiPercentile is expected to already be null whenever oiReturnPct<=0
+    // (caller's responsibility, per this function's docblock) — checked
+    // again here defensively so a caller mistake can never accidentally
+    // qualify a falling-OI candle just because a percentile happened to be
+    // passed in anyway.
+    var oiPercentileQualifies = oiPositive && oiPercentile !== null && oiPercentile >= oiEntryPct;
+    if (oiPositive && oiMeetsFloor && !oiPercentileQualifies) failReasons.push('oi_percentile_below_threshold');
+
+    var direction = priceReturnPct === null ? null : (priceReturnPct < 0 ? 'down' : (priceReturnPct > 0 ? 'up' : 'flat'));
+    if (direction === 'flat') failReasons.push('price_return_flat');
+
+    var qualifies = priceQualifies && oiPositive && oiMeetsFloor && oiPercentileQualifies && (direction === 'up' || direction === 'down');
+    var cause = null;
+    if (qualifies) cause = direction === 'down' ? ALERT_CAUSE_DOWNSIDE_OI_CHASE : ALERT_CAUSE_UPSIDE_OI_CHASE;
+    if (!qualifies && failReasons.length === 0) failReasons.push('insufficient_data');
+
+    return { qualifies: qualifies, cause: cause, direction: direction, failReasons: failReasons };
+  }
+
+  /**
+   * Per-zone, per-direction armed/alert state machine for directional-
+   * impulse alerts — structurally identical in shape to stepZoneState, but
+   * intentionally a SEPARATE function/state: this feature is gated by two
+   * independent percentiles (price, OI), not one score, and upside/
+   * downside must never share or block each other's armed state (call
+   * this once per direction per zone, with that direction's own prevArmed).
+   *
+   * Rearm requires BOTH the price and OI percentile to have cooled below
+   * `rearmPercentile` — a lingering-extreme reading on either axis alone
+   * keeps the zone armed (suppressing repeat alerts) through one
+   * continuous impulse, per spec.
+   */
+  function stepDirectionalImpulseState(prevArmed, inZone, qualifiesForThisDirection, pricePercentile, oiPercentile, opts) {
+    opts = opts || {};
+    var rearmPct = opts.rearmPercentile != null ? opts.rearmPercentile : DEFAULT_DIRECTIONAL_REARM_PERCENTILE;
+
+    if (!inZone) return { armed: false, alertFired: false };
+    if (!prevArmed && qualifiesForThisDirection) return { armed: true, alertFired: true };
+    if (prevArmed) {
+      var priceCooled = pricePercentile === null || pricePercentile < rearmPct;
+      var oiCooled = oiPercentile === null || oiPercentile < rearmPct;
+      if (priceCooled && oiCooled) return { armed: false, alertFired: false };
+      return { armed: true, alertFired: false };
+    }
+    return { armed: false, alertFired: false };
+  }
+
+  function buildDirectionalAlertRecord(fields) {
+    return {
+      timestamp: fields.timestamp,
+      zoneId: fields.zone.id,
+      zoneBounds: {
+        top: fields.zone.top, bottom: fields.zone.bottom, type: fields.zone.type, label: fields.zone.label || null,
+        availableAtTs: fields.zone.availableAtTs != null ? fields.zone.availableAtTs : null,
+        inactiveAtTs: fields.zone.inactiveAtTs != null ? fields.zone.inactiveAtTs : null,
+      },
+      price: fields.price,
+      cause: fields.cause, // DOWNSIDE_OI_CHASE | UPSIDE_OI_CHASE
+      impulseWindow: fields.impulseWindow, // '15m' | '1h' | '2h' — preserved verbatim per spec, since the three windows mean different things
+      priceReturnPct: fields.priceReturnPct,
+      oiReturnPct: fields.oiReturnPct,
+      rawOiIncreasePct: fields.oiReturnPct, // explicit alias — same value, named for what the raw-floor check compares against
+      pricePercentile: fields.pricePercentile,
+      oiPercentile: fields.oiPercentile,
+      rangeThird: fields.rangeThird,
+      priceBaselineSampleCount: fields.priceBaselineSampleCount,
+      oiBaselineSampleCount: fields.oiBaselineSampleCount,
+    };
+  }
+
   // ── Core math ──────────────────────────────────────────────────────────
 
   /**
@@ -427,6 +574,11 @@
       price: fields.price,
       score: fields.score,
       alertModel: fields.alertModel,
+      // Derived, not caller-supplied — every V1/V2 exhaustion alert is
+      // labeled by which model produced it, same "cause" field the new
+      // directional-impulse alerts use, so table/chart/export code can
+      // treat the whole alerts array uniformly.
+      cause: fields.alertModel === ALERT_MODEL_NET_PROGRESS ? ALERT_CAUSE_V2_EXHAUSTION : ALERT_CAUSE_V1_EXHAUSTION,
       percentile: fields.percentile,
       zScore: fields.zScore,
       oiChange12hPct: fields.oiChange12hPct,
@@ -464,6 +616,20 @@
     getOIRecencyValue: getOIRecencyValue,
     computeChangeOverCandles: computeChangeOverCandles,
     linearRegressionSlope: linearRegressionSlope,
+    IMPULSE_WINDOWS: IMPULSE_WINDOWS,
+    DEFAULT_IMPULSE_WINDOW: DEFAULT_IMPULSE_WINDOW,
+    IMPULSE_WINDOW_CANDLES: IMPULSE_WINDOW_CANDLES,
+    DEFAULT_DIRECTIONAL_ENTRY_PERCENTILE: DEFAULT_DIRECTIONAL_ENTRY_PERCENTILE,
+    DEFAULT_DIRECTIONAL_REARM_PERCENTILE: DEFAULT_DIRECTIONAL_REARM_PERCENTILE,
+    DEFAULT_MIN_RAW_OI_INCREASE_PCT: DEFAULT_MIN_RAW_OI_INCREASE_PCT,
+    ALERT_CAUSE_V1_EXHAUSTION: ALERT_CAUSE_V1_EXHAUSTION,
+    ALERT_CAUSE_V2_EXHAUSTION: ALERT_CAUSE_V2_EXHAUSTION,
+    ALERT_CAUSE_DOWNSIDE_OI_CHASE: ALERT_CAUSE_DOWNSIDE_OI_CHASE,
+    ALERT_CAUSE_UPSIDE_OI_CHASE: ALERT_CAUSE_UPSIDE_OI_CHASE,
+    isImpulseWindowGapFree: isImpulseWindowGapFree,
+    evaluateDirectionalImpulse: evaluateDirectionalImpulse,
+    stepDirectionalImpulseState: stepDirectionalImpulseState,
+    buildDirectionalAlertRecord: buildDirectionalAlertRecord,
     ALERT_MODEL_STRICT: ALERT_MODEL_STRICT,
     ALERT_MODEL_NET_PROGRESS: ALERT_MODEL_NET_PROGRESS,
     DEFAULT_ALERT_MODEL: DEFAULT_ALERT_MODEL,

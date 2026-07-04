@@ -691,7 +691,272 @@ section('REGRESSION: signalWindow option actually reaches the engine — was sil
   assert('a smaller signalWindow produces MORE valid scored candles (window fills sooner), proving it actually changed the computation, not just the reported number', resultSmallWindow.meta.validScoreCount > resultDefault.meta.validScoreCount);
 })();
 
-// ── summary ───────────────────────────────────────────────────────────────
+// ── runEventStudy: "Include fast directional OI builds" ─────────────────
+
+/**
+ * Quiet baseline candles with small, mixed-sign noise on both price and
+ * OI (OI's noise is centered slightly positive so a healthy fraction of
+ * candles are positive-OI observations, letting the OI-only baseline
+ * actually warm up within a reasonable candle count) — then optional
+ * sharp single-candle events spliced in at specific indices.
+ */
+function buildDirectionalSyntheticSeries(n, events) {
+  events = events || {}; // { [index]: { priceStepPct, oiStepPct } }
+  const timestamps = Array.from({ length: n }, (_, i) => T0 + i * FIFTEEN_MIN);
+  const closes = [100];
+  const ois = [1000];
+  for (let i = 1; i < n; i++) {
+    let priceStepPct = Math.sin(i / 3) * 0.05;
+    let oiStepPct = Math.cos(i / 5) * 0.05 + 0.01; // ~mostly positive, some negative
+    if (events[i]) {
+      if (events[i].priceStepPct !== undefined) priceStepPct = events[i].priceStepPct;
+      if (events[i].oiStepPct !== undefined) oiStepPct = events[i].oiStepPct;
+    }
+    closes.push(closes[i - 1] * (1 + priceStepPct / 100));
+    ois.push(ois[i - 1] * (1 + oiStepPct / 100));
+  }
+  return { timestamps, closes, ois };
+}
+
+function toCandlesAndOI(timestamps, closes, ois) {
+  return {
+    candles: timestamps.map((ts, i) => ({ ts, close: closes[i] })),
+    oiRows: timestamps.map((ts, i) => ({ ts, oi: ois[i] })),
+  };
+}
+
+const WIDE_ZONE = [{ id: 'z1', label: 'wide', type: 'range', top: 1e12, bottom: 0, active: true }];
+
+section('runEventStudy directional-impulse: fast downside move + large positive OI creates DOWNSIDE_OI_CHASE');
+(function () {
+  const n = 400;
+  const spikeAt = 300;
+  const { timestamps, closes, ois } = buildDirectionalSyntheticSeries(n, { [spikeAt]: { priceStepPct: -6, oiStepPct: 6 } });
+  const { candles, oiRows } = toCandlesAndOI(timestamps, closes, ois);
+
+  const result = runEventStudy(candles, oiRows, WIDE_ZONE, {
+    minBaselineSamples: 50,
+    directionalImpulseEnabled: true,
+    directionalImpulseWindow: '15m',
+  });
+
+  const chases = result.alerts.filter(a => a.cause === 'DOWNSIDE_OI_CHASE');
+  assert('at least one DOWNSIDE_OI_CHASE alert fired', chases.length > 0);
+  if (chases.length > 0) {
+    assert('fired at the spike candle', chases[0].timestamp === timestamps[spikeAt]);
+    assert('priceReturnPct is negative', chases[0].priceReturnPct < 0);
+    assert('oiReturnPct is positive', chases[0].oiReturnPct > 0);
+    assert('impulseWindow preserved on the record', chases[0].impulseWindow === '15m');
+  }
+})();
+
+section('runEventStudy directional-impulse: fast upside move + large positive OI creates UPSIDE_OI_CHASE');
+(function () {
+  const n = 400;
+  const spikeAt = 300;
+  const { timestamps, closes, ois } = buildDirectionalSyntheticSeries(n, { [spikeAt]: { priceStepPct: 6, oiStepPct: 6 } });
+  const { candles, oiRows } = toCandlesAndOI(timestamps, closes, ois);
+
+  const result = runEventStudy(candles, oiRows, WIDE_ZONE, {
+    minBaselineSamples: 50,
+    directionalImpulseEnabled: true,
+    directionalImpulseWindow: '15m',
+  });
+
+  const chases = result.alerts.filter(a => a.cause === 'UPSIDE_OI_CHASE');
+  assert('at least one UPSIDE_OI_CHASE alert fired', chases.length > 0);
+  if (chases.length > 0) {
+    assert('fired at the spike candle', chases[0].timestamp === timestamps[spikeAt]);
+    assert('priceReturnPct is positive', chases[0].priceReturnPct > 0);
+    assert('oiReturnPct is positive', chases[0].oiReturnPct > 0);
+  }
+})();
+
+section('runEventStudy directional-impulse: fast price move with FALLING OI does not qualify');
+(function () {
+  const n = 400;
+  const spikeAt = 300;
+  // Sharp price drop but OI ALSO drops sharply (deleveraging, not a chase).
+  const { timestamps, closes, ois } = buildDirectionalSyntheticSeries(n, { [spikeAt]: { priceStepPct: -6, oiStepPct: -6 } });
+  const { candles, oiRows } = toCandlesAndOI(timestamps, closes, ois);
+
+  const result = runEventStudy(candles, oiRows, WIDE_ZONE, {
+    minBaselineSamples: 50,
+    directionalImpulseEnabled: true,
+    directionalImpulseWindow: '15m',
+  });
+
+  const chases = result.alerts.filter(a => a.cause === 'DOWNSIDE_OI_CHASE' || a.cause === 'UPSIDE_OI_CHASE');
+  assert('no directional-impulse alert at the falling-OI spike candle', !chases.some(a => a.timestamp === timestamps[spikeAt]));
+})();
+
+section('runEventStudy directional-impulse: OI rise with an insignificant price move does not qualify');
+(function () {
+  const n = 400;
+  const spikeAt = 300;
+  // Big OI increase, but price barely moves at all this candle.
+  const { timestamps, closes, ois } = buildDirectionalSyntheticSeries(n, { [spikeAt]: { priceStepPct: 0.01, oiStepPct: 6 } });
+  const { candles, oiRows } = toCandlesAndOI(timestamps, closes, ois);
+
+  const result = runEventStudy(candles, oiRows, WIDE_ZONE, {
+    minBaselineSamples: 50,
+    directionalImpulseEnabled: true,
+    directionalImpulseWindow: '15m',
+  });
+
+  const chases = result.alerts.filter(a => a.cause === 'DOWNSIDE_OI_CHASE' || a.cause === 'UPSIDE_OI_CHASE');
+  assert('no directional-impulse alert when price barely moved', !chases.some(a => a.timestamp === timestamps[spikeAt]));
+})();
+
+section('runEventStudy directional-impulse: events outside active zones do not qualify');
+(function () {
+  const n = 400;
+  const spikeAt = 300;
+  const { timestamps, closes, ois } = buildDirectionalSyntheticSeries(n, { [spikeAt]: { priceStepPct: -6, oiStepPct: 6 } });
+  const { candles, oiRows } = toCandlesAndOI(timestamps, closes, ois);
+  // Zone sits far above where price actually is at the spike — never in zone.
+  const farAwayZone = [{ id: 'z1', label: 'far', type: 'range', top: 1e9, bottom: 1e8, active: true }];
+
+  const result = runEventStudy(candles, oiRows, farAwayZone, {
+    minBaselineSamples: 50,
+    directionalImpulseEnabled: true,
+    directionalImpulseWindow: '15m',
+  });
+
+  const chases = result.alerts.filter(a => a.cause === 'DOWNSIDE_OI_CHASE' || a.cause === 'UPSIDE_OI_CHASE');
+  assert('no directional-impulse alert fires when price is never inside any zone', chases.length === 0);
+})();
+
+section('runEventStudy directional-impulse: rearm prevents duplicate alerts during one continuous impulse');
+(function () {
+  const n = 400;
+  // Hold the sharp downside+OI-up condition steady for 5 consecutive
+  // candles (one continuous impulse), not just a single spike.
+  const events = {};
+  for (let i = 300; i < 305; i++) events[i] = { priceStepPct: -6, oiStepPct: 6 };
+  const { timestamps, closes, ois } = buildDirectionalSyntheticSeries(n, events);
+  const { candles, oiRows } = toCandlesAndOI(timestamps, closes, ois);
+
+  const result = runEventStudy(candles, oiRows, WIDE_ZONE, {
+    minBaselineSamples: 50,
+    directionalImpulseEnabled: true,
+    directionalImpulseWindow: '15m',
+  });
+
+  const chases = result.alerts.filter(a => a.cause === 'DOWNSIDE_OI_CHASE');
+  assert('exactly one alert fires across the whole continuous 5-candle impulse, not one per candle', chases.length === 1);
+})();
+
+section('runEventStudy directional-impulse: upside and downside rearm state are independent');
+(function () {
+  const n = 500;
+  // A downside chase, then later (after price/OI both cool off in between) an upside chase.
+  const events = {
+    300: { priceStepPct: -6, oiStepPct: 6 },
+    301: { priceStepPct: 0, oiStepPct: -3 }, // let both cool
+    302: { priceStepPct: 0, oiStepPct: -3 },
+    303: { priceStepPct: 0, oiStepPct: -3 },
+    400: { priceStepPct: 6, oiStepPct: 6 },
+  };
+  const { timestamps, closes, ois } = buildDirectionalSyntheticSeries(n, events);
+  const { candles, oiRows } = toCandlesAndOI(timestamps, closes, ois);
+
+  const result = runEventStudy(candles, oiRows, WIDE_ZONE, {
+    minBaselineSamples: 50,
+    directionalImpulseEnabled: true,
+    directionalImpulseWindow: '15m',
+  });
+
+  const downChases = result.alerts.filter(a => a.cause === 'DOWNSIDE_OI_CHASE');
+  const upChases = result.alerts.filter(a => a.cause === 'UPSIDE_OI_CHASE');
+  assert('the earlier downside chase fired', downChases.length >= 1);
+  assert('the later upside chase also fired — was not blocked by downside rearm state', upChases.length >= 1);
+})();
+
+section('runEventStudy directional-impulse: 1h and 2h impulse windows compute over the correct candle span');
+(function () {
+  const n = 400;
+  // Ramp price/OI up gradually across 4 candles (297-300) so the NET
+  // change over a 1h (4-candle) window is large, even though no single
+  // 15m step alone would qualify.
+  const events = {};
+  for (let i = 297; i <= 300; i++) events[i] = { priceStepPct: 1.6, oiStepPct: 1.6 };
+  const { timestamps, closes, ois } = buildDirectionalSyntheticSeries(n, events);
+  const { candles, oiRows } = toCandlesAndOI(timestamps, closes, ois);
+
+  const result15m = runEventStudy(candles, oiRows, WIDE_ZONE, {
+    minBaselineSamples: 50, directionalImpulseEnabled: true, directionalImpulseWindow: '15m',
+  });
+  const result1h = runEventStudy(candles, oiRows, WIDE_ZONE, {
+    minBaselineSamples: 50, directionalImpulseEnabled: true, directionalImpulseWindow: '1h',
+  });
+
+  const chases1h = result1h.alerts.filter(a => a.cause === 'UPSIDE_OI_CHASE' && a.impulseWindow === '1h');
+  assert('1h window alert record reports impulseWindow as 1h', chases1h.every(a => a.impulseWindow === '1h'));
+  assert('1h window catches the gradual 4-candle ramp that a single 15m step would not', chases1h.length > 0);
+})();
+
+section('runEventStudy directional-impulse: disabled by default, and existing V1/V2 behavior is byte-identical when disabled');
+(function () {
+  const n = 700;
+  const { timestamps, closes, ois } = buildSyntheticSeries(n, { spikeAt: 600 });
+  const { candles, oiRows } = toCandlesAndOI(timestamps, closes, ois);
+
+  const withoutFlag = runEventStudy(candles, oiRows, WIDE_ZONE, { minBaselineSamples: 50, alertModel: 'netProgress' });
+  const explicitlyDisabled = runEventStudy(candles, oiRows, WIDE_ZONE, { minBaselineSamples: 50, alertModel: 'netProgress', directionalImpulseEnabled: false });
+
+  assert('directional impulse is off by default', withoutFlag.meta.directionalImpulse.enabled === false);
+  assert('no DOWNSIDE_OI_CHASE/UPSIDE_OI_CHASE alerts when disabled', !withoutFlag.alerts.some(a => a.cause === 'DOWNSIDE_OI_CHASE' || a.cause === 'UPSIDE_OI_CHASE'));
+  assert('omitting the flag produces byte-identical alerts to explicitly disabling it', JSON.stringify(withoutFlag.alerts) === JSON.stringify(explicitlyDisabled.alerts));
+})();
+
+section('runEventStudy: every alert carries an explicit, correctly-derived cause field (V1/V2/directional all uniform)');
+(function () {
+  const n = 400;
+  const spikeAt = 300;
+  const { timestamps, closes, ois } = buildDirectionalSyntheticSeries(n, { [spikeAt]: { priceStepPct: -6, oiStepPct: 6 } });
+  const { candles, oiRows } = toCandlesAndOI(timestamps, closes, ois);
+
+  const v1Result = runEventStudy(candles, oiRows, WIDE_ZONE, { minBaselineSamples: 50, alertModel: 'strict' });
+  const v2Result = runEventStudy(candles, oiRows, WIDE_ZONE, { minBaselineSamples: 50, alertModel: 'netProgress' });
+  const withDirectional = runEventStudy(candles, oiRows, WIDE_ZONE, {
+    minBaselineSamples: 50, alertModel: 'netProgress', directionalImpulseEnabled: true, directionalImpulseWindow: '15m',
+  });
+
+  assert('every V1 alert is tagged V1_EXHAUSTION', v1Result.alerts.every(a => a.cause === 'V1_EXHAUSTION'));
+  assert('every V2 alert is tagged V2_EXHAUSTION', v2Result.alerts.every(a => a.cause === 'V2_EXHAUSTION'));
+  assert('every alert in the combined run has SOME valid cause', withDirectional.alerts.every(a => ['V1_EXHAUSTION', 'V2_EXHAUSTION', 'DOWNSIDE_OI_CHASE', 'UPSIDE_OI_CHASE'].includes(a.cause)));
+  assert('diagnostics.byCause groups alerts correctly', Object.keys(withDirectional.summary.byCause).every(k => ['V2_EXHAUSTION', 'DOWNSIDE_OI_CHASE', 'UPSIDE_OI_CHASE'].includes(k)));
+})();
+
+section('runEventStudy: meta.directionalImpulse reports settings and separate downside/upside counts');
+(function () {
+  const n = 400;
+  const { timestamps, closes, ois } = buildDirectionalSyntheticSeries(n, {
+    300: { priceStepPct: -6, oiStepPct: 6 },
+    350: { priceStepPct: 6, oiStepPct: 6 },
+  });
+  const { candles, oiRows } = toCandlesAndOI(timestamps, closes, ois);
+
+  const result = runEventStudy(candles, oiRows, WIDE_ZONE, {
+    minBaselineSamples: 50,
+    directionalImpulseEnabled: true,
+    directionalImpulseWindow: '15m',
+    directionalPriceEntryPercentile: 95,
+    directionalOiEntryPercentile: 95,
+    directionalImpulseRearmPercentile: 90,
+    directionalMinRawOiIncreasePct: 1,
+  });
+
+  const di = result.meta.directionalImpulse;
+  assert('reports enabled', di.enabled === true);
+  assert('reports the configured window', di.impulseWindow === '15m');
+  assert('reports the configured percentiles/floor back verbatim', di.priceEntryPercentile === 95 && di.oiEntryPercentile === 95 && di.rearmPercentile === 90 && di.minRawOiIncreasePct === 1);
+  assert('downsideChaseCount matches the actual number of DOWNSIDE_OI_CHASE alerts', di.downsideChaseCount === result.alerts.filter(a => a.cause === 'DOWNSIDE_OI_CHASE').length);
+  assert('upsideChaseCount matches the actual number of UPSIDE_OI_CHASE alerts', di.upsideChaseCount === result.alerts.filter(a => a.cause === 'UPSIDE_OI_CHASE').length);
+})();
+
+
 
 console.log('\n────────────────────────────────────────');
 console.log('oi-exhaustion-backtest: ' + passed + ' passed, ' + failed + ' failed');

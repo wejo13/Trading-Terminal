@@ -41,10 +41,19 @@
     minimumRecentOIChangePct: 0,
     oiRecencyWindow: '1h',
     cryptoHftApiKey: '', // required for the CryptoHFT aggregate OI source; never hardcoded, never logged
+    // "Include fast directional OI builds" — separate alert classification,
+    // off by default, never touches V1/V2 score math (see engine.js).
+    directionalImpulseEnabled: false,
+    directionalImpulseWindow: '15m',
+    directionalPriceEntryPercentile: 95,
+    directionalOiEntryPercentile: 95,
+    directionalImpulseRearmPercentile: 90,
+    directionalMinRawOiIncreasePct: 1,
   };
 
   const VALID_ALERT_MODELS = ['strict', 'netProgress'];
   const VALID_OI_RECENCY_WINDOWS = ['30m', '1h', '2h', '4h'];
+  const VALID_IMPULSE_WINDOWS = ['15m', '1h', '2h'];
 
   const Probe = (typeof module !== 'undefined' && module.exports)
     ? require('./oi-exhaustion-probe.js')
@@ -560,6 +569,12 @@
     s.minimumRecentOIChangePct = clampNumber(s.minimumRecentOIChangePct, -1000, 1000, DEFAULT_SETTINGS.minimumRecentOIChangePct);
     s.oiRecencyWindow = VALID_OI_RECENCY_WINDOWS.indexOf(s.oiRecencyWindow) !== -1 ? s.oiRecencyWindow : DEFAULT_SETTINGS.oiRecencyWindow;
     s.cryptoHftApiKey = typeof s.cryptoHftApiKey === 'string' ? s.cryptoHftApiKey.trim() : DEFAULT_SETTINGS.cryptoHftApiKey;
+    s.directionalImpulseEnabled = s.directionalImpulseEnabled === true || s.directionalImpulseEnabled === 'true';
+    s.directionalImpulseWindow = VALID_IMPULSE_WINDOWS.indexOf(s.directionalImpulseWindow) !== -1 ? s.directionalImpulseWindow : DEFAULT_SETTINGS.directionalImpulseWindow;
+    s.directionalPriceEntryPercentile = clampNumber(s.directionalPriceEntryPercentile, 50, 100, DEFAULT_SETTINGS.directionalPriceEntryPercentile);
+    s.directionalOiEntryPercentile = clampNumber(s.directionalOiEntryPercentile, 50, 100, DEFAULT_SETTINGS.directionalOiEntryPercentile);
+    s.directionalImpulseRearmPercentile = clampNumber(s.directionalImpulseRearmPercentile, 0, Math.min(s.directionalPriceEntryPercentile, s.directionalOiEntryPercentile), DEFAULT_SETTINGS.directionalImpulseRearmPercentile);
+    s.directionalMinRawOiIncreasePct = clampNumber(s.directionalMinRawOiIncreasePct, 0, 1000, DEFAULT_SETTINGS.directionalMinRawOiIncreasePct);
     return s;
   }
 
@@ -942,6 +957,27 @@
     return `window.klinecharts is undefined after trying ${list.length} source(s) — ${lines}`;
   }
 
+  /**
+   * Visual identity for each alert cause — shared by the alerts table
+   * badge, chart marker color, and tooltip. V1/V2 keep their existing
+   * red/teal exhaustion-context colors (contextDirection-based, unchanged
+   * from before this feature); the two directional-impulse causes get
+   * their own distinct colors so they're never confused with exhaustion
+   * alerts or with each other.
+   */
+  const CAUSE_STYLES = {
+    V1_EXHAUSTION: { color: '#9aa1ab', bg: 'rgba(154,161,171,0.1)', border: 'rgba(154,161,171,0.3)', label: 'V1 exhaustion' },
+    V2_EXHAUSTION: { color: '#28d7c8', bg: 'rgba(40,215,200,0.1)', border: 'rgba(40,215,200,0.3)', label: 'V2 exhaustion' },
+    DOWNSIDE_OI_CHASE: { color: '#a78bfa', bg: 'rgba(167,139,250,0.1)', border: 'rgba(167,139,250,0.3)', label: 'Downside OI chase' },
+    UPSIDE_OI_CHASE: { color: '#f0b559', bg: 'rgba(240,181,89,0.1)', border: 'rgba(240,181,89,0.3)', label: 'Upside OI chase' },
+  };
+
+  function causeBadgeHtml(cause) {
+    const st = CAUSE_STYLES[cause];
+    if (!st) return `<span style="color:var(--text-faint);">${escapeHtml(cause || '—')}</span>`;
+    return `<span class="oix-ctx-badge" style="color:${st.color};background:${st.bg};border:1px solid ${st.border};">${escapeHtml(st.label)}</span>`;
+  }
+
   const OIExhaustionRender = {
     DEFAULT_SETTINGS,
     SETTINGS_KEY,
@@ -993,6 +1029,8 @@
     CRYPTOHFT_REQUIRED_VENUES,
     CRYPTOHFT_SYMBOL_BY_VENUE,
     parseBybitKlineRow,
+    CAUSE_STYLES,
+    causeBadgeHtml,
   };
 
   if (typeof module !== 'undefined' && module.exports) {
@@ -1080,17 +1118,21 @@
 
   function renderSettingsForm() {
     const s = state.settings;
-    const ids = ['lookbackDays', 'signalWindow', 'baselineLookbackCandles', 'minBaselineSamples', 'entryPercentile', 'rearmPercentile', 'alertModel', 'minimumRecentOIChangePct', 'oiRecencyWindow', 'cryptoHftApiKey'];
+    const ids = ['lookbackDays', 'signalWindow', 'baselineLookbackCandles', 'minBaselineSamples', 'entryPercentile', 'rearmPercentile', 'alertModel', 'minimumRecentOIChangePct', 'oiRecencyWindow', 'cryptoHftApiKey',
+      'directionalImpulseWindow', 'directionalPriceEntryPercentile', 'directionalOiEntryPercentile', 'directionalImpulseRearmPercentile', 'directionalMinRawOiIncreasePct'];
     ids.forEach(id => {
       const el = document.getElementById('oix-' + id);
       if (el) el.value = s[id];
     });
     const filterEl = document.getElementById('oix-oiRecencyFilterEnabled');
     if (filterEl) filterEl.checked = s.oiRecencyFilterEnabled;
+    const directionalEl = document.getElementById('oix-directionalImpulseEnabled');
+    if (directionalEl) directionalEl.checked = s.directionalImpulseEnabled;
   }
 
   function readSettingsFromForm() {
-    const ids = ['lookbackDays', 'signalWindow', 'baselineLookbackCandles', 'minBaselineSamples', 'entryPercentile', 'rearmPercentile', 'alertModel', 'minimumRecentOIChangePct', 'oiRecencyWindow', 'cryptoHftApiKey'];
+    const ids = ['lookbackDays', 'signalWindow', 'baselineLookbackCandles', 'minBaselineSamples', 'entryPercentile', 'rearmPercentile', 'alertModel', 'minimumRecentOIChangePct', 'oiRecencyWindow', 'cryptoHftApiKey',
+      'directionalImpulseWindow', 'directionalPriceEntryPercentile', 'directionalOiEntryPercentile', 'directionalImpulseRearmPercentile', 'directionalMinRawOiIncreasePct'];
     const raw = {};
     ids.forEach(id => {
       const el = document.getElementById('oix-' + id);
@@ -1098,6 +1140,8 @@
     });
     const filterEl = document.getElementById('oix-oiRecencyFilterEnabled');
     raw.oiRecencyFilterEnabled = filterEl ? filterEl.checked : false;
+    const directionalEl = document.getElementById('oix-directionalImpulseEnabled');
+    raw.directionalImpulseEnabled = directionalEl ? directionalEl.checked : false;
     state.settings = validateSettings(raw);
     saveSettings();
     renderSettingsForm(); // reflect clamped values back
@@ -1334,6 +1378,12 @@
         oiRecencyFilterEnabled: s.oiRecencyFilterEnabled,
         minimumRecentOIChangePct: s.minimumRecentOIChangePct,
         oiRecencyWindow: s.oiRecencyWindow,
+        directionalImpulseEnabled: s.directionalImpulseEnabled,
+        directionalImpulseWindow: s.directionalImpulseWindow,
+        directionalPriceEntryPercentile: s.directionalPriceEntryPercentile,
+        directionalOiEntryPercentile: s.directionalOiEntryPercentile,
+        directionalImpulseRearmPercentile: s.directionalImpulseRearmPercentile,
+        directionalMinRawOiIncreasePct: s.directionalMinRawOiIncreasePct,
       });
 
       const binanceIndex = buildBinanceCandleIndex(binanceCandles);
@@ -1440,7 +1490,26 @@
       <div style="font-size:11px;color:var(--text-dim);">
         <b style="color:var(--text);">Choppy-but-flat count:</b> ${safeNumber(d.choppyButFlatCount)} candles
         <span style="color:var(--text-faint);"> — ${escapeHtml(d.choppyButFlatDefinition)}</span>
+      </div>
+      ${directionalImpulseDiagnosticsHtml(run.result.meta.directionalImpulse)}`;
+  }
+
+  /** "Include fast directional OI builds" diagnostics block — settings + counts for the run just completed. */
+  function directionalImpulseDiagnosticsHtml(di) {
+    if (!di) return '';
+    if (!di.enabled) {
+      return `<div style="font-size:11px;color:var(--text-faint);margin-top:10px;padding-top:10px;border-top:0.5px solid var(--line-old);">
+        Include fast directional OI builds: <b style="color:var(--text-dim);">disabled</b> for this run.
       </div>`;
+    }
+    return `<div style="font-size:11px;color:var(--text-dim);margin-top:10px;padding-top:10px;border-top:0.5px solid var(--line-old);">
+      <b style="color:var(--text);">Directional OI builds</b> — window ${escapeHtml(di.impulseWindow)},
+      price/OI entry percentile ${di.priceEntryPercentile}/${di.oiEntryPercentile}, rearm ${di.rearmPercentile}, min raw OI floor ${di.minRawOiIncreasePct}%.
+      <span style="color:var(--text-faint);">${causeBadgeHtml('DOWNSIDE_OI_CHASE')} ${safeNumber(di.downsideChaseCount)} &middot; ${causeBadgeHtml('UPSIDE_OI_CHASE')} ${safeNumber(di.upsideChaseCount)}</span>
+      <div style="margin-top:4px;color:var(--text-faint);">
+        Counts are for the ${escapeHtml(di.impulseWindow)} window only — run <code>OIExhaustionRender.compareDirectionalImpulseWindows()</code> in the console to compare 15m/1h/2h side by side on this same cached data.
+      </div>
+    </div>`;
   }
 
   // ── Results table ────────────────────────────────────────────────────
@@ -1486,15 +1555,17 @@
     body.innerHTML = `
       <table class="oix-table">
         <thead><tr>
-          <th>Time</th><th>Zone</th><th>Model</th><th>Price</th>
+          <th>Time</th><th>Cause</th><th>Zone</th><th>Model</th><th>Price</th>
           <th>Percentile</th><th>Z</th><th>OI 12h</th><th>OI 1h</th><th>OI slope 1h</th><th>Travel 12h</th>
+          <th>Price Δ (imp.)</th><th>OI Δ (imp.)</th>
           ${horizonCols.map(h => `<th>${h.label}</th>`).join('')}
         </tr></thead>
         <tbody>${rows.map((a) => `
           <tr onclick="OIExhaustionRender.focusChartOnAlert(${run.result.alerts.indexOf(a)})" style="cursor:pointer;">
             <td>${new Date(a.timestamp).toISOString().slice(0, 16).replace('T', ' ')}</td>
+            <td>${causeBadgeHtml(a.cause)}</td>
             <td>${escapeHtml(a.zoneBounds.label || a.zoneId)}</td>
-            <td><span class="oix-model-badge">${a.alertModel === 'netProgress' ? 'V2' : 'V1'}</span></td>
+            <td>${a.alertModel != null ? `<span class="oix-model-badge">${a.alertModel === 'netProgress' ? 'V2' : 'V1'}</span>` : '—'}</td>
             <td>$${safeNumber(a.price, { maximumFractionDigits: 0 })}</td>
             <td>${a.percentile != null ? a.percentile.toFixed(1) : '—'}</td>
             <td>${a.zScore != null ? a.zScore.toFixed(2) : '—'}</td>
@@ -1502,6 +1573,8 @@
             <td>${a.oiChange1hPct != null ? a.oiChange1hPct.toFixed(2) + '%' : '—'}</td>
             <td style="color:${a.oiSlopeRecent != null ? (a.oiSlopeRecent >= 0 ? 'var(--green)' : 'var(--red)') : 'inherit'};">${a.oiSlopeRecent != null ? a.oiSlopeRecent.toFixed(2) : '—'}</td>
             <td>${a.priceTravel12hAbsPct != null ? a.priceTravel12hAbsPct.toFixed(1) + '%' : '—'}</td>
+            <td title="${a.impulseWindow != null ? escapeHtml(a.impulseWindow) + ' impulse window' : ''}">${a.priceReturnPct != null ? (a.priceReturnPct >= 0 ? '+' : '') + a.priceReturnPct.toFixed(2) + '%' : '—'}</td>
+            <td title="${a.impulseWindow != null ? escapeHtml(a.impulseWindow) + ' impulse window' : ''}">${a.oiReturnPct != null ? (a.oiReturnPct >= 0 ? '+' : '') + a.oiReturnPct.toFixed(2) + '%' : '—'}</td>
             ${horizonCols.map(h => `<td>${horizonCell(a, h.key)}</td>`).join('')}
           </tr>`).join('')}
         </tbody>
@@ -1687,8 +1760,15 @@
         // each constituent alert's own raw timestamp/price is preserved
         // untouched in group.alerts for the tooltip.
         const rep = group.alerts[0];
-        const isUp = rep.contextDirection === 'bearish-exhaustion'; // up-move-oi-expansion
-        const color = isUp ? '#e2645f' : '#3ddc97';
+        // Exhaustion causes (V1/V2) keep their EXACT prior coloring —
+        // contextDirection-based (up-move vs down-move over the 12h
+        // window), unchanged by this feature. Only the two new
+        // directional-impulse causes get their own distinct colors
+        // (CAUSE_STYLES) — they have no contextDirection at all.
+        const isExhaustionCause = rep.cause === 'V1_EXHAUSTION' || rep.cause === 'V2_EXHAUSTION';
+        const color = isExhaustionCause
+          ? (rep.contextDirection === 'bearish-exhaustion' ? '#e2645f' : '#3ddc97') // up-move-oi-expansion : down-move-oi-expansion
+          : ((CAUSE_STYLES[rep.cause] && CAUSE_STYLES[rep.cause].color) || '#8a8f98');
         // verticalStraightLine (not verticalRayLine — a ray needs 2 points
         // to define its direction; we only ever have one) — spans the full
         // chart height at this single timestamp, needs just 1 point.
@@ -1733,6 +1813,23 @@
 
   /** Full detail grid for a single alert — unchanged from before, factored out for reuse by both the hover tooltip and the group tooltip. */
   function renderAlertDetailHtml(a) {
+    if (a.cause === 'DOWNSIDE_OI_CHASE' || a.cause === 'UPSIDE_OI_CHASE') {
+      return `<div style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:11px;">
+        <span style="color:var(--text-faint);">Date</span><span>${new Date(a.timestamp).toISOString().slice(0, 16).replace('T', ' ')}</span>
+        <span style="color:var(--text-faint);">Cause</span><span>${causeBadgeHtml(a.cause)}</span>
+        <span style="color:var(--text-faint);">Price</span><span>$${safeNumber(a.price, { maximumFractionDigits: 0 })}</span>
+        <span style="color:var(--text-faint);">Impulse window</span><span>${escapeHtml(a.impulseWindow || '—')}</span>
+        <span style="color:var(--text-faint);">Price return</span><span style="color:${a.priceReturnPct != null ? (a.priceReturnPct >= 0 ? 'var(--green)' : 'var(--red)') : 'inherit'};">${a.priceReturnPct != null ? (a.priceReturnPct >= 0 ? '+' : '') + a.priceReturnPct.toFixed(2) + '%' : '—'}</span>
+        <span style="color:var(--text-faint);">Price percentile</span><span>${a.pricePercentile != null ? a.pricePercentile.toFixed(1) : '—'}</span>
+        <span style="color:var(--text-faint);">OI return</span><span>${a.oiReturnPct != null ? '+' + a.oiReturnPct.toFixed(2) + '%' : '—'}</span>
+        <span style="color:var(--text-faint);">OI percentile</span><span>${a.oiPercentile != null ? a.oiPercentile.toFixed(1) : '—'}</span>
+        <span style="color:var(--text-faint);">Raw OI increase</span><span>${a.rawOiIncreasePct != null ? a.rawOiIncreasePct.toFixed(2) + '%' : '—'}</span>
+        <span style="color:var(--text-faint);">Zone</span><span>${escapeHtml(a.zoneBounds.label || a.zoneId)}</span>
+      </div>
+      <div style="margin-top:8px;padding-top:8px;border-top:0.5px solid var(--line-old);font-size:10.5px;color:var(--text-faint);line-height:1.5;">
+        Aggressive late positioning during a fast move — not a directional call by itself. Continuation, a later sweep/reversal, or no trade at all are all possible depending on HTF location and price reaction.
+      </div>`;
+    }
     return `<div style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:11px;">
         <span style="color:var(--text-faint);">Date</span><span>${new Date(a.timestamp).toISOString().slice(0, 16).replace('T', ' ')}</span>
         <span style="color:var(--text-faint);">Model</span><span>${a.alertModel === 'netProgress' ? 'Net progress score (V2)' : 'Strict path score (V1)'}</span>
@@ -1766,11 +1863,10 @@
   function renderAlertGroupTooltipHtml(group) {
     if (group.alerts.length === 1) return renderAlertDetailHtml(group.alerts[0]);
     const rows = group.alerts.map(a => `
-      <div style="display:grid;grid-template-columns:auto auto 1fr auto;gap:8px;align-items:center;padding:4px 0;border-bottom:0.5px solid var(--line-old);">
+      <div style="display:grid;grid-template-columns:auto auto 1fr;gap:8px;align-items:center;padding:4px 0;border-bottom:0.5px solid var(--line-old);">
         <span style="color:var(--text-faint);">${new Date(a.timestamp).toISOString().slice(11, 16)}</span>
-        <span class="oix-model-badge">${a.alertModel === 'netProgress' ? 'V2' : 'V1'}</span>
+        ${causeBadgeHtml(a.cause)}
         <span>$${safeNumber(a.price, { maximumFractionDigits: 0 })} &middot; ${escapeHtml(a.zoneBounds.label || a.zoneId)}</span>
-        <span style="color:${a.contextDirection === 'bearish-exhaustion' ? '#e2645f' : '#3ddc97'};">${a.contextDirection === 'bearish-exhaustion' ? 'up' : 'down'}</span>
       </div>`).join('');
     return `<div style="font-size:11px;min-width:220px;">
       <div style="font-weight:600;color:var(--text);margin-bottom:6px;">${group.alerts.length} alerts in this candle</div>
@@ -2253,10 +2349,23 @@
     const oiRecencyWindowCandles = Engine.OI_RECENCY_WINDOW_CANDLES[oiRecencyWindow];
     const minimumRecentOIChangePct = overrides.minimumRecentOIChangePct != null ? overrides.minimumRecentOIChangePct : s.minimumRecentOIChangePct;
 
+    // Directional-impulse — always evaluated in this diagnostic regardless
+    // of whether the feature is enabled in Settings, so this tool can
+    // answer "would it have qualified" even with the feature off.
+    const directionalImpulseWindow = Engine.IMPULSE_WINDOW_CANDLES[overrides.directionalImpulseWindow] ? overrides.directionalImpulseWindow : s.directionalImpulseWindow;
+    const directionalImpulseWindowCandles = Engine.IMPULSE_WINDOW_CANDLES[directionalImpulseWindow];
+    const directionalPriceEntryPercentile = overrides.directionalPriceEntryPercentile != null ? overrides.directionalPriceEntryPercentile : s.directionalPriceEntryPercentile;
+    const directionalOiEntryPercentile = overrides.directionalOiEntryPercentile != null ? overrides.directionalOiEntryPercentile : s.directionalOiEntryPercentile;
+    const directionalImpulseRearmPercentile = overrides.directionalImpulseRearmPercentile != null ? overrides.directionalImpulseRearmPercentile : s.directionalImpulseRearmPercentile;
+    const directionalMinRawOiIncreasePct = overrides.directionalMinRawOiIncreasePct != null ? overrides.directionalMinRawOiIncreasePct : s.directionalMinRawOiIncreasePct;
+
     const targetTimestamps = isoTimestamps.map(str => new Date(str).getTime());
     console.log(`Params: alertModel=${alertModel} entryPercentile=${entryPercentile} rearmPercentile=${rearmPercentile} ` +
       `minBaselineSamples=${minBaselineSamples} baselineLookbackCandles=${baselineLookbackCandles} ` +
       `oiRecencyFilterEnabled=${oiRecencyFilterEnabled} oiRecencyWindow=${oiRecencyWindow} minimumRecentOIChangePct=${minimumRecentOIChangePct}`);
+    console.log(`Directional-impulse params (evaluated regardless of the Settings toggle): window=${directionalImpulseWindow} ` +
+      `priceEntryPercentile=${directionalPriceEntryPercentile} oiEntryPercentile=${directionalOiEntryPercentile} ` +
+      `rearmPercentile=${directionalImpulseRearmPercentile} minRawOiIncreasePct=${directionalMinRawOiIncreasePct}%`);
     console.log(`Target timestamps: ${targetTimestamps.map(t => new Date(t).toISOString()).join(', ')}`);
     console.log(`Using cached raw data window: ${safeUtcDateString(cache.startTime)} → ${safeUtcDateString(cache.endTime)} (fetched ${safeUtcDateString(cache.cachedAt)})`);
     console.log('');
@@ -2268,6 +2377,14 @@
     const targetSet = new Set(targetTimestamps);
     const baseline = Engine.createBaselineLog({ baselineLookbackCandles });
     const zoneStates = new Map(zones.map(z => [z.id, false]));
+
+    // Directional-impulse causal state, tracked alongside the V1/V2 loop
+    // below — same two independent baselines and per-zone/per-direction
+    // armed state the real backtest uses (oi-exhaustion-backtest.js).
+    const priceImpulseBaseline = Engine.createBaselineLog({ baselineLookbackCandles });
+    const oiImpulseBaseline = Engine.createBaselineLog({ baselineLookbackCandles });
+    const directionalZoneStates = new Map(zones.map(z => [z.id, { upsideArmed: false, downsideArmed: false }]));
+
     let anyMatched = false;
 
     for (let t = 0; t < series.length; t++) {
@@ -2276,12 +2393,57 @@
       const price = closes[t];
       const isTarget = targetSet.has(ts);
 
+      // ── Directional-impulse: independent of V1/V2 entry.valid, same as
+      // the real backtest loop. Computed every candle so its baselines/
+      // armed-state stay causally correct even when this candle isn't a
+      // requested target.
+      const impulseGapFree = Engine.isImpulseWindowGapFree(validFlags, t, directionalImpulseWindowCandles);
+      let diPriceReturnPct = null, diOiReturnPct = null;
+      if (impulseGapFree) {
+        diPriceReturnPct = Engine.computeChangeOverCandles(closes, t, directionalImpulseWindowCandles);
+        diOiReturnPct = Engine.computeChangeOverCandles(ois, t, directionalImpulseWindowCandles);
+      }
+      const directionalWarmingUp = priceImpulseBaseline.size() < minBaselineSamples || oiImpulseBaseline.size() < minBaselineSamples;
+      let diPricePercentile = null, diOiPercentile = null;
+      if (impulseGapFree && !directionalWarmingUp) {
+        if (diPriceReturnPct !== null) diPricePercentile = priceImpulseBaseline.percentileRank(Math.abs(diPriceReturnPct));
+        if (diOiReturnPct !== null && diOiReturnPct > 0) diOiPercentile = oiImpulseBaseline.percentileRank(diOiReturnPct);
+      }
+      const diEval = (impulseGapFree && !directionalWarmingUp)
+        ? Engine.evaluateDirectionalImpulse(diPriceReturnPct, diPricePercentile, diOiReturnPct, diOiPercentile, {
+            priceEntryPercentile: directionalPriceEntryPercentile, oiEntryPercentile: directionalOiEntryPercentile, minRawOiIncreasePct: directionalMinRawOiIncreasePct,
+          })
+        : { qualifies: false, cause: null, direction: null, failReasons: [impulseGapFree ? 'baseline_warming_up' : 'impulse_window_gap_or_insufficient_history'] };
+
+      const diPerZoneSnapshots = [];
+      for (const zone of zones) {
+        const inZone = Engine.isPriceInZone(price, zone) && Engine.isZoneTemporallyActive(zone, ts);
+        const zState = directionalZoneStates.get(zone.id);
+        const downQualifies = diEval.qualifies && diEval.cause === Engine.ALERT_CAUSE_DOWNSIDE_OI_CHASE;
+        const upQualifies = diEval.qualifies && diEval.cause === Engine.ALERT_CAUSE_UPSIDE_OI_CHASE;
+        const downStep = Engine.stepDirectionalImpulseState(zState.downsideArmed, inZone, downQualifies, diPricePercentile, diOiPercentile, { rearmPercentile: directionalImpulseRearmPercentile });
+        const upStep = Engine.stepDirectionalImpulseState(zState.upsideArmed, inZone, upQualifies, diPricePercentile, diOiPercentile, { rearmPercentile: directionalImpulseRearmPercentile });
+        zState.downsideArmed = downStep.armed;
+        zState.upsideArmed = upStep.armed;
+        diPerZoneSnapshots.push({ zone, inZone, downsideArmed: downStep.armed, downsideFired: downStep.alertFired, upsideArmed: upStep.armed, upsideFired: upStep.alertFired });
+      }
+      if (impulseGapFree) {
+        if (diPriceReturnPct !== null) priceImpulseBaseline.insert(Math.abs(diPriceReturnPct));
+        if (diOiReturnPct !== null && diOiReturnPct > 0) oiImpulseBaseline.insert(diOiReturnPct);
+      }
+      const directionalCtx = {
+        impulseWindow: directionalImpulseWindow, priceReturnPct: diPriceReturnPct, oiReturnPct: diOiReturnPct,
+        pricePercentile: diPricePercentile, oiPercentile: diOiPercentile, warmingUp: directionalWarmingUp,
+        gapFree: impulseGapFree, evalResult: diEval, perZoneSnapshots: diPerZoneSnapshots,
+        priceEntryPercentile: directionalPriceEntryPercentile, oiEntryPercentile: directionalOiEntryPercentile,
+      };
+
       if (!entry.valid) {
         for (const zone of zones) {
           const inZone = Engine.isPriceInZone(price, zone) && Engine.isZoneTemporallyActive(zone, ts);
           if (!inZone) zoneStates.set(zone.id, false);
         }
-        if (isTarget) { anyMatched = true; diagnoseAlertPrint(ts, price, null, zones, { invalidWindow: true }); }
+        if (isTarget) { anyMatched = true; diagnoseAlertPrint(ts, price, null, zones, { invalidWindow: true, directional: directionalCtx }); }
         continue;
       }
 
@@ -2319,6 +2481,7 @@
           entryPercentile, rearmPercentile,
           oiRecencyFilterEnabled, oiRecencyWindow, minimumRecentOIChangePct,
           recentOIChangePct, additionalGatePassed, perZoneSnapshots,
+          directional: directionalCtx,
         });
       }
     }
@@ -2335,8 +2498,9 @@
     console.log(`Price: ${price != null ? price : 'n/a'}`);
 
     if (ctx.invalidWindow || !entry) {
-      console.log('Window invalid at this candle (gap/missing data) — no score computed.');
-      console.log('Final rejection reason: INVALID_WINDOW (144-candle score window not fully valid here)');
+      console.log('Window invalid at this candle (gap/missing data) — no V1/V2 score computed.');
+      console.log('Final rejection reason (V1/V2): INVALID_WINDOW (signal window not fully valid here)');
+      if (ctx.directional) diagnoseDirectionalPrint(ctx.directional);
       console.log('════════════════════════════════════════════════════════\n');
       return;
     }
@@ -2356,13 +2520,13 @@
     const percentilePassed = !ctx.warmingUp && ctx.percentile !== null && ctx.percentile >= ctx.entryPercentile;
     const recencyPassed = !ctx.oiRecencyFilterEnabled || ctx.additionalGatePassed;
 
-    console.log(`Score > 0 passed:        ${scorePassed}`);
-    console.log(`Percentile >= ${ctx.entryPercentile} passed: ${percentilePassed}`);
-    console.log(`OI recency filter passed: ${ctx.oiRecencyFilterEnabled ? recencyPassed : 'n/a (filter disabled)'}`);
+    console.log(`[V1/V2] Score > 0 passed:        ${scorePassed}`);
+    console.log(`[V1/V2] Percentile >= ${ctx.entryPercentile} passed: ${percentilePassed}`);
+    console.log(`[V1/V2] OI recency filter passed: ${ctx.oiRecencyFilterEnabled ? recencyPassed : 'n/a (filter disabled)'}`);
     console.log('');
 
     for (const snap of ctx.perZoneSnapshots) {
-      console.log(`Zone "${snap.zone.label || snap.zone.id}": inZone=${snap.inZone} prevArmed=${snap.prevArmed} -> armed=${snap.armed} alertFired=${snap.alertFired}`);
+      console.log(`[V1/V2] Zone "${snap.zone.label || snap.zone.id}": inZone=${snap.inZone} prevArmed=${snap.prevArmed} -> armed=${snap.armed} alertFired=${snap.alertFired}`);
       let reason;
       if (ctx.warmingUp) reason = 'BASELINE_WARMING_UP (not enough baseline samples yet)';
       else if (!snap.inZone) reason = 'ZONE_FAILED (price outside active zone, or zone not yet available/expired)';
@@ -2374,11 +2538,80 @@
       else reason = 'UNKNOWN (should not happen — check logic)';
       console.log(`  Final rejection reason: ${reason}`);
     }
+    if (ctx.directional) diagnoseDirectionalPrint(ctx.directional);
     console.log('════════════════════════════════════════════════════════\n');
   }
 
+  /** The directional-impulse half of the candle-inspection view — "why did/didn't this candle qualify as a fast directional OI build". */
+  function diagnoseDirectionalPrint(d) {
+    const f = diagnoseAlertFmt;
+    console.log('');
+    console.log(`[Directional] Impulse window: ${d.impulseWindow}  Gap-free: ${d.gapFree}  Baseline warming up: ${d.warmingUp}`);
+    console.log(`[Directional] Price return over window: ${f(d.priceReturnPct, 3)}%  (direction: ${d.evalResult.direction || 'n/a'})`);
+    console.log(`[Directional] Price percentile (vs abs-return baseline): ${f(d.pricePercentile, 2)}  (need >= ${d.priceEntryPercentile})`);
+    console.log(`[Directional] OI return over window: ${f(d.oiReturnPct, 3)}%`);
+    console.log(`[Directional] OI percentile (vs positive-only baseline): ${d.oiPercentile != null ? f(d.oiPercentile, 2) : 'n/a (OI not positive, or not enough positive history yet)'}  (need >= ${d.oiEntryPercentile})`);
+    console.log(`[Directional] Qualifies: ${d.evalResult.qualifies}  Cause: ${d.evalResult.cause || 'none'}`);
+    if (!d.evalResult.qualifies) {
+      console.log(`[Directional] Failed condition(s): ${d.evalResult.failReasons.join(', ')}`);
+    }
+    for (const snap of d.perZoneSnapshots) {
+      console.log(`[Directional] Zone "${snap.zone.label || snap.zone.id}": inZone=${snap.inZone} ` +
+        `downsideArmed=${snap.downsideArmed} downsideFired=${snap.downsideFired} ` +
+        `upsideArmed=${snap.upsideArmed} upsideFired=${snap.upsideFired}`);
+    }
+  }
+
+  /**
+   * Reruns the currently cached raw data through the directional-impulse
+   * feature at all three window settings (15m/1h/2h), using every other
+   * current Settings value unchanged, so downside/upside chase counts can
+   * be compared side by side on REAL data — this is what actually answers
+   * "is the 15m / raw-OI-floor setting too strict or too noisy," rather
+   * than a one-off single-window run.
+   *
+   * Console usage: OIExhaustionRender.compareDirectionalImpulseWindows()
+   */
+  function compareDirectionalImpulseWindows() {
+    const cache = state.rawDataCache;
+    if (!cache) {
+      console.warn('No raw data cached yet — click "Fetch data & run analysis" at least once first.');
+      return;
+    }
+    const s = state.settings;
+    const zones = state.zones.map(normalizeZone).filter(z => isFinite(z.top) && isFinite(z.bottom));
+    const rows = [];
+    for (const w of Engine.IMPULSE_WINDOWS) {
+      const result = Backtest.runEventStudy(cache.binanceCandles, cache.oiRows, zones, {
+        entryPercentile: s.entryPercentile, rearmPercentile: s.rearmPercentile,
+        minBaselineSamples: s.minBaselineSamples, baselineLookbackCandles: s.baselineLookbackCandles,
+        signalWindow: s.signalWindow, alertModel: s.alertModel,
+        directionalImpulseEnabled: true,
+        directionalImpulseWindow: w,
+        directionalPriceEntryPercentile: s.directionalPriceEntryPercentile,
+        directionalOiEntryPercentile: s.directionalOiEntryPercentile,
+        directionalImpulseRearmPercentile: s.directionalImpulseRearmPercentile,
+        directionalMinRawOiIncreasePct: s.directionalMinRawOiIncreasePct,
+      });
+      const di = result.meta.directionalImpulse;
+      rows.push({
+        window: w,
+        downsideChaseCount: di.downsideChaseCount,
+        upsideChaseCount: di.upsideChaseCount,
+        totalChaseCount: di.downsideChaseCount + di.upsideChaseCount,
+        priceBaselineSize: di.priceBaselineSize,
+        oiBaselineSize: di.oiBaselineSize,
+      });
+    }
+    console.log(`compareDirectionalImpulseWindows — priceEntry=${s.directionalPriceEntryPercentile} oiEntry=${s.directionalOiEntryPercentile} ` +
+      `rearm=${s.directionalImpulseRearmPercentile} minRawOiIncreasePct=${s.directionalMinRawOiIncreasePct}% ` +
+      `(cached range: ${safeUtcDateString(cache.startTime)} → ${safeUtcDateString(cache.endTime)})`);
+    console.table(rows);
+    return rows;
+  }
+
   Object.assign(OIExhaustionRender, {
-    init, runAnalysis, refreshRawData, diagnoseAlert, dumpRawOI, directionalOiShock, directionalOiImpulse, addZoneRow, removeZone, updateZoneField, readSettingsFromForm,
+    init, runAnalysis, refreshRawData, diagnoseAlert, dumpRawOI, directionalOiShock, directionalOiImpulse, compareDirectionalImpulseWindows, addZoneRow, removeZone, updateZoneField, readSettingsFromForm,
     focusChartOnAlert,
     setChartTimeframe,
     toggleHelpTooltip,

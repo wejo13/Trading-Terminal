@@ -208,6 +208,25 @@ function runEventStudy(candles, oiRows, zones, opts) {
   const oiRecencyWindow = Engine.OI_RECENCY_WINDOW_CANDLES[opts.oiRecencyWindow] ? opts.oiRecencyWindow : '1h';
   const oiRecencyWindowCandles = Engine.OI_RECENCY_WINDOW_CANDLES[oiRecencyWindow];
 
+  // "Include fast directional OI builds" — optional, disabled by default,
+  // entirely separate from V1/V2 score math (see oi-exhaustion-engine.js
+  // for why: independent percentile checks, never subtracted). Every
+  // option below only has any effect when directionalImpulseEnabled is
+  // true — when false, this whole block is skipped and V1/V2 behavior is
+  // byte-for-byte what it was before this feature existed.
+  const directionalImpulseEnabled = opts.directionalImpulseEnabled === true;
+  const directionalImpulseWindow = Engine.IMPULSE_WINDOW_CANDLES[opts.directionalImpulseWindow]
+    ? opts.directionalImpulseWindow : Engine.DEFAULT_IMPULSE_WINDOW;
+  const directionalImpulseWindowCandles = Engine.IMPULSE_WINDOW_CANDLES[directionalImpulseWindow];
+  const directionalPriceEntryPercentile = opts.directionalPriceEntryPercentile != null
+    ? opts.directionalPriceEntryPercentile : Engine.DEFAULT_DIRECTIONAL_ENTRY_PERCENTILE;
+  const directionalOiEntryPercentile = opts.directionalOiEntryPercentile != null
+    ? opts.directionalOiEntryPercentile : Engine.DEFAULT_DIRECTIONAL_ENTRY_PERCENTILE;
+  const directionalImpulseRearmPercentile = opts.directionalImpulseRearmPercentile != null
+    ? opts.directionalImpulseRearmPercentile : Engine.DEFAULT_DIRECTIONAL_REARM_PERCENTILE;
+  const directionalMinRawOiIncreasePct = opts.directionalMinRawOiIncreasePct != null
+    ? opts.directionalMinRawOiIncreasePct : Engine.DEFAULT_MIN_RAW_OI_INCREASE_PCT;
+
   const { timestamps, closes, ois, highs, lows, hasOHLC, validFlags } = alignCandlesAndOI(candles, oiRows);
   const series = Engine.computeExhaustionSeries(timestamps, closes, ois, { validFlags, windowSize: signalWindow });
 
@@ -215,6 +234,18 @@ function runEventStudy(candles, oiRows, zones, opts) {
   const zoneStates = new Map(zones.map(z => [z.id, false])); // armed state per zone
   const alerts = [];
   let positiveScoreCount = 0;
+
+  // Directional-impulse: two INDEPENDENT causal baselines — never the V1/V2
+  // score distribution. priceImpulseBaseline tracks abs(priceReturnPct)
+  // over every valid impulse window; oiImpulseBaseline tracks ONLY
+  // positive oiReturnPct observations (a falling-OI candle is never
+  // inserted here at all, so it can never later be compared against this
+  // distribution). Armed state is tracked per zone AND per direction —
+  // upside and downside never share or block each other.
+  const priceImpulseBaseline = Engine.createBaselineLog({ baselineLookbackCandles });
+  const oiImpulseBaseline = Engine.createBaselineLog({ baselineLookbackCandles });
+  const directionalZoneStates = new Map(zones.map(z => [z.id, { upsideArmed: false, downsideArmed: false }]));
+  const directionalAlertCounts = { DOWNSIDE_OI_CHASE: 0, UPSIDE_OI_CHASE: 0 };
 
   // Diagnostic-only accumulation (per explicit milestone: compare
   // strictPathScore vs netProgressScore side-by-side, without touching
@@ -334,6 +365,80 @@ function runEventStudy(candles, oiRows, zones, opts) {
         if (!inZone) zoneStates.set(zone.id, false);
       }
     }
+
+    // ── Directional-impulse: entirely independent of V1/V2 validity above
+    // (it has its own, shorter window requirement) — runs every t when
+    // enabled, regardless of whether the V1/V2 signalWindow itself was
+    // valid at this candle.
+    if (directionalImpulseEnabled) {
+      const impulseGapFree = Engine.isImpulseWindowGapFree(validFlags, t, directionalImpulseWindowCandles);
+      let priceReturnPct = null, oiReturnPct = null;
+      if (impulseGapFree) {
+        priceReturnPct = Engine.computeChangeOverCandles(closes, t, directionalImpulseWindowCandles);
+        oiReturnPct = Engine.computeChangeOverCandles(ois, t, directionalImpulseWindowCandles);
+      }
+
+      // Warms up on BOTH baselines independently — the OI baseline only
+      // grows on positive observations, so it will typically warm up
+      // slower than the price baseline (which grows on every valid
+      // candle). Per spec: the first candidate is only evaluated once
+      // there's enough data for the impulse window AND the full percentile
+      // baseline AND the configured minimum sample count, on both axes.
+      const directionalWarmingUp = priceImpulseBaseline.size() < minBaselineSamples || oiImpulseBaseline.size() < minBaselineSamples;
+
+      let pricePercentile = null, oiPercentile = null;
+      if (impulseGapFree && !directionalWarmingUp) {
+        if (priceReturnPct !== null) pricePercentile = priceImpulseBaseline.percentileRank(Math.abs(priceReturnPct));
+        // Only a POSITIVE OI return ever gets a percentile at all — a
+        // falling/flat OI reading is compared against nothing and so can
+        // never qualify, regardless of its magnitude (see engine.js).
+        if (oiReturnPct !== null && oiReturnPct > 0) oiPercentile = oiImpulseBaseline.percentileRank(oiReturnPct);
+      }
+
+      const evalResult = (impulseGapFree && !directionalWarmingUp)
+        ? Engine.evaluateDirectionalImpulse(priceReturnPct, pricePercentile, oiReturnPct, oiPercentile, {
+            priceEntryPercentile: directionalPriceEntryPercentile,
+            oiEntryPercentile: directionalOiEntryPercentile,
+            minRawOiIncreasePct: directionalMinRawOiIncreasePct,
+          })
+        : { qualifies: false, cause: null, direction: null, failReasons: [impulseGapFree ? 'baseline_warming_up' : 'impulse_window_gap_or_insufficient_history'] };
+
+      for (const zone of zones) {
+        const inZone = Engine.isPriceInZone(price, zone) && Engine.isZoneTemporallyActive(zone, ts);
+        const zState = directionalZoneStates.get(zone.id);
+
+        const downQualifies = evalResult.qualifies && evalResult.cause === Engine.ALERT_CAUSE_DOWNSIDE_OI_CHASE;
+        const upQualifies = evalResult.qualifies && evalResult.cause === Engine.ALERT_CAUSE_UPSIDE_OI_CHASE;
+
+        const downStep = Engine.stepDirectionalImpulseState(zState.downsideArmed, inZone, downQualifies, pricePercentile, oiPercentile, { rearmPercentile: directionalImpulseRearmPercentile });
+        const upStep = Engine.stepDirectionalImpulseState(zState.upsideArmed, inZone, upQualifies, pricePercentile, oiPercentile, { rearmPercentile: directionalImpulseRearmPercentile });
+        zState.downsideArmed = downStep.armed;
+        zState.upsideArmed = upStep.armed;
+
+        if (downStep.alertFired || upStep.alertFired) {
+          const cause = downStep.alertFired ? Engine.ALERT_CAUSE_DOWNSIDE_OI_CHASE : Engine.ALERT_CAUSE_UPSIDE_OI_CHASE;
+          const rangeThird = Engine.zoneRangeThird(price, zone);
+          const record = Engine.buildDirectionalAlertRecord({
+            timestamp: ts, zone, price, cause,
+            impulseWindow: directionalImpulseWindow,
+            priceReturnPct, oiReturnPct, pricePercentile, oiPercentile,
+            rangeThird,
+            priceBaselineSampleCount: priceImpulseBaseline.size(),
+            oiBaselineSampleCount: oiImpulseBaseline.size(),
+          });
+          const relevantPercentile = Math.max(pricePercentile || 0, oiPercentile || 0);
+          alerts.push({ ...record, candleIndex: t, percentileBucket: percentileBucket(relevantPercentile) });
+          directionalAlertCounts[cause]++;
+        }
+      }
+
+      // Insert AFTER this candle's decisions — never sees itself, matches
+      // the same causal-insert-after-use pattern as the V1/V2 baseline.
+      if (impulseGapFree) {
+        if (priceReturnPct !== null) priceImpulseBaseline.insert(Math.abs(priceReturnPct));
+        if (oiReturnPct !== null && oiReturnPct > 0) oiImpulseBaseline.insert(oiReturnPct);
+      }
+    }
   }
 
   // Ex-post horizon measurement — legitimate forward-looking, not detection.
@@ -369,6 +474,18 @@ function runEventStudy(candles, oiRows, zones, opts) {
       entryPercentile,
       rearmPercentile,
       hasOHLC,
+      directionalImpulse: {
+        enabled: directionalImpulseEnabled,
+        impulseWindow: directionalImpulseWindow,
+        priceEntryPercentile: directionalPriceEntryPercentile,
+        oiEntryPercentile: directionalOiEntryPercentile,
+        rearmPercentile: directionalImpulseRearmPercentile,
+        minRawOiIncreasePct: directionalMinRawOiIncreasePct,
+        downsideChaseCount: directionalAlertCounts.DOWNSIDE_OI_CHASE,
+        upsideChaseCount: directionalAlertCounts.UPSIDE_OI_CHASE,
+        priceBaselineSize: priceImpulseBaseline.size(),
+        oiBaselineSize: oiImpulseBaseline.size(),
+      },
     },
   };
 }
@@ -465,6 +582,7 @@ function buildGroupedSummaries(alerts) {
     byZoneType: groupBy(a => a.zoneBounds.type),
     byPercentileBucket: groupBy(a => a.percentileBucket),
     byRangeThird: groupBy(a => a.rangeThird),
+    byCause: groupBy(a => a.cause),
   };
 }
 

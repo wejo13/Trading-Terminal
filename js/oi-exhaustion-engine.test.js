@@ -447,6 +447,136 @@ section('stepZoneState: additionalGatePassed does not affect rearm/exit logic, o
   assert('rearm still happens even with additionalGatePassed false', rearmed.armed === false);
 })();
 
+// ── isImpulseWindowGapFree ────────────────────────────────────────────────
+
+section('isImpulseWindowGapFree: true only when every candle in the window is flagged gap-free');
+(function () {
+  const flags = [true, true, false, true, true, true];
+  assert('1-candle window at a gap-free point', E.isImpulseWindowGapFree(flags, 4, 1) === true);
+  assert('4-candle window spanning the gap at index 2 is NOT gap-free', E.isImpulseWindowGapFree(flags, 4, 4) === false);
+  assert('window that would start before index 0 is NOT gap-free (insufficient history)', E.isImpulseWindowGapFree(flags, 1, 4) === false);
+  assert('single point exactly on the gap itself is NOT gap-free', E.isImpulseWindowGapFree(flags, 2, 1) === false);
+})();
+
+// ── evaluateDirectionalImpulse ────────────────────────────────────────────
+
+section('evaluateDirectionalImpulse: downside chase — negative price return + qualifying abs move + qualifying positive OI');
+(function () {
+  const r = E.evaluateDirectionalImpulse(-3.5, 97, 2.5, 96, { priceEntryPercentile: 95, oiEntryPercentile: 95, minRawOiIncreasePct: 1 });
+  assert('qualifies', r.qualifies === true);
+  assert('cause is DOWNSIDE_OI_CHASE', r.cause === E.ALERT_CAUSE_DOWNSIDE_OI_CHASE);
+  assert('direction is down', r.direction === 'down');
+  assert('no fail reasons when qualifying', r.failReasons.length === 0);
+})();
+
+section('evaluateDirectionalImpulse: upside chase — positive price return + qualifying abs move + qualifying positive OI');
+(function () {
+  const r = E.evaluateDirectionalImpulse(4.1, 98, 3.0, 97, { priceEntryPercentile: 95, oiEntryPercentile: 95, minRawOiIncreasePct: 1 });
+  assert('qualifies', r.qualifies === true);
+  assert('cause is UPSIDE_OI_CHASE', r.cause === E.ALERT_CAUSE_UPSIDE_OI_CHASE);
+  assert('direction is up', r.direction === 'up');
+})();
+
+section('evaluateDirectionalImpulse: fast price move with FALLING OI does not qualify');
+(function () {
+  const r = E.evaluateDirectionalImpulse(-5.0, 99, -2.0, null, { priceEntryPercentile: 95, oiEntryPercentile: 95 });
+  assert('does not qualify', r.qualifies === false);
+  assert('no cause assigned', r.cause === null);
+  assert('failReasons flags OI not rising', r.failReasons.includes('oi_not_rising'));
+  assert('price condition itself is NOT listed as a failure (it genuinely passed)', !r.failReasons.includes('price_percentile_below_threshold'));
+})();
+
+section('evaluateDirectionalImpulse: OI rise with an insignificant price move does not qualify');
+(function () {
+  const r = E.evaluateDirectionalImpulse(-0.05, 20, 5.0, 99, { priceEntryPercentile: 95, oiEntryPercentile: 95 });
+  assert('does not qualify', r.qualifies === false);
+  assert('failReasons flags price percentile below threshold', r.failReasons.includes('price_percentile_below_threshold'));
+})();
+
+section('evaluateDirectionalImpulse: a large ABSOLUTE OI move that is actually a DROP never qualifies, regardless of magnitude');
+(function () {
+  // Guards the exact case called out in the spec: falling OI must never
+  // qualify just because its magnitude was large. Caller is expected to
+  // pass oiPercentile=null whenever oiReturnPct<=0 (checked defensively
+  // here too), so even a huge negative move can't sneak through.
+  const r = E.evaluateDirectionalImpulse(-6.0, 99, -8.0, 99.9, { priceEntryPercentile: 95, oiEntryPercentile: 95 });
+  assert('does not qualify even with oiPercentile wrongly supplied for a negative OI move', r.qualifies === false);
+  assert('flagged as OI not rising', r.failReasons.includes('oi_not_rising'));
+})();
+
+section('evaluateDirectionalImpulse: raw OI floor — positive, high-percentile OI growth below the raw % floor still fails');
+(function () {
+  const r = E.evaluateDirectionalImpulse(-4.0, 99, 0.3, 99, { priceEntryPercentile: 95, oiEntryPercentile: 95, minRawOiIncreasePct: 1 });
+  assert('does not qualify', r.qualifies === false);
+  assert('failReasons flags the raw OI floor specifically', r.failReasons.includes('oi_below_raw_floor'));
+})();
+
+section('evaluateDirectionalImpulse: multiple simultaneous failures are ALL reported, not just the first');
+(function () {
+  const r = E.evaluateDirectionalImpulse(-0.05, 10, -1.0, null, { priceEntryPercentile: 95, oiEntryPercentile: 95 });
+  assert('flags price percentile failure', r.failReasons.includes('price_percentile_below_threshold'));
+  assert('flags OI not rising failure', r.failReasons.includes('oi_not_rising'));
+  assert('reports at least 2 simultaneous failures', r.failReasons.length >= 2);
+})();
+
+section('evaluateDirectionalImpulse: missing data never throws, reports a reason');
+(function () {
+  const r1 = E.evaluateDirectionalImpulse(null, null, null, null, {});
+  assert('does not qualify on all-null input', r1.qualifies === false);
+  assert('reports at least one fail reason', r1.failReasons.length > 0);
+})();
+
+// ── stepDirectionalImpulseState ───────────────────────────────────────────
+
+section('stepDirectionalImpulseState: arms and fires on first qualifying candle in zone');
+(function () {
+  const step = E.stepDirectionalImpulseState(false, true, true, 97, 96, { rearmPercentile: 90 });
+  assert('arms', step.armed === true);
+  assert('fires', step.alertFired === true);
+})();
+
+section('stepDirectionalImpulseState: stays armed (no repeat alert) while impulse remains extreme');
+(function () {
+  const step = E.stepDirectionalImpulseState(true, true, true, 96, 95, { rearmPercentile: 90 });
+  assert('remains armed', step.armed === true);
+  assert('does not re-fire while still extreme', step.alertFired === false);
+})();
+
+section('stepDirectionalImpulseState: rearms only once BOTH price and OI percentile cool below the rearm threshold');
+(function () {
+  const onlyPriceCooled = E.stepDirectionalImpulseState(true, true, false, 85, 93, { rearmPercentile: 90 });
+  assert('stays armed if only price cooled (OI still >= rearm)', onlyPriceCooled.armed === true);
+
+  const onlyOiCooled = E.stepDirectionalImpulseState(true, true, false, 93, 85, { rearmPercentile: 90 });
+  assert('stays armed if only OI cooled (price still >= rearm)', onlyOiCooled.armed === true);
+
+  const bothCooled = E.stepDirectionalImpulseState(true, true, false, 85, 85, { rearmPercentile: 90 });
+  assert('rearms once BOTH have cooled below the rearm threshold', bothCooled.armed === false);
+})();
+
+section('stepDirectionalImpulseState: leaving the zone immediately disarms');
+(function () {
+  const step = E.stepDirectionalImpulseState(true, false, false, 99, 99, { rearmPercentile: 90 });
+  assert('disarmed on zone exit regardless of percentile levels', step.armed === false);
+})();
+
+section('stepDirectionalImpulseState: no repeated alerts during one continuous impulse (multi-step simulation)');
+(function () {
+  // Simulates several consecutive candles all still qualifying — only the
+  // FIRST should fire; all subsequent ones must stay armed without firing
+  // again, exactly the "do not create repeated alerts during one
+  // continuous impulse" requirement.
+  let armed = false;
+  const fires = [];
+  const percentileSeries = [97, 96, 98, 97, 95]; // stays extreme throughout
+  for (const p of percentileSeries) {
+    const step = E.stepDirectionalImpulseState(armed, true, !armed && p >= 95, p, p, { rearmPercentile: 90 });
+    armed = step.armed;
+    fires.push(step.alertFired);
+  }
+  assert('only the first candle in the run fires', fires[0] === true && fires.slice(1).every(f => f === false));
+})();
+
 // ── summary ───────────────────────────────────────────────────────────────
 
 console.log('\n────────────────────────────────────────');

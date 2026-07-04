@@ -71,6 +71,10 @@
     ? require('./oi-exhaustion-binance-oi-source.js')
     : window.OIExhaustionBinanceOISource;
 
+  const Study = (typeof module !== 'undefined' && module.exports)
+    ? require('./oi-exhaustion-study.js')
+    : window.OIExhaustionStudy;
+
   // ── Fetch reliability: rate-limit retry, backoff, and raw-data caching ──
   // (all pure / dependency-injected so they're testable in Node without a
   // real network or DOM — see fetchBybitOI/fetchBybitCandles below, which
@@ -1479,6 +1483,7 @@
     settings: DEFAULT_SETTINGS,
     zones: [],
     lastRun: null, // { result, binanceCandles, binanceIndex, chartPoints }
+    lastStudy: null, // { rows, eligibleEvents, ranAt } — V2 parameter study results (research only)
     lastRunAt: null, // Date.now() of the last SUCCESSFUL run, for the stale-results banner
     lastRunFailed: false, // true when the most recent attempt failed — results shown (if any) are from an earlier run
     rawDataCache: null, // { lookbackDays, startTime, endTime, oiRows, binanceCandles, coverage, cachedAt }
@@ -3458,6 +3463,176 @@
   }
 
   /**
+   * V2 parameter study — LOCKED research spec (see oi-exhaustion-study.js
+   * header). Candidate comparison, not winner selection. Runs the 54-combo
+   * grid strictly against the in-memory raw data (state.rawDataCache) —
+   * this function performs ZERO fetching, and applying a row later reruns
+   * through runAnalysis({rawDataOverride}) which also fetches nothing.
+   */
+  function runV2ParameterStudy() {
+    const statusEl = document.getElementById('oix-study-status');
+    const eventsEl = document.getElementById('oix-study-events');
+    const resultsEl = document.getElementById('oix-study-results');
+    const setStudyStatus = (msg) => { if (statusEl) statusEl.innerHTML = msg; };
+
+    const cache = state.rawDataCache;
+    if (!cache || !Array.isArray(cache.binanceCandles) || !cache.binanceCandles.length) {
+      setStudyStatus('<span style="color:var(--amber);">No data loaded — run "Fetch data & run analysis" once first (the study reuses that in-memory data).</span>');
+      return;
+    }
+    const zones = state.zones.map(normalizeZone).filter(z => isFinite(z.top) && isFinite(z.bottom));
+    if (!zones.length) {
+      setStudyStatus('<span style="color:var(--amber);">No valid zones — the locked spec is zone-conditioned, so at least one enabled zone is required.</span>');
+      return;
+    }
+
+    const s = state.settings;
+    const candles = cache.binanceCandles;
+    const spec = Study.STUDY_SPEC;
+
+    // 1) Retrospective event labeling — parameter-independent, done ONCE.
+    const allEvents = Study.labelExpansionEvents(candles);
+
+    // 2) Fixed eligible timestamp pool — combo-independent by design:
+    //    conservative warm-up = fixed minBaselineSamples + LARGEST grid
+    //    signal window, so no combo could have alerted earlier than this.
+    const conservativeMinIndex = (s.minBaselineSamples || 500) + 24;
+    const eligibleTimestamps = Study.computeEligibleTimestamps(candles, zones, {
+      isPriceInZone: Engine.isPriceInZone,
+      isZoneTemporallyActive: Engine.isZoneTemporallyActive,
+      minIndex: conservativeMinIndex,
+    });
+    const eligibleEvents = Study.filterEligibleEvents(allEvents, eligibleTimestamps);
+
+    // Events panel — the ground truth to eyeball BEFORE trusting any row.
+    if (eventsEl) {
+      const rows = eligibleEvents.map((ev, i) =>
+        `<div>#${i + 1} &middot; base ${safeUtcDateString(ev.baseTs)} &middot; ignition ${safeUtcDateString(ev.ignitionTs)} &middot; ` +
+        `${ev.direction === 'two_sided' ? 'TWO-SIDED' : ev.direction.toUpperCase()} &middot; max +${ev.maxUpPct.toFixed(2)}% / ${ev.maxDownPct.toFixed(2)}%</div>`).join('');
+      eventsEl.innerHTML =
+        `<div style="font-size:12px;color:var(--text);font-weight:600;">Eligible events: ${eligibleEvents.length}` +
+        `<span style="font-weight:400;color:var(--text-faint);"> (of ${allEvents.length} labeled; ${eligibleTimestamps.length} eligible zone timestamps)</span></div>` +
+        (eligibleEvents.length ? rows : '<div>None — with zero eligible events every recall is undefined; widen zones or wait for more data.</div>') +
+        (eligibleEvents.length > 0 && eligibleEvents.length < 9
+          ? `<div style="color:var(--amber);margin-top:4px;">Only ${eligibleEvents.length} eligible events — recall moves in steps of ${(100 / eligibleEvents.length).toFixed(0)}pp. Read the table as plateaus, not rankings.</div>` : '');
+    }
+    if (!eligibleEvents.length) { setStudyStatus('<span style="color:var(--amber);">0 eligible events — nothing to rank.</span>'); if (resultsEl) resultsEl.innerHTML = ''; return; }
+
+    // 3) Grid runs — same in-memory candles/OI, existing engine untouched.
+    setStudyStatus('Running 54 combos on in-memory data…');
+    const grid = Study.buildParameterGrid();
+    const baselineByClusterCount = new Map(); // memo — see assumption in the console object
+    const studyRows = [];
+    const perComboDetail = [];
+
+    for (let gi = 0; gi < grid.length; gi++) {
+      const combo = grid[gi];
+      const result = Backtest.runEventStudy(candles, cache.oiRows, zones, {
+        entryPercentile: combo.entryPercentile,
+        rearmPercentile: combo.rearmPercentile,
+        signalWindow: combo.signalWindow,
+        minBaselineSamples: s.minBaselineSamples,
+        baselineLookbackCandles: s.baselineLookbackCandles,
+        alertModel: Engine.ALERT_MODEL_NET_PROGRESS,
+        oiRecencyFilterEnabled: combo.oiRecencyFilterEnabled,
+        minimumRecentOIChangePct: combo.minimumRecentOIChangePct,
+        oiRecencyWindow: combo.oiRecencyWindow,
+        directionalImpulseEnabled: false, // chase alerts are explicitly outside this study
+      });
+      const alertTs = result.alerts.filter(a => String(a.cause).indexOf('OI_CHASE') === -1).map(a => a.timestamp);
+      const clusters = Study.clusterAlertTimestamps(alertTs, spec.clusterDedupeMs);
+      const metrics = Study.computeComboMetrics(clusters, eligibleEvents);
+
+      let baseline = baselineByClusterCount.get(clusters.length);
+      if (!baseline) {
+        baseline = Study.runRandomBaseline(eligibleTimestamps, clusters.length, eligibleEvents, { seed: 1337 });
+        baselineByClusterCount.set(clusters.length, baseline);
+      }
+
+      const row = Object.assign({ comboIndex: gi }, combo, metrics, {
+        recallLift: metrics.recall !== null ? metrics.recall - baseline.meanRecall : null,
+        precisionLift: metrics.precision !== null ? metrics.precision - baseline.meanPrecision : null,
+        baselineRecall: baseline.meanRecall,
+        baselinePrecision: baseline.meanPrecision,
+        alertCount: alertTs.length,
+      });
+      studyRows.push(row);
+      perComboDetail.push({ combo, metrics, baseline, alertCount: alertTs.length });
+    }
+
+    studyRows.sort(Study.compareStudyRows);
+    state.lastStudy = { rows: studyRows, eligibleEvents, ranAt: Date.now() };
+    renderStudyTable(studyRows, eligibleEvents.length);
+    setStudyStatus(`Done — ${grid.length} combos, ${eligibleEvents.length} eligible events. Full detail logged to console.`);
+
+    console.log('[V2 parameter study] detail', {
+      lockedSpec: spec,
+      baselineAssumption: 'Baseline memoized by cluster count ONLY because every draw samples from the SAME fixed eligible timestamp pool and applies the SAME 2h cluster rule and matching rules (seed 1337, 1000 draws).',
+      eligibilityAssumption: `Eligible pool = candles inside an active zone with index >= ${conservativeMinIndex} (fixed minBaselineSamples + largest grid signal window) — combo-independent by construction.`,
+      liftDefinition: 'lift = combo metric minus baseline mean, in percentage points',
+      eligibleEvents,
+      allEventsCount: allEvents.length,
+      eligibleTimestampCount: eligibleTimestamps.length,
+      perComboDetail,
+    });
+  }
+
+  function renderStudyTable(rows, eligibleEventCount) {
+    const el = document.getElementById('oix-study-results');
+    if (!el) return;
+    const pct = v => v === null || v === undefined ? '—' : (v * 100).toFixed(0) + '%';
+    const pp = v => v === null || v === undefined ? '—' : ((v >= 0 ? '+' : '') + (v * 100).toFixed(0) + 'pp');
+    const lead = v => v === null || v === undefined ? '—' : (v / 3600000).toFixed(1) + 'h';
+    const header =
+      `<div style="font-size:11px;color:var(--text-faint);margin-bottom:6px;">Candidate comparison — sorted by recall-lift, precision-lift, band share, then fewer clusters. ` +
+      `<span style="color:var(--amber);">Rearm mainly controls repeat-alert suppression/clustering — differences across rearm values may reflect duplicate suppression, not better detection.</span> ` +
+      `Click a row to apply its parameters and rerun on the loaded data (no fetching; this table stays).</div>`;
+    const th = t => `<th style="text-align:right;padding:3px 8px;white-space:nowrap;color:var(--text-faint);font-weight:500;">${t}</th>`;
+    const td = (t, align) => `<td style="text-align:${align || 'right'};padding:3px 8px;white-space:nowrap;">${t}</td>`;
+    const body = rows.map(r => {
+      const mix = `${r.outcomeMix.up}U/${r.outcomeMix.down}D/${r.outcomeMix.two_sided}T/${r.unmatchedClusterCount}X`;
+      return `<tr style="cursor:pointer;border-top:0.5px solid var(--line-old);" onclick="OIExhaustionRender.applyStudyCombo(${r.comboIndex})" ` +
+        `onmouseover="this.style.background='rgba(40,215,200,0.06)'" onmouseout="this.style.background=''">` +
+        td(r.entryPercentile) + td(r.rearmPercentile) + td(r.signalWindow) + td(r.oiRecencyFilterEnabled ? 'on' : 'off') +
+        td(`${r.alertCount}/${r.totalClusters}`) +
+        td(`${r.matchedEventCount}/${eligibleEventCount}`) +
+        td(pct(r.recall)) + td(pp(r.recallLift)) +
+        td(pct(r.precision)) + td(pp(r.precisionLift)) +
+        td(pct(r.preferredBandShare)) + td(lead(r.medianLeadMs)) +
+        td(mix) + td(r.duplicateClusterCount) +
+        td(r.singleEventDependenceFlag ? '<span style="color:var(--amber);">⚑</span>' : '') +
+        `</tr>`;
+    }).join('');
+    el.innerHTML = header +
+      `<table style="border-collapse:collapse;font-size:11px;color:var(--text);width:100%;">` +
+      `<thead><tr>${th('Entry %ile')}${th('Rearm')}${th('Window')}${th('Recency')}${th('Alerts/Clusters')}${th('Events')}${th('Recall')}${th('R-lift')}${th('Precision')}${th('P-lift')}${th('Band share')}${th('Med lead')}${th('Mix U/D/T/X')}${th('Dups')}${th('Dep')}</tr></thead>` +
+      `<tbody>${body}</tbody></table>`;
+  }
+
+  /**
+   * Row click: writes the combo's parameters into the existing controls and
+   * reruns the normal analysis STRICTLY from the in-memory raw data
+   * (rawDataOverride) — no CryptoHFT fetching, and the study table is a
+   * separate container that this never touches.
+   */
+  function applyStudyCombo(comboIndex) {
+    const grid = Study.buildParameterGrid();
+    const combo = grid[comboIndex];
+    if (!combo || !state.rawDataCache) return;
+    const setVal = (id, v) => { const el = document.getElementById('oix-' + id); if (el) el.value = v; };
+    setVal('entryPercentile', combo.entryPercentile);
+    setVal('rearmPercentile', combo.rearmPercentile);
+    setVal('signalWindow', combo.signalWindow);
+    setVal('alertModel', Engine.ALERT_MODEL_NET_PROGRESS);
+    setVal('oiRecencyWindow', combo.oiRecencyWindow);
+    setVal('minimumRecentOIChangePct', combo.minimumRecentOIChangePct);
+    const filterEl = document.getElementById('oix-oiRecencyFilterEnabled');
+    if (filterEl) filterEl.checked = combo.oiRecencyFilterEnabled;
+    readSettingsFromForm();
+    runAnalysis({ rawDataOverride: state.rawDataCache });
+  }
+
+  /**
    * Reruns the currently cached raw data through the directional-impulse
    * feature at all three window settings (15m/1h/2h), using every other
    * current Settings value unchanged, so downside/upside chase counts can
@@ -3507,6 +3682,8 @@
 
   Object.assign(OIExhaustionRender, {
     init, runAnalysis, refreshRawData, exportRawDataPack, chooseRawDataPackFile, importRawDataPackFile, runImportedData, diagnoseAlert, dumpRawOI, directionalOiShock, directionalOiImpulse, compareDirectionalImpulseWindows, addZoneRow, removeZone, updateZoneField, readSettingsFromForm,
+    runV2ParameterStudy,
+    applyStudyCombo,
     focusChartOnAlert,
     setChartTimeframe,
     toggleHelpTooltip,

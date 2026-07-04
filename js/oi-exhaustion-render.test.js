@@ -605,51 +605,6 @@ section('sliceRawDataToRange: pure slicing, inclusive boundaries, empty/garbage 
   assert('null arrays -> empty result, no throw', R.sliceRawDataToRange(null, null, 0, 100).binanceCandles.length === 0);
 })();
 
-
-section('rolling completed cache: a one-candle newer request produces a tail-only refresh plan');
-(function () {
-  const step = 15 * 60 * 1000;
-  const day = 24 * 60 * 60 * 1000;
-  const previousEnd = 1000 * day;
-  const requestEnd = previousEnd + step;
-  const requestStart = requestEnd - 30 * day;
-  const entry = { startTime: previousEnd - 30 * day, endTime: previousEnd };
-  const plan = R.buildTailRefreshPlan(entry, requestStart, requestEnd);
-  assert('rolling cache with only a newest tail missing gets a plan', !!plan);
-  assert('tail refresh fetches a small overlap rather than the 30-day window', plan && (plan.fetchEnd - plan.fetchStart) <= (R.CACHE_TAIL_FETCH_OVERLAP_MS + step));
-  assert('retained cache begins before the current requested window', plan && plan.retainStart <= requestStart);
-})();
-
-section('rolling completed cache: head gaps and disjoint ranges are never treated as safe tail refreshes');
-(function () {
-  const day = 24 * 60 * 60 * 1000;
-  assert('head gap returns null', R.buildTailRefreshPlan({ startTime: 10 * day, endTime: 40 * day }, 5 * day, 45 * day) === null);
-  assert('disjoint old cache returns null', R.buildTailRefreshPlan({ startTime: 0, endTime: 5 * day }, 20 * day, 50 * day) === null);
-})();
-
-section('tail-series merge: incoming tail wins at overlap, duplicates are removed, and retention trimming is deterministic');
-(function () {
-  const existing = [{ ts: 0, oi: 1 }, { ts: 10, oi: 2 }, { ts: 20, oi: 3 }];
-  const incoming = [{ ts: 20, oi: 30 }, { ts: 30, oi: 4 }];
-  const merged = R.mergeTimestampSeries(existing, incoming);
-  assert('merged timestamps are unique and ascending', merged.map(x => x.ts).join(',') === '0,10,20,30');
-  assert('fresh tail value wins at timestamp overlap', merged.find(x => x.ts === 20).oi === 30);
-  const trimmed = R.trimTimestampSeries(merged, 10, 30);
-  assert('retention trimming keeps only requested inclusive bounds', trimmed.map(x => x.ts).join(',') === '10,20,30');
-})();
-
-section('tail per-venue merge: each required venue is independently merged and retained');
-(function () {
-  const existing = { a: [{ ts: 0, oi: 1 }, { ts: 10, oi: 2 }], b: [{ ts: 0, oi: 3 }] };
-  const incoming = { a: [{ ts: 10, oi: 20 }, { ts: 20, oi: 30 }], b: [{ ts: 10, oi: 4 }, { ts: 20, oi: 5 }] };
-  const merged = R.mergePerVenueSeries(existing, incoming, ['a', 'b']);
-  assert('venue a merge keeps fresh overlap', merged.a.map(x => x.oi).join(',') === '1,20,30');
-  assert('venue b merge adds tail rows', merged.b.length === 3);
-  const trimmed = R.trimPerVenueSeries(merged, ['a', 'b'], 10, 20);
-  assert('all venues are trimmed to the retained range', trimmed.a.length === 2 && trimmed.b.length === 2);
-})();
-
-
 section('RAW_DATA_CACHE_TTL_MS: default constant is exactly 15 minutes');
 (function () {
   assert('15 * 60 * 1000 ms', R.RAW_DATA_CACHE_TTL_MS === 15 * 60 * 1000);
@@ -1436,6 +1391,87 @@ section('causeBadgeHtml: unknown/missing cause degrades gracefully rather than t
 (function () {
   assert('unknown cause renders as plain text, not a styled badge', !R.causeBadgeHtml('SOMETHING_ELSE').includes('oix-ctx-badge'));
   assert('null cause does not throw and shows a placeholder', R.causeBadgeHtml(null).includes('—'));
+})();
+
+
+section('portable raw-data pack: export/import preserves usable derived data and excludes credentials');
+(function () {
+  const start = 1750000000000;
+  const end = start + 2 * 15 * 60 * 1000;
+  const raw = {
+    startTime: start,
+    endTime: end,
+    lookbackDays: 30,
+    cryptoHftApiKey: 'must-never-export',
+    binanceCandles: [
+      { ts: start, open: 100, high: 102, low: 99, close: 101 },
+      { ts: start + 15 * 60 * 1000, open: 101, high: 104, low: 100, close: 103 },
+      { ts: end, open: 103, high: 105, low: 102, close: 104 },
+    ],
+    oiRows: [
+      { ts: start, oi: 1000 },
+      { ts: start + 15 * 60 * 1000, oi: 1010 },
+      { ts: end, oi: 1020 },
+    ],
+    coverage: { completeBuckets: 3, totalBucketsSeen: 3, venuesSeen: ['binance_futures', 'bybit', 'okx_futures'] },
+  };
+  const pack = R.createRawDataPack(raw);
+  const serialized = JSON.stringify(pack);
+  const imported = R.parseRawDataPack(serialized);
+  assert('pack uses the expected schema and version', pack.schema === R.RAW_DATA_PACK_SCHEMA && pack.version === R.RAW_DATA_PACK_VERSION);
+  assert('pack does not serialize an API key from the raw-cache object', !serialized.includes('must-never-export') && !serialized.includes('cryptoHftApiKey'));
+  assert('import preserves declared coverage range', imported.startTime === start && imported.endTime === end);
+  assert('import preserves Binance candles', imported.binanceCandles.length === 3 && imported.binanceCandles[2].close === 104);
+  assert('import preserves aggregate OI rows', imported.oiRows.length === 3 && imported.oiRows[1].oi === 1010);
+  assert('import marks data as imported-pack', imported.source === 'imported-pack');
+  assert('pack filename is BTCUSDT JSON', R.rawDataPackFilename(raw).startsWith('oix-btcusdt-15m-') && R.rawDataPackFilename(raw).endsWith('.json'));
+})();
+
+section('portable raw-data pack: rejects wrong schema, malformed JSON, and invalid rows');
+(function () {
+  let malformed = false;
+  try { R.parseRawDataPack('{bad json'); } catch (e) { malformed = /valid JSON/.test(e.message); }
+  assert('malformed JSON is rejected clearly', malformed);
+  let wrongSchema = false;
+  try { R.parseRawDataPack({ schema: 'other', version: 1 }); } catch (e) { wrongSchema = /compatible/.test(e.message); }
+  assert('wrong schema is rejected clearly', wrongSchema);
+  let invalidRow = false;
+  try {
+    R.parseRawDataPack({
+      schema: R.RAW_DATA_PACK_SCHEMA,
+      version: R.RAW_DATA_PACK_VERSION,
+      symbol: 'BTCUSDT', bucketMs: R.CHART_INTERVAL_MS,
+      data: { startTime: 1, endTime: 2, binanceCandles: [{ ts: 1, open: 1, high: 1, low: 1, close: 'bad' }], oiRows: [{ ts: 1, oi: 1 }] },
+    });
+  } catch (e) { invalidRow = /invalid Binance candle/.test(e.message); }
+  assert('invalid candle row is rejected', invalidRow);
+})();
+
+section('portable raw-data pack: deduplicates and sorts imported rows without accepting out-of-range data');
+(function () {
+  const t = 1750000000000;
+  const pack = {
+    schema: R.RAW_DATA_PACK_SCHEMA,
+    version: R.RAW_DATA_PACK_VERSION,
+    symbol: 'BTCUSDT', bucketMs: R.CHART_INTERVAL_MS,
+    data: {
+      startTime: t,
+      endTime: t + 15 * 60 * 1000,
+      binanceCandles: [
+        { ts: t + 15 * 60 * 1000, open: 2, high: 3, low: 1, close: 2 },
+        { ts: t, open: 1, high: 2, low: 0.5, close: 1.5 },
+        { ts: t, open: 1, high: 2.1, low: 0.5, close: 1.6 },
+        { ts: t + 30 * 60 * 1000, open: 3, high: 4, low: 2, close: 3 },
+      ],
+      oiRows: [
+        { ts: t + 15 * 60 * 1000, oi: 20 }, { ts: t, oi: 10 }, { ts: t, oi: 11 }, { ts: t + 30 * 60 * 1000, oi: 30 },
+      ],
+    },
+  };
+  const imported = R.parseRawDataPack(pack);
+  assert('out-of-range rows are removed on import', imported.binanceCandles.length === 2 && imported.oiRows.length === 2);
+  assert('remaining rows are sorted ascending', imported.binanceCandles[0].ts === t && imported.oiRows[0].ts === t);
+  assert('duplicate timestamps are deterministically last-write-wins', imported.binanceCandles[0].close === 1.6 && imported.oiRows[0].oi === 11);
 })();
 
 (async () => {

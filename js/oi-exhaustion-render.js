@@ -197,6 +197,106 @@
    */
   const RAW_DATA_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
+
+  // ── Portable raw-data pack (manual export/import fallback) ───────────
+  // This bypasses the expensive CryptoHFT download when the browser cache is
+  // unavailable or unreliable. Packs contain only derived Binance 15m candles
+  // and the final CryptoHFT aggregate OI series used by the backtester — never
+  // API keys, raw Parquet/Zstd payloads, or exchange secrets.
+  const RAW_DATA_PACK_SCHEMA = 'oix-raw-data-pack';
+  const RAW_DATA_PACK_VERSION = 1;
+  const RAW_DATA_PACK_MAX_BYTES = 25 * 1024 * 1024;
+
+  function isFiniteTimestamp(value) {
+    return typeof value === 'number' && isFinite(value) && Number.isInteger(value) && value > 0;
+  }
+
+  function normalizeCandlesForRawDataPack(rows) {
+    if (!Array.isArray(rows) || rows.length === 0) throw new Error('Data pack has no Binance candles.');
+    const byTs = new Map();
+    for (const row of rows) {
+      if (!row || !isFiniteTimestamp(row.ts) || ![row.open, row.high, row.low, row.close].every(v => typeof v === 'number' && isFinite(v))) {
+        throw new Error('Data pack contains an invalid Binance candle.');
+      }
+      byTs.set(row.ts, { ts: row.ts, open: row.open, high: row.high, low: row.low, close: row.close });
+    }
+    return Array.from(byTs.values()).sort((a, b) => a.ts - b.ts);
+  }
+
+  function normalizeOIRowsForRawDataPack(rows) {
+    if (!Array.isArray(rows) || rows.length === 0) throw new Error('Data pack has no aggregate OI rows.');
+    const byTs = new Map();
+    for (const row of rows) {
+      if (!row || !isFiniteTimestamp(row.ts) || typeof row.oi !== 'number' || !isFinite(row.oi)) {
+        throw new Error('Data pack contains an invalid aggregate OI row.');
+      }
+      byTs.set(row.ts, { ts: row.ts, oi: row.oi });
+    }
+    return Array.from(byTs.values()).sort((a, b) => a.ts - b.ts);
+  }
+
+  function createRawDataPack(rawData) {
+    if (!rawData || !isFiniteTimestamp(rawData.startTime) || !isFiniteTimestamp(rawData.endTime) || rawData.startTime > rawData.endTime) {
+      throw new Error('No valid loaded raw data is available to export.');
+    }
+    const binanceCandles = normalizeCandlesForRawDataPack(rawData.binanceCandles);
+    const oiRows = normalizeOIRowsForRawDataPack(rawData.oiRows);
+    return {
+      schema: RAW_DATA_PACK_SCHEMA,
+      version: RAW_DATA_PACK_VERSION,
+      exportedAt: Date.now(),
+      source: 'CryptoHFT major-venue aggregate',
+      symbol: SYMBOL,
+      bucketMs: CRYPTOHFT_BUCKET_MS,
+      data: {
+        startTime: rawData.startTime,
+        endTime: rawData.endTime,
+        lookbackDays: typeof rawData.lookbackDays === 'number' ? rawData.lookbackDays : null,
+        binanceCandles,
+        oiRows,
+        coverage: rawData.coverage || null,
+      },
+    };
+  }
+
+  function parseRawDataPack(input) {
+    let pack = input;
+    if (typeof input === 'string') {
+      try { pack = JSON.parse(input); } catch (err) { throw new Error('Imported file is not valid JSON.'); }
+    }
+    if (!pack || typeof pack !== 'object' || pack.schema !== RAW_DATA_PACK_SCHEMA || pack.version !== RAW_DATA_PACK_VERSION) {
+      throw new Error('This is not a compatible OI raw-data pack.');
+    }
+    if (pack.symbol !== SYMBOL || pack.bucketMs !== CRYPTOHFT_BUCKET_MS || !pack.data || typeof pack.data !== 'object') {
+      throw new Error('This data pack does not match BTCUSDT 15m OI Backtester data.');
+    }
+    const d = pack.data;
+    if (!isFiniteTimestamp(d.startTime) || !isFiniteTimestamp(d.endTime) || d.startTime > d.endTime) {
+      throw new Error('Data pack has an invalid coverage range.');
+    }
+    const binanceCandles = normalizeCandlesForRawDataPack(d.binanceCandles);
+    const oiRows = normalizeOIRowsForRawDataPack(d.oiRows);
+    const inRangeCandles = binanceCandles.filter(c => c.ts >= d.startTime && c.ts <= d.endTime);
+    const inRangeOI = oiRows.filter(r => r.ts >= d.startTime && r.ts <= d.endTime);
+    if (inRangeCandles.length === 0 || inRangeOI.length === 0) throw new Error('Data pack has no usable rows inside its declared coverage range.');
+    return {
+      startTime: d.startTime,
+      endTime: d.endTime,
+      lookbackDays: typeof d.lookbackDays === 'number' ? d.lookbackDays : null,
+      binanceCandles: inRangeCandles,
+      oiRows: inRangeOI,
+      coverage: d.coverage || null,
+      cachedAt: Date.now(),
+      importedAt: Date.now(),
+      source: 'imported-pack',
+    };
+  }
+
+  function rawDataPackFilename(rawData) {
+    const end = rawData && isFiniteTimestamp(rawData.endTime) ? new Date(rawData.endTime).toISOString().slice(0, 10) : 'unknown-date';
+    return `oix-btcusdt-15m-${end}.json`;
+  }
+
   /**
    * Cache hit requires BOTH: matching lookbackDays AND still within the
    * freshness TTL (default 15 minutes) measured from when it was fetched.
@@ -257,70 +357,6 @@
       binanceCandles: candles.filter(c => c && c.ts >= startTime && c.ts <= endTime),
       oiRows: rows.filter(r => r && r.ts >= startTime && r.ts <= endTime),
     };
-  }
-
-
-  // A rolling 30-day request advances by one completed 15m candle at a time.
-  // A complete cache that is only missing that newest tail must be refreshed
-  // incrementally, not thrown away and rebuilt from thousands of raw files.
-  // One hour of overlap is deliberately re-fetched: CryptoHFT paths are
-  // hourly and this makes the boundary robust while merge-by-timestamp keeps
-  // the final stored data deterministic.
-  const CACHE_TAIL_FETCH_OVERLAP_MS = 60 * 60 * 1000;
-  const CACHE_RETENTION_OVERLAP_MS = 60 * 60 * 1000;
-
-  /**
-   * Returns a safe incremental-tail plan when a completed cached entry
-   * overlaps the requested window and is only stale at the newest end.
-   * Returns null for head gaps / disjoint ranges, which still require a full
-   * fetch because they cannot be repaired without risking hidden holes.
-   */
-  function buildTailRefreshPlan(entry, requestedStart, requestedEnd) {
-    if (!entry || typeof entry.startTime !== 'number' || typeof entry.endTime !== 'number') return null;
-    if (!(entry.startTime <= requestedStart && entry.endTime < requestedEnd && entry.endTime >= requestedStart)) return null;
-    return {
-      fetchStart: Math.max(requestedStart, entry.endTime - CACHE_TAIL_FETCH_OVERLAP_MS),
-      fetchEnd: requestedEnd,
-      // Retain a small overlap before the current requested window so the
-      // next completed 15m candle remains a tail refresh rather than a miss.
-      retainStart: Math.max(entry.startTime, requestedStart - CACHE_RETENTION_OVERLAP_MS),
-      retainEnd: requestedEnd,
-    };
-  }
-
-  /** Merge timestamped rows, with fresh incoming values winning at overlap. */
-  function mergeTimestampSeries(existingRows, incomingRows) {
-    const byTs = new Map();
-    for (const row of (Array.isArray(existingRows) ? existingRows : [])) {
-      if (row && typeof row.ts === 'number' && isFinite(row.ts)) byTs.set(row.ts, row);
-    }
-    for (const row of (Array.isArray(incomingRows) ? incomingRows : [])) {
-      if (row && typeof row.ts === 'number' && isFinite(row.ts)) byTs.set(row.ts, row);
-    }
-    return Array.from(byTs.values()).sort((a, b) => a.ts - b.ts);
-  }
-
-  function trimTimestampSeries(rows, startTime, endTime) {
-    return (Array.isArray(rows) ? rows : []).filter(row => row && row.ts >= startTime && row.ts <= endTime);
-  }
-
-  function mergePerVenueSeries(existingPerVenueOI, incomingPerVenueOI, venues) {
-    const out = {};
-    for (const venue of (Array.isArray(venues) ? venues : [])) {
-      out[venue] = mergeTimestampSeries(
-        existingPerVenueOI && existingPerVenueOI[venue],
-        incomingPerVenueOI && incomingPerVenueOI[venue]
-      );
-    }
-    return out;
-  }
-
-  function trimPerVenueSeries(perVenueOI, venues, startTime, endTime) {
-    const out = {};
-    for (const venue of (Array.isArray(venues) ? venues : [])) {
-      out[venue] = trimTimestampSeries(perVenueOI && perVenueOI[venue], startTime, endTime);
-    }
-    return out;
   }
 
   // Binance's openInterestHist only retains ~30 days of history and 400s
@@ -1209,15 +1245,14 @@
     getCachedRawData,
     cacheContainsRange,
     sliceRawDataToRange,
-    CACHE_TAIL_FETCH_OVERLAP_MS,
-    CACHE_RETENTION_OVERLAP_MS,
-    buildTailRefreshPlan,
-    mergeTimestampSeries,
-    trimTimestampSeries,
-    mergePerVenueSeries,
-    trimPerVenueSeries,
     BINANCE_OI_MAX_LOOKBACK_MS,
     computeBinanceOIReferenceRange,
+    RAW_DATA_PACK_SCHEMA,
+    RAW_DATA_PACK_VERSION,
+    RAW_DATA_PACK_MAX_BYTES,
+    createRawDataPack,
+    parseRawDataPack,
+    rawDataPackFilename,
     safeNumber,
     safeUtcDateString,
     fetchBybitOI,
@@ -1285,6 +1320,7 @@
     lastRunAt: null, // Date.now() of the last SUCCESSFUL run, for the stale-results banner
     lastRunFailed: false, // true when the most recent attempt failed — results shown (if any) are from an earlier run
     rawDataCache: null, // { lookbackDays, startTime, endTime, oiRows, binanceCandles, coverage, cachedAt }
+    importedDataPack: null, // manually imported portable raw-data pack; never auto-fetched or persisted
     chart: { instance: null, timeframe: '15m', displayIndex: null, markerGroups: [], focusTooltipHideTimer: null },
     // Binance native OI — external reference layer ONLY. Deliberately its
     // own top-level state key, never touched by anything under
@@ -1450,6 +1486,7 @@
   async function runAnalysis(opts) {
     opts = opts || {};
     const forceRefresh = opts.forceRefresh === true;
+    const rawDataOverride = opts.rawDataOverride || null;
     readSettingsFromForm();
     const s = state.settings;
     const runBtn = document.getElementById('oix-run-btn');
@@ -1458,12 +1495,12 @@
     if (refreshBtn) refreshBtn.disabled = true;
 
     try {
-      if (!s.cryptoHftApiKey) {
-        throw new Error('CryptoHFTData API key is required — enter it in Parameters before running.');
+      if (!rawDataOverride && !s.cryptoHftApiKey) {
+        throw new Error('CryptoHFTData API key is required — enter it in Parameters before running, or import a raw-data pack.');
       }
 
-      const endTime = latestCompletedCandleStart(Date.now());
-      const startTime = endTime - s.lookbackDays * 24 * 3600 * 1000;
+      const endTime = rawDataOverride ? rawDataOverride.endTime : latestCompletedCandleStart(Date.now());
+      const startTime = rawDataOverride ? rawDataOverride.startTime : endTime - s.lookbackDays * 24 * 3600 * 1000;
 
       const progress = (evt) => {
         if (evt.type === 'rate_limited') {
@@ -1480,6 +1517,12 @@
       };
 
       let oiRows, binanceCandles, coverage;
+      if (rawDataOverride) {
+        oiRows = rawDataOverride.oiRows;
+        binanceCandles = rawDataOverride.binanceCandles;
+        coverage = rawDataOverride.coverage || null;
+        setStatus(`<span style="color:var(--teal);">Using imported raw-data pack.</span> ${safeUtcDateString(startTime)} → ${safeUtcDateString(endTime)} &middot; ${safeNumber(oiRows.length)} OI buckets / ${safeNumber(binanceCandles.length)} candles &middot; no CryptoHFT fetch.`);
+      } else {
       const memCached = forceRefresh ? null : getCachedRawData(state.rawDataCache, startTime, endTime);
 
       if (memCached) {
@@ -1539,137 +1582,71 @@
             `${safeNumber(oiRows.length)} OI buckets / ${safeNumber(binanceCandles.length)} candles.`
           );
         } else {
-          // A rolling request normally differs from the previous completed
-          // cache by only its newest 15m tail. Repair that tail incrementally
-          // instead of discarding 30 days of valid downloaded data.
-          const tailPlan = idbEntryIsComplete
-            ? buildTailRefreshPlan(idbEntry, startTime, endTime)
-            : null;
+          // Nothing usable is cached for this exact request. A COMPLETE
+          // entry that exists but doesn't contain the requested range
+          // (e.g. a wider request than what's cached) is a mismatched
+          // range, not a partial fetch of THIS range — it must never be
+          // treated as "resumable" for a different window, which would
+          // silently merge two unrelated date ranges. Resuming an
+          // in-progress entry only applies when its own stored
+          // startTime/endTime exactly match the current request.
+          const resumableEntry = (idbEntry && !idbEntryIsComplete && idbEntry.startTime === startTime && idbEntry.endTime === endTime)
+            ? idbEntry : null;
+          const resuming = resumableEntry && (IdbCache.completedVenues(resumableEntry, CRYPTOHFT_REQUIRED_VENUES).length > 0 ||
+            (Array.isArray(resumableEntry.binanceCandles) && resumableEntry.binanceCandles.length > 0));
+          setStatus(resuming
+            ? 'Fetching missing data — resuming a previously interrupted pull, already-completed venues will not be re-fetched…'
+            : 'Fetching missing data — this is a fresh dataset, first pull may take a while…');
 
-          if (tailPlan) {
-            const tailMinutes = Math.max(1, Math.round((tailPlan.fetchEnd - tailPlan.fetchStart) / 60000));
-            setStatus(
-              `<span style="color:var(--teal);">Refreshing newest cached tail only.</span> ` +
-              `Keeping prior coverage and fetching approximately ${tailMinutes} min of overlap/new data — no full CryptoHFT re-download.`
-            );
+          const workingEntry = resumableEntry || IdbCache.makeEmptyEntry(idbKey, { lookbackDays: s.lookbackDays, startTime, endTime });
+          try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal — proceeds without persistence if IDB write fails */ }
 
-            // Fetch a deliberately overlapping tail as a fresh mini-pull.
-            // Do not mutate the complete entry until every venue succeeds;
-            // an interrupted tail refresh must leave the last known-good
-            // complete cache intact.
-            const [tailCandles, tailCryptoHftResult] = await Promise.all([
-              fetchBinanceCandles(tailPlan.fetchStart, tailPlan.fetchEnd, {
-                onProgress: progress,
-                pageDelayMs: BINANCE_PAGE_DELAY_MS,
-              }),
-              fetchCryptoHFTAggregateOI(tailPlan.fetchStart, tailPlan.fetchEnd, s.cryptoHftApiKey, {
-                onProgress: progress,
-                decodeZst: decodeZstBrowser,
-                parseParquet: parseParquetBrowser,
-              }),
-            ]);
-
-            const mergedCandles = trimTimestampSeries(
-              mergeTimestampSeries(idbEntry.binanceCandles, tailCandles),
-              tailPlan.retainStart,
-              tailPlan.retainEnd
-            );
-            const mergedPerVenueOI = trimPerVenueSeries(
-              mergePerVenueSeries(idbEntry.perVenueOI, tailCryptoHftResult.perVenueOI, CRYPTOHFT_REQUIRED_VENUES),
-              CRYPTOHFT_REQUIRED_VENUES,
-              tailPlan.retainStart,
-              tailPlan.retainEnd
-            );
-            const mergedOiRows = CryptoHFTSource.aggregateFromPerVenueBuckets(mergedPerVenueOI, CRYPTOHFT_REQUIRED_VENUES);
-            const mergedCoverage = CryptoHFTSource.summarizeBucketCoverageFromPerVenue(mergedPerVenueOI, CRYPTOHFT_REQUIRED_VENUES);
-
-            if (mergedOiRows.length === 0 || mergedCandles.length === 0) {
-              throw new Error(
-                `Tail refresh returned zero usable rows — aggregate OI buckets: ${mergedOiRows.length}, Binance candles: ${mergedCandles.length}. ` +
-                `The prior completed cache was left unchanged.`
-              );
-            }
-
-            // Persist a bounded rolling window. Retaining one hour before the
-            // current requested start means the next completed candle can be
-            // fetched as another small tail rather than forcing a full pull.
-            idbEntry.perVenueOI = mergedPerVenueOI;
-            idbEntry.binanceCandles = mergedCandles;
-            idbEntry.aggregateOI = mergedOiRows;
-            idbEntry.coverage = mergedCoverage;
-            idbEntry.status = 'complete';
-            idbEntry.lookbackDays = Math.max(Number(idbEntry.lookbackDays) || 0, s.lookbackDays);
-            idbEntry.startTime = tailPlan.retainStart;
-            idbEntry.endTime = tailPlan.retainEnd;
-            idbEntry.updatedAt = Date.now();
-            try { await IdbCache.putCacheEntry(idbEntry); } catch (e) { /* non-fatal for this run */ }
-
-            const sliced = sliceRawDataToRange(mergedCandles, mergedOiRows, startTime, endTime);
-            binanceCandles = sliced.binanceCandles;
-            oiRows = sliced.oiRows;
-            coverage = mergedCoverage;
-            setStatus(
-              `<span style="color:var(--teal);">Cached tail refreshed.</span> ` +
-              `Fetched only ${tailMinutes} min of new/overlap data; serving ${safeNumber(oiRows.length)} OI buckets / ${safeNumber(binanceCandles.length)} candles.`
-            );
+          if (Array.isArray(workingEntry.binanceCandles) && workingEntry.binanceCandles.length > 0) {
+            binanceCandles = workingEntry.binanceCandles;
           } else {
-            // No safely reusable tail exists. Resume an interrupted entry
-            // only when its requested range is exactly the current request;
-            // otherwise fetch cleanly rather than merge unrelated windows.
-            const resumableEntry = (idbEntry && !idbEntryIsComplete && idbEntry.startTime === startTime && idbEntry.endTime === endTime)
-              ? idbEntry : null;
-            const resuming = resumableEntry && (IdbCache.completedVenues(resumableEntry, CRYPTOHFT_REQUIRED_VENUES).length > 0 ||
-              (Array.isArray(resumableEntry.binanceCandles) && resumableEntry.binanceCandles.length > 0));
-            setStatus(resuming
-              ? 'Fetching missing data — resuming a previously interrupted pull, already-completed venues will not be re-fetched…'
-              : 'Fetching missing data — this is a fresh dataset, first pull may take a while…');
-
-            const workingEntry = resumableEntry || IdbCache.makeEmptyEntry(idbKey, { lookbackDays: s.lookbackDays, startTime, endTime });
-            try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal — proceeds without persistence if IDB write fails */ }
-
-            if (Array.isArray(workingEntry.binanceCandles) && workingEntry.binanceCandles.length > 0) {
-              binanceCandles = workingEntry.binanceCandles;
-            } else {
-              binanceCandles = await fetchBinanceCandles(startTime, endTime, { onProgress: progress, pageDelayMs: BINANCE_PAGE_DELAY_MS });
-              workingEntry.binanceCandles = binanceCandles;
-              try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal */ }
-            }
-
-            const cryptoHftResult = await fetchCryptoHFTAggregateOI(startTime, endTime, s.cryptoHftApiKey, {
-              onProgress: progress,
-              decodeZst: decodeZstBrowser,
-              parseParquet: parseParquetBrowser,
-              existingPerVenueOI: workingEntry.perVenueOI || {},
-              onVenueComplete: async (venue, bucketed) => {
-                workingEntry.perVenueOI[venue] = bucketed;
-                try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal — this venue's work is still in memory for this run */ }
-              },
-            });
-            oiRows = cryptoHftResult.oiRows;
-            coverage = cryptoHftResult.coverage;
-
-            if (oiRows.length === 0 || binanceCandles.length === 0) {
-              throw new Error(
-                `Zero usable rows returned — CryptoHFT aggregate buckets: ${oiRows.length}, Binance candles: ${binanceCandles.length}. ` +
-                `Raw rows collected this run: ${cryptoHftResult.rawRowCount}, complete buckets: ${coverage.completeBuckets}/${coverage.totalBucketsSeen} seen, ` +
-                `venues seen: ${coverage.venuesSeen.join(', ') || 'none'}. Aborting rather than running on partial data — the cache entry stays marked incomplete, so nothing invalid can be reused.`
-              );
-            }
-
-            workingEntry.aggregateOI = oiRows;
-            workingEntry.coverage = coverage;
-            workingEntry.status = 'complete';
-            workingEntry.startTime = startTime;
-            workingEntry.endTime = endTime;
-            try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal for this run, but future reruns won't get the cache benefit */ }
-            setStatus(`<span style="color:var(--teal);">Cached dataset complete.</span> ${safeNumber(oiRows.length)} OI buckets / ${safeNumber(binanceCandles.length)} candles saved for instant reruns.`);
+            binanceCandles = await fetchBinanceCandles(startTime, endTime, { onProgress: progress, pageDelayMs: BINANCE_PAGE_DELAY_MS });
+            workingEntry.binanceCandles = binanceCandles;
+            try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal */ }
           }
+
+          const cryptoHftResult = await fetchCryptoHFTAggregateOI(startTime, endTime, s.cryptoHftApiKey, {
+            onProgress: progress,
+            decodeZst: decodeZstBrowser,
+            parseParquet: parseParquetBrowser,
+            existingPerVenueOI: workingEntry.perVenueOI || {},
+            onVenueComplete: async (venue, bucketed) => {
+              workingEntry.perVenueOI[venue] = bucketed;
+              try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal — this venue's work is still in memory for this run */ }
+            },
+          });
+          oiRows = cryptoHftResult.oiRows;
+          coverage = cryptoHftResult.coverage;
+
+          if (oiRows.length === 0 || binanceCandles.length === 0) {
+            throw new Error(
+              `Zero usable rows returned — CryptoHFT aggregate buckets: ${oiRows.length}, Binance candles: ${binanceCandles.length}. ` +
+              `Raw rows collected this run: ${cryptoHftResult.rawRowCount}, complete buckets: ${coverage.completeBuckets}/${coverage.totalBucketsSeen} seen, ` +
+              `venues seen: ${coverage.venuesSeen.join(', ') || 'none'}. Aborting rather than running on partial data — the cache entry stays marked incomplete, so nothing invalid can be reused.`
+            );
+          }
+
+          workingEntry.aggregateOI = oiRows;
+          workingEntry.coverage = coverage;
+          workingEntry.status = 'complete';
+          workingEntry.startTime = startTime;
+          workingEntry.endTime = endTime;
+          try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal for this run, but future reruns won't get the cache benefit */ }
+          setStatus(`<span style="color:var(--teal);">Cached dataset complete.</span> ${safeNumber(oiRows.length)} OI buckets / ${safeNumber(binanceCandles.length)} candles saved for instant reruns.`);
         }
 
         // Populate the in-memory (session) cache too, for the fastest
         // possible immediate rerun — unchanged fast path.
         state.rawDataCache = { lookbackDays: s.lookbackDays, startTime, endTime, oiRows, binanceCandles, coverage, cachedAt: Date.now() };
       }
+      }
+
+      state.rawDataCache = { lookbackDays: s.lookbackDays, startTime, endTime, oiRows, binanceCandles, coverage, cachedAt: rawDataOverride ? (rawDataOverride.importedAt || Date.now()) : Date.now() };
+      updateRawDataPackControls();
 
       const zones = state.zones.map(normalizeZone).filter(z => isFinite(z.top) && isFinite(z.bottom));
 
@@ -2492,6 +2469,7 @@
     renderSettingsForm();
     renderZoneEditor();
     renderStaleBanner();
+    updateRawDataPackControls();
     setStatus('Not yet run. Configure zones/parameters above, then Fetch data &amp; run analysis.');
 
     // Help tooltip system: click outside any "?" icon, or Escape, closes
@@ -2502,6 +2480,73 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') closeAllHelpTooltips();
     });
+  }
+
+  function updateRawDataPackControls() {
+    const exportBtn = document.getElementById('oix-export-data-pack-btn');
+    const runImportedBtn = document.getElementById('oix-run-imported-pack-btn');
+    const importStatus = document.getElementById('oix-import-data-pack-status');
+    if (exportBtn) exportBtn.disabled = !state.rawDataCache;
+    if (runImportedBtn) runImportedBtn.disabled = !state.importedDataPack;
+    if (importStatus) {
+      if (state.importedDataPack) {
+        importStatus.textContent = `Imported pack ready: ${safeUtcDateString(state.importedDataPack.startTime)} → ${safeUtcDateString(state.importedDataPack.endTime)}. Run it without fetching.`;
+        importStatus.style.color = 'var(--teal)';
+      } else {
+        importStatus.textContent = 'Export a completed run once, then import that file later to rerun it without downloading CryptoHFT data.';
+        importStatus.style.color = 'var(--text-faint)';
+      }
+    }
+  }
+
+  function exportRawDataPack() {
+    try {
+      if (!state.rawDataCache) throw new Error('Run an analysis first. There is no loaded raw dataset to export yet.');
+      const pack = createRawDataPack(state.rawDataCache);
+      const blob = new Blob([JSON.stringify(pack)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = rawDataPackFilename(state.rawDataCache);
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      setStatus(`<span style="color:var(--teal);">Raw-data pack exported.</span> It contains the loaded BTCUSDT 15m price + CryptoHFT aggregate OI only — no API key or raw exchange files.`);
+    } catch (err) {
+      setStatus(`<span style="color:var(--red);">Export failed:</span> ${escapeHtml(err && err.message ? err.message : String(err))}`);
+    }
+  }
+
+  function chooseRawDataPackFile() {
+    const input = document.getElementById('oix-import-data-pack-file');
+    if (input) input.click();
+  }
+
+  async function importRawDataPackFile(input) {
+    const file = input && input.files && input.files[0];
+    if (!file) return;
+    try {
+      if (file.size > RAW_DATA_PACK_MAX_BYTES) throw new Error('Imported data pack is too large.');
+      const parsed = parseRawDataPack(await file.text());
+      state.importedDataPack = parsed;
+      updateRawDataPackControls();
+      setStatus(`<span style="color:var(--teal);">Imported raw-data pack.</span> Click “Run imported data” to analyse it without fetching CryptoHFT data.`);
+    } catch (err) {
+      state.importedDataPack = null;
+      updateRawDataPackControls();
+      setStatus(`<span style="color:var(--red);">Import failed:</span> ${escapeHtml(err && err.message ? err.message : String(err))}`);
+    } finally {
+      if (input) input.value = '';
+    }
+  }
+
+  function runImportedData() {
+    if (!state.importedDataPack) {
+      setStatus('<span style="color:var(--amber);">No imported data pack is selected.</span>');
+      return Promise.resolve();
+    }
+    return runAnalysis({ rawDataOverride: state.importedDataPack });
   }
 
   function refreshRawData() {
@@ -3103,7 +3148,7 @@
   }
 
   Object.assign(OIExhaustionRender, {
-    init, runAnalysis, refreshRawData, diagnoseAlert, dumpRawOI, directionalOiShock, directionalOiImpulse, compareDirectionalImpulseWindows, addZoneRow, removeZone, updateZoneField, readSettingsFromForm,
+    init, runAnalysis, refreshRawData, exportRawDataPack, chooseRawDataPackFile, importRawDataPackFile, runImportedData, diagnoseAlert, dumpRawOI, directionalOiShock, directionalOiImpulse, compareDirectionalImpulseWindows, addZoneRow, removeZone, updateZoneField, readSettingsFromForm,
     focusChartOnAlert,
     setChartTimeframe,
     toggleHelpTooltip,

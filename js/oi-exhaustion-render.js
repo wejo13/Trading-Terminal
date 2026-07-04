@@ -1145,9 +1145,19 @@
     const list = Array.isArray(displayCandles) ? displayCandles : [];
     const series = Array.isArray(binanceOISeries) ? binanceOISeries : [];
     const isLineSeries = timeframe === '15m';
+    // Alignment tolerance: Binance's own reading timestamps are floored to
+    // the explicit 15m bucket grid this feature displays on (or the
+    // coarser display bucket for 1h/2h/4h/1d, whose series timestamps are
+    // already bucket starts). Chart-alignment key ONLY — the fetched rows
+    // and everything shown in the status line keep Binance's original,
+    // untouched timestamps. Deliberately NOT nearest-time matching: a
+    // reading can only land in the bucket it belongs to, never a neighbor.
+    const bucketMs = CHART_INTERVAL_MS;
     const index = new Map();
     for (const pt of series) {
-      const key = isLineSeries ? pt.ts : pt.timestamp;
+      const rawKey = isLineSeries ? pt.ts : pt.timestamp;
+      if (typeof rawKey !== 'number' || !isFinite(rawKey)) continue;
+      const key = isLineSeries ? Math.floor(rawKey / bucketMs) * bucketMs : rawKey;
       index.set(key, pt);
     }
     return list.map(c => {
@@ -1158,6 +1168,14 @@
         : { close: match.close, high: match.high, low: match.low };
       return Object.assign({}, c, { binanceOI });
     });
+  }
+
+  /** How many display candles carry a non-null merged Binance OI reading — the single number that says whether the reference series actually reached the renderer. Pure. */
+  function countBinanceOIOverlap(displayCandles) {
+    const list = Array.isArray(displayCandles) ? displayCandles : [];
+    let n = 0;
+    for (const c of list) if (c && c.binanceOI != null) n++;
+    return n;
   }
 
   // ── Help tooltip ("?") system — shared across Parameters & Zones ────────
@@ -1368,6 +1386,7 @@
     buildDisplayCandleIndex,
     findDisplayCandleForAlert,
     mergeBinanceOIOntoDisplayCandles,
+    countBinanceOIOverlap,
     nextHelpTooltipState,
     createOverlaySafely,
     // Fetch reliability — exported for Node testing (all dependency-injected,
@@ -1474,6 +1493,7 @@
     binanceOI: {
       enabled: false, rawRows: null, fetching: false, error: null, rangeStart: null, rangeEnd: null,
       visibleStart: null, visibleEnd: null, effectiveStart: null, effectiveEnd: null, wasClamped: false,
+      lastOverlapCount: null,
     },
   };
 
@@ -2330,9 +2350,17 @@
     if (b.error) { el.innerHTML = `<span style="color:var(--red);">Binance OI reference fetch failed: ${escapeHtml(b.error)}</span>` + debugLine; return; }
     if (!b.rawRows || !b.rawRows.length) { el.innerHTML = '<span style="color:var(--text-faint);">No Binance OI reference data loaded yet.</span>' + debugLine; return; }
     const cov = BinanceOISource.computeBinanceOICoverage(b.rawRows);
+    const parsed = BinanceOISource.normalizeBinanceOpenInterestRows(b.rawRows);
+    const latest = parsed.length ? parsed[parsed.length - 1] : null;
+    const latestLine = latest
+      ? ` &middot; latest: ${safeNumber(Math.round(latest.oi))} @ ${safeUtcDateString(latest.ts)}`
+      : '';
+    const overlapLine = b.lastOverlapCount === 0
+      ? ` &middot; <span style="color:var(--amber);">0 candles on the current chart overlap this data — pane will be empty (range mismatch)</span>`
+      : (b.lastOverlapCount != null ? ` &middot; ${safeNumber(b.lastOverlapCount)} chart candles aligned` : '');
     el.innerHTML = `Binance OI reference: ${safeNumber(cov.barCount)} bars &middot; ` +
       `${safeUtcDateString(cov.startTime)} &rarr; ${safeUtcDateString(cov.endTime)} &middot; ` +
-      `${safeNumber(cov.missingBars)} missing bars (no forward-fill — gaps are real)` + debugLine;
+      `${safeNumber(cov.missingBars)} missing bars (no forward-fill — gaps are real)` + latestLine + overlapLine + debugLine;
   }
 
   /** Fetches the Binance OI reference series for the currently loaded price range (capped to Binance's own ~30-day retention). External reference only — never touches state.lastRun, the IndexedDB cache, or anything scoring-related. */
@@ -2367,8 +2395,8 @@
       console.error('[Binance OI reference] fetch failed:', err);
     } finally {
       b.fetching = false;
+      applyChartData(); // sets lastOverlapCount — must run before the status line renders it
       renderBinanceOIStatus();
-      applyChartData();
     }
   }
 
@@ -2426,27 +2454,59 @@
       // series already loaded, which is what keeps the two panes in sync
       // for free. Attaching a null-filled field when disabled/unavailable
       // is harmless — the indicator simply draws nothing for those points.
+      let binanceOIOverlapCount = 0;
+      let binanceOIPaneStatus = 'disabled';
       const binanceOIState = state.binanceOI;
       if (binanceOIState.enabled && binanceOIState.rawRows && binanceOIState.rawRows.length) {
         const binanceOISeries = BinanceOISource.buildBinanceOIDisplaySeries(binanceOIState.rawRows, timeframe);
         displayCandles = mergeBinanceOIOntoDisplayCandles(displayCandles, binanceOISeries, timeframe);
+        binanceOIOverlapCount = countBinanceOIOverlap(displayCandles);
       }
+      binanceOIState.lastOverlapCount = binanceOIOverlapCount;
 
       chart.applyNewData(displayCandles);
 
       if (binanceOIState.enabled) {
         ensureBinanceOIIndicatorRegistered();
         try {
+          // getIndicatorByPaneId(paneId) returns a Map (name -> instance)
+          // in KLineCharts 9.8.10 — Object.keys() on a Map is always [],
+          // so the previous check never detected the existing indicator.
           const existing = chart.getIndicatorByPaneId ? chart.getIndicatorByPaneId(BINANCE_OI_PANE_ID) : null;
-          const hasIndicator = existing && (Array.isArray(existing) ? existing.length > 0 : Object.keys(existing).length > 0);
+          const hasIndicator = !!existing && (
+            (existing instanceof Map && existing.size > 0) ||
+            (Array.isArray(existing) && existing.length > 0) ||
+            (!(existing instanceof Map) && !Array.isArray(existing) && typeof existing === 'object' && Object.keys(existing).length > 0)
+          );
           if (!hasIndicator) {
-            chart.createIndicator({ name: BINANCE_OI_INDICATOR_NAME, id: BINANCE_OI_INDICATOR_NAME }, false, { id: BINANCE_OI_PANE_ID, height: 140 });
+            // createIndicator returns the pane id on success and null on
+            // failure (e.g. the indicator name isn't registered) — a null
+            // here was previously invisible.
+            const createdPaneId = chart.createIndicator({ name: BINANCE_OI_INDICATOR_NAME, id: BINANCE_OI_INDICATOR_NAME }, false, { id: BINANCE_OI_PANE_ID, height: 140 });
+            if (createdPaneId == null) {
+              binanceOIPaneStatus = 'create_failed_returned_null';
+              chartError('createIndicator(OIX_BINANCE_OI_REF)', new Error('createIndicator returned null — indicator not registered or pane creation rejected'));
+            } else {
+              binanceOIPaneStatus = 'created:' + createdPaneId;
+            }
           } else {
+            binanceOIPaneStatus = 'already_present';
             chart.overrideIndicator({ name: BINANCE_OI_INDICATOR_NAME, id: BINANCE_OI_INDICATOR_NAME }, BINANCE_OI_PANE_ID);
           }
         } catch (err) {
+          binanceOIPaneStatus = 'threw:' + (err.message || String(err));
           chartError('createIndicator(OIX_BINANCE_OI_REF)', err);
         }
+        // The one concise diagnostic for this feature: everything needed
+        // to see whether data reached the renderer, and why not if not.
+        console.log('[Binance OI reference] render', {
+          enabled: true,
+          fetchedRows: binanceOIState.rawRows ? binanceOIState.rawRows.length : 0,
+          overlapCount: binanceOIOverlapCount,
+          displayCandles: displayCandles.length,
+          timeframe,
+          pane: binanceOIPaneStatus,
+        });
       } else {
         try { chart.removeIndicator(BINANCE_OI_PANE_ID); } catch (err) { /* pane may not exist yet — non-fatal */ }
       }

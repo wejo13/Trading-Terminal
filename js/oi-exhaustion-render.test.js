@@ -1098,8 +1098,9 @@ section('findDisplayCandleForAlert: correctly places an alert on its containing 
 
 section('mergeBinanceOIOntoDisplayCandles(15m): attaches degenerate {close,high,low} from the {ts,value} line series');
 (function () {
-  const displayCandles = [{ timestamp: 1000 }, { timestamp: 2000 }, { timestamp: 3000 }];
-  const binanceSeries = [{ ts: 1000, value: 50 }, { ts: 2000, value: 55 }];
+  const M15 = 15 * 60 * 1000;
+  const displayCandles = [{ timestamp: 0 }, { timestamp: M15 }, { timestamp: 2 * M15 }];
+  const binanceSeries = [{ ts: 0, value: 50 }, { ts: M15, value: 55 }];
   const merged = R.mergeBinanceOIOntoDisplayCandles(displayCandles, binanceSeries, '15m');
   assert('matched candle gets close/high/low all equal to the single reading', merged[0].binanceOI.close === 50 && merged[0].binanceOI.high === 50 && merged[0].binanceOI.low === 50);
   assert('second matched candle correct', merged[1].binanceOI.close === 55);
@@ -1658,6 +1659,52 @@ section('staging cache #4: a pending entry NEVER causes a valid completed entry 
   assert('staging resume used only when main cannot serve and range matches exactly', d2.action === 'resume' && d2.source === 'staging');
   const d3 = R.resolveCryptoHFTCacheDecision(null, false, { key: 'k_staging', status: 'pending', startTime: 500, endTime: 2500 }, 400, 2500);
   assert('non-matching staging range falls to full_fetch, never a bogus resume', d3.action === 'full_fetch');
+})();
+
+// ── Binance OI reference: tolerant 15m bucket alignment ──────────────────
+
+section('mergeBinanceOIOntoDisplayCandles: already-aligned 15m Binance timestamps merge unchanged (floor is the identity)');
+(function () {
+  const M15 = 15 * 60 * 1000;
+  const t = Math.floor(1750000000000 / M15) * M15;
+  const candles = [{ timestamp: t }, { timestamp: t + M15 }];
+  const series = [{ ts: t, value: 100 }, { ts: t + M15, value: 200 }];
+  const merged = R.mergeBinanceOIOntoDisplayCandles(candles, series, '15m');
+  assert('both aligned readings merged', merged[0].binanceOI.close === 100 && merged[1].binanceOI.close === 200);
+  assert('overlap count is 2', R.countBinanceOIOverlap(merged) === 2);
+})();
+
+section('mergeBinanceOIOntoDisplayCandles: an UNALIGNED Binance timestamp is floored to its 15m bucket for chart alignment (the pane is no longer silently empty)');
+(function () {
+  const M15 = 15 * 60 * 1000;
+  const t = Math.floor(1750000000000 / M15) * M15;
+  const candles = [{ timestamp: t }, { timestamp: t + M15 }];
+  // e.g. stamped at :14:59.999 inside the bucket — must land in bucket t, not vanish
+  const series = [{ ts: t + M15 - 1, value: 111 }];
+  const merged = R.mergeBinanceOIOntoDisplayCandles(candles, series, '15m');
+  assert('unaligned reading floored into its own bucket', merged[0].binanceOI && merged[0].binanceOI.close === 111);
+  assert('neighboring bucket stays null (floor, NOT nearest-time matching)', merged[1].binanceOI === null);
+})();
+
+section('mergeBinanceOIOntoDisplayCandles: zero overlap produces all-null merges and countBinanceOIOverlap reports 0 (explicit no-overlap diagnostic input)');
+(function () {
+  const M15 = 15 * 60 * 1000;
+  const t = Math.floor(1750000000000 / M15) * M15;
+  const candles = [{ timestamp: t }, { timestamp: t + M15 }];
+  const series = [{ ts: t - 10 * M15, value: 5 }]; // entirely outside the chart range
+  const merged = R.mergeBinanceOIOntoDisplayCandles(candles, series, '15m');
+  assert('no candle got a reading', merged.every(c => c.binanceOI === null));
+  assert('overlap count is 0', R.countBinanceOIOverlap(merged) === 0);
+})();
+
+section('mergeBinanceOIOntoDisplayCandles: 1h OHLC series still matches by bucket-start timestamp exactly (unchanged behavior)');
+(function () {
+  const H1 = 60 * 60 * 1000;
+  const t = Math.floor(1750000000000 / H1) * H1;
+  const candles = [{ timestamp: t }];
+  const series = [{ timestamp: t, open: 1, high: 4, low: 0.5, close: 3 }];
+  const merged = R.mergeBinanceOIOntoDisplayCandles(candles, series, '1h');
+  assert('OHLC bucket merged onto matching display candle', merged[0].binanceOI.close === 3 && merged[0].binanceOI.high === 4 && merged[0].binanceOI.low === 0.5);
 })();
 
 (async () => {

@@ -2712,10 +2712,19 @@
             </div>
           </div>
           <div id="oix-price-chart-wrap" style="position:relative;overflow:hidden;border-radius:6px;background:#0a090f;">
-            <div id="oix-price-canvas" style="width:100%;height:340px;"></div>
+            <div id="oix-price-canvas" style="width:100%;height:480px;"></div>
             <div id="oix-chart-tooltip" style="display:none;position:absolute;background:var(--card);border:0.5px solid var(--line-old);border-radius:6px;padding:8px 10px;font-size:11px;color:var(--text);pointer-events:none;z-index:10;min-width:160px;"></div>
           </div>
           <div id="oix-chart-marker-diag" style="margin-top:8px;font-size:11px;color:var(--text-faint);"></div>
+          <div style="margin-top:12px;padding-top:12px;border-top:0.5px solid var(--line-old);display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-dim);cursor:pointer;">
+              <input type="checkbox" id="oix-binanceOIReferenceEnabled" onchange="OIExhaustionRender.toggleBinanceOIReference()" style="width:auto;">
+              Binance Futures native OI reference &middot; official exchange API
+            </label>
+            <span style="font-size:10.5px;color:var(--text-faint);">(external reference only — not strategy input; does not affect V1, V2, directional OI chase, zones, cache, or backtest results)</span>
+            <span style="font-size:10.5px;color:var(--text-faint);">&middot; 1H/2H/4H/1D shown as OI close with high/low range, not literal OI candlesticks</span>
+          </div>
+          <div id="oix-binance-oi-status" style="margin-top:4px;font-size:11px;color:var(--text-faint);"></div>
         </div>
 
         <!-- Results -->
@@ -3322,6 +3331,7 @@
 <script src="js/oi-exhaustion-backtest.js"></script>
 <script src="js/oi-exhaustion-cryptohft-source.js"></script>
 <script src="js/oi-exhaustion-idb-cache.js"></script>
+<script src="js/oi-exhaustion-binance-oi-source.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/fzstd@0.1.1/umd/index.js"></script>
 <script>window.__oixChartLibAttempts = [];</script>
 <script src="js/vendor/klinecharts-9.8.10.min.js"></script>

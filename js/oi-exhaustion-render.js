@@ -919,6 +919,22 @@
     return `Chart markers: ${mapped}/${total} alerts mapped &middot; ${outside} outside visible range &middot; ${grouped} grouped into shared candles`;
   }
 
+  /**
+   * Builds a detailed error message from window.__oixChartLibAttempts (set
+   * by the sequential local -> jsdelivr -> unpkg loading chain in
+   * index.html), listing exactly which klinecharts sources were tried and
+   * whether each one succeeded — so a load failure is never a bare
+   * "undefined", per the requirement to retain the exact URLs attempted.
+   */
+  function describeChartLibLoadFailure(attempts) {
+    const list = Array.isArray(attempts) ? attempts : [];
+    if (!list.length) {
+      return 'window.klinecharts is undefined and no load attempts were recorded — check the <script> tags in index.html.';
+    }
+    const lines = list.map(a => `${a && a.ok ? 'OK' : 'FAILED'}: ${a && a.url}`).join(' | ');
+    return `window.klinecharts is undefined after trying ${list.length} source(s) — ${lines}`;
+  }
+
   const OIExhaustionRender = {
     DEFAULT_SETTINGS,
     SETTINGS_KEY,
@@ -940,6 +956,7 @@
     latestCompletedCandleStart,
     reconcileChartMarkers,
     formatChartMarkerDiagnosticLine,
+    describeChartLibLoadFailure,
     CHART_BUCKET_MS,
     getUtcBucketStart,
     resampleCandlesForDisplay,
@@ -1505,7 +1522,8 @@
 
   function initChart() {
     if (typeof klinecharts === 'undefined') {
-      chartError('library load', new Error('window.klinecharts is undefined — check the CDN <script> tag in index.html'));
+      const attempts = (typeof window !== 'undefined' && window.__oixChartLibAttempts) || [];
+      chartError('library load', new Error(describeChartLibLoadFailure(attempts)));
       return;
     }
     try {

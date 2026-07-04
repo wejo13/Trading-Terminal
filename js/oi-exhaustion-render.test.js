@@ -1128,6 +1128,26 @@ section('formatChartMarkerDiagnosticLine: exact required format');
   assert('matches the exact required format', line === 'Chart markers: 8/10 alerts mapped &middot; 2 outside visible range &middot; 3 grouped into shared candles');
 })();
 
+section('describeChartLibLoadFailure: reports every source attempted with its outcome');
+(function () {
+  const msg = R.describeChartLibLoadFailure([
+    { url: 'js/vendor/klinecharts-9.8.10.min.js', ok: false },
+    { url: 'https://cdn.jsdelivr.net/npm/klinecharts@9.8.10/dist/umd/klinecharts.min.js', ok: false },
+    { url: 'https://unpkg.com/klinecharts@9.8.10/dist/umd/klinecharts.min.js', ok: false },
+  ]);
+  assert('mentions all 3 sources tried', msg.includes('3 source(s)'));
+  assert('includes the local vendor path', msg.includes('js/vendor/klinecharts-9.8.10.min.js'));
+  assert('includes the jsdelivr URL', msg.includes('cdn.jsdelivr.net'));
+  assert('includes the unpkg URL', msg.includes('unpkg.com'));
+  assert('marks failures as FAILED', (msg.match(/FAILED/g) || []).length === 3);
+})();
+
+section('describeChartLibLoadFailure: empty/garbage input never throws');
+(function () {
+  assert('empty array -> explanatory fallback message, no throw', R.describeChartLibLoadFailure([]).length > 0);
+  assert('null -> explanatory fallback message, no throw', R.describeChartLibLoadFailure(null).length > 0);
+})();
+
 
 (async () => {
   await Promise.all(asyncTests);

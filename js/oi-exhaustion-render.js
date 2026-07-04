@@ -67,6 +67,10 @@
     ? require('./oi-exhaustion-cryptohft-source.js')
     : window.OIExhaustionCryptoHFTSource;
 
+  const BinanceOISource = (typeof module !== 'undefined' && module.exports)
+    ? require('./oi-exhaustion-binance-oi-source.js')
+    : window.OIExhaustionBinanceOISource;
+
   // ── Fetch reliability: rate-limit retry, backoff, and raw-data caching ──
   // (all pure / dependency-injected so they're testable in Node without a
   // real network or DOM — see fetchBybitOI/fetchBybitCandles below, which
@@ -798,6 +802,41 @@
     return map;
   }
 
+  // ── Binance native OI reference layer ────────────────────────────────────
+  // EXTERNAL REFERENCE ONLY — never read by V1/V2/directional-impulse
+  // scoring, zones, cache, or backtest calculations (see
+  // oi-exhaustion-binance-oi-source.js). This attaches the Binance OI
+  // reference series onto the SAME price display-candle objects fed to
+  // the chart, as an extra `binanceOI` field the custom reference-pane
+  // indicator reads — piggy-backing on the main series is what makes the
+  // reference pane's zoom/pan/crosshair/timeframe sync with the price
+  // pane automatically (same instance, same x-axis), with no hand-rolled
+  // cross-chart event wiring at all.
+  /**
+   * @param {Array<{timestamp:number}>} displayCandles the price series already built for the chart
+   * @param {Array<object>} binanceOISeries output of BinanceOISource.buildBinanceOIDisplaySeries — either {ts,value} (15m) or {timestamp,open,high,low,close} (1h/2h/4h)
+   * @param {string} timeframe '15m' | '1h' | '2h' | '4h'
+   * @returns {Array<object>} displayCandles, each with an added `binanceOI: {close,high,low}|null` field (null where there's no matching Binance reading — a real gap, not a fill)
+   */
+  function mergeBinanceOIOntoDisplayCandles(displayCandles, binanceOISeries, timeframe) {
+    const list = Array.isArray(displayCandles) ? displayCandles : [];
+    const series = Array.isArray(binanceOISeries) ? binanceOISeries : [];
+    const isLineSeries = timeframe === '15m';
+    const index = new Map();
+    for (const pt of series) {
+      const key = isLineSeries ? pt.ts : pt.timestamp;
+      index.set(key, pt);
+    }
+    return list.map(c => {
+      const match = index.get(c.timestamp);
+      if (!match) return Object.assign({}, c, { binanceOI: null });
+      const binanceOI = isLineSeries
+        ? { close: match.value, high: match.value, low: match.value }
+        : { close: match.close, high: match.high, low: match.low };
+      return Object.assign({}, c, { binanceOI });
+    });
+  }
+
   // ── Help tooltip ("?") system — shared across Parameters & Zones ────────
   // Pure state transition only one tooltip open at a time: clicking the
   // currently-open icon closes it; clicking a different icon closes
@@ -830,9 +869,9 @@
    * object with a createOverlay method, dependency-injected, so this is
    * testable in Node against a fake chart.
    */
-  function createOverlaySafely(chart, overlayConfig, points) {
+  function createOverlaySafely(chart, overlayConfig, points, paneId) {
     const config = Object.assign({}, overlayConfig, { points });
-    const created = chart.createOverlay(config);
+    const created = paneId != null ? chart.createOverlay(config, paneId) : chart.createOverlay(config);
     const id = Array.isArray(created) ? created[0] : created;
     return id || null;
   }
@@ -1005,6 +1044,7 @@
     resampleCandlesForDisplay,
     buildDisplayCandleIndex,
     findDisplayCandleForAlert,
+    mergeBinanceOIOntoDisplayCandles,
     nextHelpTooltipState,
     createOverlaySafely,
     // Fetch reliability — exported for Node testing (all dependency-injected,
@@ -1087,6 +1127,10 @@
     lastRunFailed: false, // true when the most recent attempt failed — results shown (if any) are from an earlier run
     rawDataCache: null, // { lookbackDays, startTime, endTime, oiRows, binanceCandles, coverage, cachedAt }
     chart: { instance: null, timeframe: '15m', displayIndex: null, markerGroups: [], focusTooltipHideTimer: null },
+    // Binance native OI — external reference layer ONLY. Deliberately its
+    // own top-level state key, never touched by anything under
+    // Backtest.runEventStudy or the IndexedDB raw-data cache.
+    binanceOI: { enabled: false, rawRows: null, fetching: false, error: null, rangeStart: null, rangeEnd: null },
   };
 
   function loadSettings() {
@@ -1718,6 +1762,102 @@
     el.innerHTML = formatChartMarkerDiagnosticLine(reconciliation);
   }
 
+  // ── Binance native OI reference pane ─────────────────────────────────
+  // EXTERNAL REFERENCE ONLY (see oi-exhaustion-binance-oi-source.js) — a
+  // second pane of the SAME chart instance, not a second chart instance.
+  // Sharing one instance means timeframe/zoom/pan/crosshair/scroll-to-
+  // alert are synchronized with the price pane automatically (they share
+  // one x-axis) — no hand-rolled cross-chart event wiring, and therefore
+  // nothing that can drift out of sync or double-fire.
+  const BINANCE_OI_PANE_ID = 'oix-binance-oi-pane';
+  const BINANCE_OI_INDICATOR_NAME = 'OIX_BINANCE_OI_REF';
+  let binanceOIIndicatorRegistered = false;
+  function ensureBinanceOIIndicatorRegistered() {
+    if (binanceOIIndicatorRegistered || typeof klinecharts === 'undefined') return;
+    try {
+      klinecharts.registerIndicator({
+        name: BINANCE_OI_INDICATOR_NAME,
+        shortName: 'Binance OI close w/ range',
+        series: 'normal', // OI data, not price — uses the indicator's own precision, not the price pane's
+        precision: 0,
+        // close = prominent reference line; high/low = faint bounding
+        // lines so an OHLC-aggregated bucket's range is still visible
+        // even though this isn't a literal candle body (see chat notes —
+        // true candle-body rendering inside a custom v9 indicator is
+        // unverified API surface; this stays within confidently-known
+        // figure primitives instead).
+        figures: [
+          { key: 'low', title: 'Low: ', type: 'line', styles: () => ({ style: 'dashed', color: 'rgba(154,161,171,0.5)', size: 1, dashedValue: [2, 2] }) },
+          { key: 'high', title: 'High: ', type: 'line', styles: () => ({ style: 'dashed', color: 'rgba(154,161,171,0.5)', size: 1, dashedValue: [2, 2] }) },
+          { key: 'close', title: 'OI: ', type: 'line', styles: () => ({ style: 'solid', color: '#f0b559', size: 1.5 }) },
+        ],
+        calc: (kLineDataList) => kLineDataList.map(d => {
+          const ref = d.binanceOI;
+          return {
+            close: ref && ref.close != null ? ref.close : null,
+            high: ref && ref.high != null ? ref.high : null,
+            low: ref && ref.low != null ? ref.low : null,
+          };
+        }),
+      });
+      binanceOIIndicatorRegistered = true;
+    } catch (err) {
+      chartError('registerIndicator(OIX_BINANCE_OI_REF)', err);
+    }
+  }
+
+  function renderBinanceOIStatus() {
+    const el = document.getElementById('oix-binance-oi-status');
+    if (!el) return;
+    const b = state.binanceOI;
+    if (!b.enabled) { el.innerHTML = ''; return; }
+    if (b.fetching) { el.innerHTML = 'Fetching Binance native OI reference…'; return; }
+    if (b.error) { el.innerHTML = `<span style="color:var(--red);">Binance OI reference fetch failed: ${escapeHtml(b.error)}</span>`; return; }
+    if (!b.rawRows || !b.rawRows.length) { el.innerHTML = '<span style="color:var(--text-faint);">No Binance OI reference data loaded yet.</span>'; return; }
+    const cov = BinanceOISource.computeBinanceOICoverage(b.rawRows);
+    el.innerHTML = `Binance OI reference: ${safeNumber(cov.barCount)} bars &middot; ` +
+      `${safeUtcDateString(cov.startTime)} &rarr; ${safeUtcDateString(cov.endTime)} &middot; ` +
+      `${safeNumber(cov.missingBars)} missing bars (no forward-fill — gaps are real)`;
+  }
+
+  /** Fetches the Binance OI reference series for the currently loaded price range (capped to Binance's own ~30-day retention). External reference only — never touches state.lastRun, the IndexedDB cache, or anything scoring-related. */
+  async function fetchBinanceOIReference() {
+    const run = state.lastRun;
+    if (!run || !run.binanceCandles.length) return;
+    const b = state.binanceOI;
+    b.fetching = true;
+    b.error = null;
+    renderBinanceOIStatus();
+    try {
+      const priceEnd = run.binanceCandles[run.binanceCandles.length - 1].ts;
+      const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+      const priceStart = run.binanceCandles[0].ts;
+      const startTime = Math.max(priceStart, priceEnd - thirtyDaysMs);
+      const rows = await BinanceOISource.fetchBinanceOpenInterestHist({ startTime, endTime: priceEnd });
+      b.rawRows = rows;
+      b.rangeStart = startTime;
+      b.rangeEnd = priceEnd;
+    } catch (err) {
+      b.error = err.message || String(err);
+    } finally {
+      b.fetching = false;
+      renderBinanceOIStatus();
+      applyChartData();
+    }
+  }
+
+  /** Toggles the Binance OI reference pane on/off. Purely visual — never touches strategy state. */
+  async function toggleBinanceOIReference() {
+    const b = state.binanceOI;
+    b.enabled = !b.enabled;
+    if (b.enabled && !b.rawRows && !b.fetching) {
+      await fetchBinanceOIReference();
+    } else {
+      applyChartData();
+    }
+    renderBinanceOIStatus();
+  }
+
   function applyChartData() {
     const chart = state.chart.instance;
     const run = state.lastRun;
@@ -1725,13 +1865,43 @@
 
     try {
       const timeframe = state.chart.timeframe;
-      const displayCandles = resampleCandlesForDisplay(run.binanceCandles, timeframe);
+      let displayCandles = resampleCandlesForDisplay(run.binanceCandles, timeframe);
       if (!displayCandles.length) return;
       const displayIndex = buildDisplayCandleIndex(displayCandles);
       // Stashed for wireChartTooltip's hit-testing, which needs the same
       // alert -> displayed-candle mapping used here for overlay placement.
       state.chart.displayIndex = displayIndex;
+
+      // Binance OI reference — attached onto the SAME candle objects the
+      // chart receives (see mergeBinanceOIOntoDisplayCandles), purely so
+      // the reference-pane indicator (below) can read it from the exact
+      // series already loaded, which is what keeps the two panes in sync
+      // for free. Attaching a null-filled field when disabled/unavailable
+      // is harmless — the indicator simply draws nothing for those points.
+      const binanceOIState = state.binanceOI;
+      if (binanceOIState.enabled && binanceOIState.rawRows && binanceOIState.rawRows.length) {
+        const binanceOISeries = BinanceOISource.buildBinanceOIDisplaySeries(binanceOIState.rawRows, timeframe);
+        displayCandles = mergeBinanceOIOntoDisplayCandles(displayCandles, binanceOISeries, timeframe);
+      }
+
       chart.applyNewData(displayCandles);
+
+      if (binanceOIState.enabled) {
+        ensureBinanceOIIndicatorRegistered();
+        try {
+          const existing = chart.getIndicatorByPaneId ? chart.getIndicatorByPaneId(BINANCE_OI_PANE_ID) : null;
+          const hasIndicator = existing && (Array.isArray(existing) ? existing.length > 0 : Object.keys(existing).length > 0);
+          if (!hasIndicator) {
+            chart.createIndicator({ name: BINANCE_OI_INDICATOR_NAME, id: BINANCE_OI_INDICATOR_NAME }, false, { id: BINANCE_OI_PANE_ID, height: 140 });
+          } else {
+            chart.overrideIndicator({ name: BINANCE_OI_INDICATOR_NAME, id: BINANCE_OI_INDICATOR_NAME }, BINANCE_OI_PANE_ID);
+          }
+        } catch (err) {
+          chartError('createIndicator(OIX_BINANCE_OI_REF)', err);
+        }
+      } else {
+        try { chart.removeIndicator(BINANCE_OI_PANE_ID); } catch (err) { /* pane may not exist yet — non-fatal */ }
+      }
 
       // #9: unconditional full clear before redrawing — every rerun/
       // timeframe switch fully replaces prior overlays, no stale/partial
@@ -1778,6 +1948,19 @@
           styles: { line: { color, style: 'dashed', size: 1.4, dashedValue: [4, 3] } },
           extendData: rep,
         }, [{ timestamp: group.timestamp, value: rep.price }]);
+
+        // Mirror the same marker onto the Binance OI reference pane, at
+        // the same shared x-axis position, so alignment between the
+        // CryptoHFT-based alert and Binance's own OI is visible without
+        // needing to cross-reference the two panes manually.
+        if (binanceOIState.enabled) {
+          createOverlaySafely(chart, {
+            name: 'verticalStraightLine',
+            lock: true,
+            styles: { line: { color, style: 'dashed', size: 1.4, dashedValue: [4, 3] } },
+            extendData: rep,
+          }, [{ timestamp: group.timestamp, value: rep.price }], BINANCE_OI_PANE_ID);
+        }
 
         if (group.alerts.length > 1) {
           createOverlaySafely(chart, {
@@ -2616,6 +2799,7 @@
     setChartTimeframe,
     toggleHelpTooltip,
     closeAllHelpTooltips,
+    toggleBinanceOIReference,
     fetchBybitOI, fetchBybitCandles, fetchBinanceCandles, // exposed for console debugging
   });
 

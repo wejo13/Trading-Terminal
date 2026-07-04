@@ -1,0 +1,291 @@
+// oi-exhaustion-binance-oi-source.test.js — Binance native OI reference
+// layer. Pure normalization/aggregation tests, plus a fake-fetch-injected
+// pagination test (no real network call).
+'use strict';
+
+const S = require('./oi-exhaustion-binance-oi-source.js');
+
+let passed = 0, failed = 0;
+const asyncTests = [];
+function assert(desc, cond) {
+  if (cond) { console.log('  PASS ' + desc); passed++; }
+  else       { console.error('  FAIL ' + desc); failed++; }
+}
+function section(name) { console.log('\n' + name); }
+
+const FIFTEEN_MIN_MS = 15 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+
+function row(ts, sumOpenInterestValue, opts) {
+  return Object.assign({
+    symbol: 'BTCUSDT',
+    sumOpenInterest: '12345.678', // contracts — must NEVER be read
+    sumOpenInterestValue: String(sumOpenInterestValue),
+    timestamp: ts,
+  }, opts || {});
+}
+
+// ── parseBinanceOpenInterestRow / normalizeBinanceOpenInterestRows ───────
+
+section('parseBinanceOpenInterestRow: reads sumOpenInterestValue, never sumOpenInterest');
+(function () {
+  const parsed = S.parseBinanceOpenInterestRow(row(1000, 555.5));
+  assert('ts parsed correctly', parsed.ts === 1000);
+  assert('oi reads sumOpenInterestValue (555.5), not sumOpenInterest (12345.678)', parsed.oi === 555.5);
+})();
+
+section('parseBinanceOpenInterestRow: rejects rows with missing/non-finite fields, never guesses');
+(function () {
+  assert('null row -> null', S.parseBinanceOpenInterestRow(null) === null);
+  assert('missing timestamp -> null', S.parseBinanceOpenInterestRow({ sumOpenInterestValue: '100' }) === null);
+  assert('missing sumOpenInterestValue -> null', S.parseBinanceOpenInterestRow({ timestamp: 1000 }) === null);
+  assert('non-numeric value -> null', S.parseBinanceOpenInterestRow({ timestamp: 1000, sumOpenInterestValue: 'not-a-number' }) === null);
+  assert('garbage input -> null, no throw', S.parseBinanceOpenInterestRow('garbage') === null);
+})();
+
+section('normalizeBinanceOpenInterestRows: drops invalid rows, sorts ascending, de-dupes exact-timestamp collisions');
+(function () {
+  const rows = [
+    row(2000, 200),
+    row(1000, 100),
+    { garbage: true },
+    row(1000, 999), // duplicate ts — last write wins
+    row(3000, 300),
+  ];
+  const out = S.normalizeBinanceOpenInterestRows(rows);
+  assert('garbage row dropped', out.length === 3);
+  assert('sorted ascending', out[0].ts === 1000 && out[1].ts === 2000 && out[2].ts === 3000);
+  assert('duplicate timestamp resolved to the LAST occurrence (999, not 100)', out[0].oi === 999);
+})();
+
+section('normalizeBinanceOpenInterestRows: empty/garbage input never throws');
+(function () {
+  assert('empty array -> []', S.normalizeBinanceOpenInterestRows([]).length === 0);
+  assert('null -> []', S.normalizeBinanceOpenInterestRows(null).length === 0);
+  assert('non-array -> []', S.normalizeBinanceOpenInterestRows('nope').length === 0);
+})();
+
+// ── buildBinanceOIDisplaySeries ───────────────────────────────────────────
+
+section('buildBinanceOIDisplaySeries(15m): identity value series, NOT synthesized into OHLC candles');
+(function () {
+  const rows = [row(0, 100), row(FIFTEEN_MIN_MS, 105), row(FIFTEEN_MIN_MS * 2, 110)];
+  const out = S.buildBinanceOIDisplaySeries(rows, '15m');
+  assert('3 points, one per reading', out.length === 3);
+  assert('each point is a plain {ts, value} pair, not OHLC', 'value' in out[0] && !('open' in out[0]));
+  assert('values match the raw readings exactly', out[0].value === 100 && out[1].value === 105 && out[2].value === 110);
+})();
+
+section('buildBinanceOIDisplaySeries(1h): builds real OHLC from four 15m readings per UTC hour');
+(function () {
+  const hourStart = Date.UTC(2026, 2, 10, 6, 0, 0);
+  const rows = [
+    row(hourStart, 100),
+    row(hourStart + FIFTEEN_MIN_MS, 130), // high
+    row(hourStart + FIFTEEN_MIN_MS * 2, 90), // low
+    row(hourStart + FIFTEEN_MIN_MS * 3, 120), // close
+  ];
+  const out = S.buildBinanceOIDisplaySeries(rows, '1h');
+  assert('exactly 1 hourly candle', out.length === 1);
+  assert('timestamp lands on the UTC hour boundary', out[0].timestamp === hourStart);
+  assert('open = first reading', out[0].open === 100);
+  assert('close = last reading', out[0].close === 120);
+  assert('high = max of the 4 readings', out[0].high === 130);
+  assert('low = min of the 4 readings', out[0].low === 90);
+})();
+
+section('buildBinanceOIDisplaySeries(2h) / (4h) / (1d): correct UTC bucket width, all buckets complete');
+(function () {
+  const dayStart = Date.UTC(2026, 2, 10, 0, 0, 0);
+  const rows = [];
+  for (let i = 0; i < 96; i++) rows.push(row(dayStart + i * FIFTEEN_MIN_MS, 1000 + i)); // exactly one full UTC day
+
+  const out2h = S.buildBinanceOIDisplaySeries(rows, '2h');
+  assert('96 fifteen-min readings = 12 complete two-hour buckets', out2h.length === 12);
+  assert('2h bucket timestamps land on even UTC hours', out2h.every(c => (c.timestamp / HOUR_MS) % 2 === 0));
+
+  const out4h = S.buildBinanceOIDisplaySeries(rows, '4h');
+  assert('96 fifteen-min readings = 6 complete four-hour buckets', out4h.length === 6);
+  assert('4h bucket timestamps land on the 0/4/8/... UTC grid', out4h.every(c => (c.timestamp / HOUR_MS) % 4 === 0));
+
+  const out1d = S.buildBinanceOIDisplaySeries(rows, '1d');
+  assert('96 fifteen-min readings = exactly 1 complete daily bucket', out1d.length === 1);
+  assert('daily bucket starts at UTC midnight', out1d[0].timestamp === dayStart);
+  assert('daily open = first reading of the day', out1d[0].open === 1000);
+  assert('daily close = last (96th) reading of the day', out1d[0].close === 1095);
+  assert('daily high = max of all 96 readings', out1d[0].high === 1095);
+  assert('daily low = min of all 96 readings', out1d[0].low === 1000);
+})();
+
+section('buildBinanceOIDisplaySeries: STRICT completeness — a single missing 15m reading omits the WHOLE higher-timeframe candle');
+(function () {
+  const hour0 = Date.UTC(2026, 2, 10, 0, 0, 0);
+  // Only 3 of the 4 required 15m readings for this hour — the 3rd (index 2) is missing.
+  const partialHourRows = [
+    row(hour0, 100), row(hour0 + FIFTEEN_MIN_MS, 105), row(hour0 + FIFTEEN_MIN_MS * 3, 115),
+  ];
+  const out1h = S.buildBinanceOIDisplaySeries(partialHourRows, '1h');
+  assert('1h: 3-of-4 readings present -> candle omitted entirely, not built from the 3 that exist', out1h.length === 0);
+
+  // 2h: 7 of the required 8 readings (index 5 missing).
+  const partial2h = [];
+  for (let i = 0; i < 8; i++) if (i !== 5) partial2h.push(row(hour0 + i * FIFTEEN_MIN_MS, 1000 + i));
+  assert('2h: 7-of-8 readings present -> candle omitted', S.buildBinanceOIDisplaySeries(partial2h, '2h').length === 0);
+
+  // 4h: 15 of the required 16 readings (index 10 missing).
+  const partial4h = [];
+  for (let i = 0; i < 16; i++) if (i !== 10) partial4h.push(row(hour0 + i * FIFTEEN_MIN_MS, 1000 + i));
+  assert('4h: 15-of-16 readings present -> candle omitted', S.buildBinanceOIDisplaySeries(partial4h, '4h').length === 0);
+
+  // 1d: 95 of the required 96 readings (index 50 missing).
+  const partial1d = [];
+  for (let i = 0; i < 96; i++) if (i !== 50) partial1d.push(row(hour0 + i * FIFTEEN_MIN_MS, 1000 + i));
+  assert('1d: 95-of-96 readings present -> candle omitted', S.buildBinanceOIDisplaySeries(partial1d, '1d').length === 0);
+})();
+
+section('buildBinanceOIDisplaySeries: STRICT completeness alongside fully-missing buckets — only complete buckets ever appear');
+(function () {
+  const hour0 = Date.UTC(2026, 2, 10, 0, 0, 0);
+  const hour1 = hour0 + HOUR_MS; // will be fully complete
+  const hour2 = hour0 + HOUR_MS * 2; // will be missing one reading (partial)
+  const rows = [
+    // hour0: fully missing (no rows at all)
+    row(hour1, 200), row(hour1 + FIFTEEN_MIN_MS, 205), row(hour1 + FIFTEEN_MIN_MS * 2, 210), row(hour1 + FIFTEEN_MIN_MS * 3, 215), // complete
+    row(hour2, 300), row(hour2 + FIFTEEN_MIN_MS, 305), row(hour2 + FIFTEEN_MIN_MS * 3, 315), // missing the 3rd reading — partial
+  ];
+  const out = S.buildBinanceOIDisplaySeries(rows, '1h');
+  assert('only the ONE fully-complete hour (hour1) is emitted', out.length === 1);
+  assert('the emitted candle is hour1, not hour0 (fully missing) or hour2 (partial)', out[0].timestamp === hour1);
+  assert('hour1 candle values are correct', out[0].open === 200 && out[0].close === 215);
+})();
+
+section('buildBinanceOIDisplaySeries: unaligned fetch start — the resulting PARTIAL first bucket is correctly omitted');
+(function () {
+  const start = Date.UTC(2026, 2, 10, 23, 45, 0); // deliberately not hour-aligned
+  const rows = [
+    row(start, 100), // alone in the 23:00 bucket — only 1 of 4 required readings
+    row(start + FIFTEEN_MIN_MS, 105), // 00:00 next day
+    row(start + FIFTEEN_MIN_MS * 2, 110),
+    row(start + FIFTEEN_MIN_MS * 3, 115),
+    row(start + FIFTEEN_MIN_MS * 4, 120), // completes the 00:00 bucket (4 readings)
+  ];
+  const out = S.buildBinanceOIDisplaySeries(rows, '1h');
+  assert('the partial 23:00 bucket (1 of 4) is omitted, only the complete 00:00 bucket remains', out.length === 1);
+  assert('the one remaining bucket is 00:00 UTC the next day', out[0].timestamp === Date.UTC(2026, 2, 11, 0, 0, 0));
+})();
+
+section('buildBinanceOIDisplaySeries: empty/garbage input never throws');
+(function () {
+  assert('empty array -> []', S.buildBinanceOIDisplaySeries([], '1h').length === 0);
+  assert('null -> []', S.buildBinanceOIDisplaySeries(null, '1h').length === 0);
+  assert('unknown timeframe falls back to the 15m identity series', S.buildBinanceOIDisplaySeries([row(0, 5)], 'bogus').length === 1);
+})();
+
+// ── computeBinanceOICoverage ───────────────────────────────────────────────
+
+section('computeBinanceOICoverage: reports bar count, range, and missing bars from the data itself');
+(function () {
+  const start = Date.UTC(2026, 2, 10, 0, 0, 0);
+  // 4 readings across what should be 5 fifteen-min slots (one gap in the middle)
+  const rows = [row(start, 1), row(start + FIFTEEN_MIN_MS, 2), row(start + FIFTEEN_MIN_MS * 3, 4), row(start + FIFTEEN_MIN_MS * 4, 5)];
+  const cov = S.computeBinanceOICoverage(rows);
+  assert('barCount reflects actual valid rows (4)', cov.barCount === 4);
+  assert('startTime is the earliest reading', cov.startTime === start);
+  assert('endTime is the latest reading', cov.endTime === start + FIFTEEN_MIN_MS * 4);
+  assert('expectedBars accounts for the full range (5 slots)', cov.expectedBars === 5);
+  assert('missingBars correctly reports the 1 gap', cov.missingBars === 1);
+})();
+
+section('computeBinanceOICoverage: empty input never throws, reports all zeros');
+(function () {
+  const cov = S.computeBinanceOICoverage([]);
+  assert('barCount 0', cov.barCount === 0);
+  assert('startTime/endTime null', cov.startTime === null && cov.endTime === null);
+  assert('missingBars 0', cov.missingBars === 0);
+})();
+
+// ── fetchBinanceOpenInterestHist (fake fetch, no real network) ──────────
+
+function makeFakeFetch(pages) {
+  let call = 0;
+  return async function fakeFetch() {
+    const page = pages[call] || [];
+    call++;
+    return { ok: true, status: 200, json: async () => page };
+  };
+}
+
+section('fetchBinanceOpenInterestHist: the intended endTime reading is not dropped by a strict/exclusive API boundary');
+asyncTests.push((async () => {
+  const start = Date.UTC(2026, 2, 10, 0, 0, 0);
+  const intendedEnd = start + FIFTEEN_MIN_MS * 3; // caller wants readings through exactly this timestamp
+
+  // Simulate a Binance-like server that treats `endTime` as EXCLUSIVE —
+  // it only returns rows strictly before the requested endTime param.
+  const fakeFetch = async (url) => {
+    const params = new URL(url);
+    const reqStart = Number(params.searchParams.get('startTime'));
+    const reqEnd = Number(params.searchParams.get('endTime'));
+    const allRows = [0, 1, 2, 3, 4].map(i => row(start + i * FIFTEEN_MIN_MS, 1000 + i));
+    const page = allRows.filter(r => Number(r.timestamp) >= reqStart && Number(r.timestamp) < reqEnd); // strictly exclusive on endTime
+    return { ok: true, status: 200, json: async () => page };
+  };
+
+  const result = await S.fetchBinanceOpenInterestHist({ startTime: start, endTime: intendedEnd, fetchFn: fakeFetch });
+  assert('the reading exactly AT the intended endTime is still present despite an exclusive-boundary server', result.some(r => r.ts === intendedEnd));
+})());
+
+section('fetchBinanceOpenInterestHist: explicitly filters out any rows the server returned beyond the intended range');
+asyncTests.push((async () => {
+  const start = Date.UTC(2026, 2, 10, 0, 0, 0);
+  const intendedEnd = start + FIFTEEN_MIN_MS * 2;
+  // A server that (incorrectly, or via the padding) returns MORE than asked for.
+  const oversharingFetch = async () => ({
+    ok: true, status: 200,
+    json: async () => [0, 1, 2, 3, 4, 5].map(i => row(start + i * FIFTEEN_MIN_MS, 1000 + i)),
+  });
+  const result = await S.fetchBinanceOpenInterestHist({ startTime: start, endTime: intendedEnd, fetchFn: oversharingFetch });
+  assert('every returned row is within [startTime, endTime] — nothing beyond the intended range leaks through', result.every(r => r.ts >= start && r.ts <= intendedEnd));
+  assert('exactly the 3 intended readings (0,1,2 = start..intendedEnd inclusive)', result.length === 3);
+})());
+
+section('fetchBinanceOpenInterestHist: paginates until a short page signals the end');
+asyncTests.push((async () => {
+  const start = Date.UTC(2026, 2, 10, 0, 0, 0);
+  const page1 = Array.from({ length: 500 }, (_, i) => row(start + i * FIFTEEN_MIN_MS, 1000 + i));
+  const page2 = Array.from({ length: 3 }, (_, i) => row(start + (500 + i) * FIFTEEN_MIN_MS, 2000 + i)); // short page = last
+
+  const result = await S.fetchBinanceOpenInterestHist({
+    startTime: start, endTime: start + 10000 * FIFTEEN_MIN_MS,
+    fetchFn: makeFakeFetch([page1, page2]),
+  });
+  assert('combined pages into one normalized, sorted series', result.length === 503);
+  assert('ascending order preserved across the page boundary', result[499].ts < result[500].ts);
+})());
+
+section('fetchBinanceOpenInterestHist: throws a clear error on a failed HTTP response');
+asyncTests.push((async () => {
+  let threw = false, message = '';
+  try {
+    await S.fetchBinanceOpenInterestHist({
+      startTime: 0, endTime: 1000,
+      fetchFn: async () => ({ ok: false, status: 451 }),
+    });
+  } catch (e) { threw = true; message = e.message; }
+  assert('throws rather than silently returning partial/empty data', threw);
+  assert('error message mentions the HTTP status', message.includes('451'));
+})());
+
+section('fetchBinanceOpenInterestHist: requires startTime and endTime');
+asyncTests.push((async () => {
+  let threw = false;
+  try { await S.fetchBinanceOpenInterestHist({ fetchFn: makeFakeFetch([[]]) }); } catch (e) { threw = true; }
+  assert('throws when startTime/endTime are missing', threw);
+})());
+
+(async () => {
+  await Promise.all(asyncTests);
+  console.log('\n────────────────────────────────────────');
+  console.log('oi-exhaustion-binance-oi-source: ' + passed + ' passed, ' + failed + ' failed');
+  if (failed > 0) process.exit(1);
+})();

@@ -3300,7 +3300,48 @@
 <script src="js/oi-exhaustion-cryptohft-source.js"></script>
 <script src="js/oi-exhaustion-idb-cache.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/fzstd@0.1.1/umd/index.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/klinecharts@9.8.10/dist/umd/klinecharts.min.js"></script>
+<script>window.__oixChartLibAttempts = [];</script>
+<script src="js/vendor/klinecharts-9.8.10.min.js"></script>
+<script>
+  // Vendored local copy is the primary source — this is a static GitHub
+  // Pages app, so the chart library should not depend on an external CDN
+  // being reachable every time someone opens the backtester (confirmed
+  // failure mode: jsdelivr returned 403 for klinecharts@9.8.10 in the
+  // browser, despite the file being fetchable from other environments —
+  // a CDN-side issue outside our control).
+  //
+  // If the local copy is somehow missing (e.g. a fork without js/vendor/),
+  // fall back to jsdelivr, then unpkg, as a SECOND, DIFFERENT CDN — same
+  // pinned 9.8.10 build both times, never a newer/different version.
+  //
+  // document.write here is safe and intentional: it runs synchronously
+  // during the initial parse (before the page finishes loading), which is
+  // the one case it's still the correct tool for — it inserts the next
+  // "script" tag in-stream so the browser loads it in order, same as a
+  // normal tag. Each step below only fires if the previous one genuinely
+  // failed (checked via window.__oixChartLibAttempts), so exactly one
+  // source ever actually loads the library — no double-loading, no
+  // duplicate chart instances.
+  var __oixVendorOk = typeof klinecharts !== 'undefined';
+  window.__oixChartLibAttempts.push({ url: 'js/vendor/klinecharts-9.8.10.min.js', ok: __oixVendorOk });
+  if (!__oixVendorOk) {
+    document.write('<script src="https://cdn.jsdelivr.net/npm/klinecharts@9.8.10/dist/umd/klinecharts.min.js"><\/script>');
+  }
+</script>
+<script>
+  if (!window.__oixChartLibAttempts[0].ok) {
+    var __oixJsdelivrOk = typeof klinecharts !== 'undefined';
+    window.__oixChartLibAttempts.push({ url: 'https://cdn.jsdelivr.net/npm/klinecharts@9.8.10/dist/umd/klinecharts.min.js', ok: __oixJsdelivrOk });
+    if (!__oixJsdelivrOk) {
+      document.write('<script src="https://unpkg.com/klinecharts@9.8.10/dist/umd/klinecharts.min.js"><\/script>');
+    }
+  }
+</script>
+<script>
+  if (window.__oixChartLibAttempts.length === 2 && !window.__oixChartLibAttempts[1].ok) {
+    window.__oixChartLibAttempts.push({ url: 'https://unpkg.com/klinecharts@9.8.10/dist/umd/klinecharts.min.js', ok: typeof klinecharts !== 'undefined' });
+  }
+</script>
 <script src="js/oi-exhaustion-render.js"></script>
 <script>
 if(typeof OIExhaustionRender!=="undefined"){

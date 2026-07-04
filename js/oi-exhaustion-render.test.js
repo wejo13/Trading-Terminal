@@ -586,6 +586,98 @@ section('getCachedRawData: the exact reported scenario — a completed 30-day ca
   assert('switching back to 30 days still hits the same cache instantly', backTo30 !== null && backTo30.binanceCandles.length === binanceCandles.length);
 })();
 
+section('classifyCryptoHFTCacheAction: completed IndexedDB cache survives reload and satisfies an identical request (contained_slice)');
+(function () {
+  const entry = { startTime: 1000, endTime: 2000, updatedAt: Date.now() };
+  const result = R.classifyCryptoHFTCacheAction(entry, true, 1000, 2000);
+  assert('exact-range match against a complete entry -> contained_slice', result.action === 'contained_slice');
+})();
+
+section('classifyCryptoHFTCacheAction: a wider completed cache satisfies a smaller contained request (e.g. 30-day cache, 28-day request)');
+(function () {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const cacheEnd = 30 * dayMs;
+  const cacheStart = 0;
+  const entry = { startTime: cacheStart, endTime: cacheEnd, updatedAt: Date.now() };
+  const requestStart = cacheEnd - 28 * dayMs;
+  const result = R.classifyCryptoHFTCacheAction(entry, true, requestStart, cacheEnd);
+  assert('28-day request inside a 30-day cache -> contained_slice, not a fetch', result.action === 'contained_slice');
+})();
+
+section('classifyCryptoHFTCacheAction: THE ACTUAL BUG — a cache missing only the newest 15m candle(s) must trigger tail_refresh, not full_fetch');
+(function () {
+  const FIFTEEN_MIN = 15 * 60 * 1000;
+  const cachedStart = 0;
+  const cachedEnd = 30 * 24 * 60 * 60 * 1000; // a completed 30-day cache
+  const entry = { startTime: cachedStart, endTime: cachedEnd, updatedAt: Date.now() };
+  // The request's endTime has moved forward by exactly one completed 15m
+  // candle since the cache was built — e.g. hard-refreshed and rerun a
+  // few minutes later with otherwise identical settings. This is EXACTLY
+  // the reported regression: cacheContainsRange alone would reject this
+  // (idbEntry.endTime < endTime) and fall through to a full refetch.
+  const newEndTime = cachedEnd + FIFTEEN_MIN;
+  const newStartTime = newEndTime - 30 * 24 * 60 * 60 * 1000; // same 30-day lookback, just shifted forward
+  const result = R.classifyCryptoHFTCacheAction(entry, true, newStartTime, newEndTime);
+  assert('missing only the newest tail -> tail_refresh, NOT full_fetch', result.action === 'tail_refresh');
+  assert('reports the correct (small) gap size', result.gapMs === FIFTEEN_MIN);
+})();
+
+section('classifyCryptoHFTCacheAction: a cache range that misses the requested HEAD is rejected safely (full_fetch, never merged)');
+(function () {
+  const entry = { startTime: 1000, endTime: 2000, updatedAt: Date.now() };
+  // Request starts BEFORE the cache does — a missing head, not a missing tail.
+  const result = R.classifyCryptoHFTCacheAction(entry, true, 500, 2000);
+  assert('missing head -> full_fetch (never treated as a tail gap)', result.action === 'full_fetch');
+  assert('reason correctly identifies the head-coverage failure', result.reason === 'complete_cache_does_not_cover_requested_head');
+})();
+
+section('classifyCryptoHFTCacheAction: a tail gap larger than the safety ceiling falls back to full_fetch, not an unbounded incremental fetch');
+(function () {
+  const entry = { startTime: 0, endTime: 1000, updatedAt: Date.now() };
+  const hugeGap = R.DEFAULT_MAX_TAIL_GAP_MS + 1;
+  const result = R.classifyCryptoHFTCacheAction(entry, true, 500, 1000 + hugeGap);
+  assert('an oversized tail gap is NOT incrementally refreshed', result.action === 'full_fetch');
+  assert('reason explains why', result.reason === 'tail_gap_exceeds_incremental_refresh_ceiling');
+})();
+
+section('classifyCryptoHFTCacheAction: no cache entry at all -> full_fetch');
+(function () {
+  const result = R.classifyCryptoHFTCacheAction(null, false, 0, 1000);
+  assert('null entry -> full_fetch', result.action === 'full_fetch');
+  assert('reason is explicit', result.reason === 'no_cache_entry');
+})();
+
+section('classifyCryptoHFTCacheAction: an incomplete entry only resumes when its range EXACTLY matches the new request');
+(function () {
+  const incompleteExact = { startTime: 1000, endTime: 2000, updatedAt: Date.now() };
+  const exactMatch = R.classifyCryptoHFTCacheAction(incompleteExact, false, 1000, 2000);
+  assert('incomplete entry, exact range match -> resume', exactMatch.action === 'resume');
+
+  const incompleteMismatched = { startTime: 1000, endTime: 1900, updatedAt: Date.now() };
+  const mismatch = R.classifyCryptoHFTCacheAction(incompleteMismatched, false, 1000, 2000);
+  assert('incomplete entry with a DIFFERENT range -> full_fetch, never merged as if resumable', mismatch.action === 'full_fetch');
+  assert('reason is explicit', mismatch.reason === 'incomplete_entry_does_not_match_requested_range');
+})();
+
+section('mergeTimestampedRows: merges two arrays, de-dupes by exact timestamp (new wins), sorts ascending');
+(function () {
+  const old = [{ ts: 0, v: 'old0' }, { ts: 100, v: 'old100' }, { ts: 200, v: 'old200' }];
+  const fresh = [{ ts: 200, v: 'new200' }, { ts: 300, v: 'new300' }];
+  const merged = R.mergeTimestampedRows(old, fresh);
+  assert('4 unique timestamps after merging (200 deduped, not doubled)', merged.length === 4);
+  assert('sorted ascending', merged.every((r, i) => i === 0 || r.ts > merged[i - 1].ts));
+  assert('on a timestamp collision, the NEW row wins', merged.find(r => r.ts === 200).v === 'new200');
+  assert('old-only and new-only rows both survive', merged.some(r => r.ts === 0) && merged.some(r => r.ts === 300));
+})();
+
+section('mergeTimestampedRows: empty/garbage input never throws');
+(function () {
+  assert('both empty -> []', R.mergeTimestampedRows([], []).length === 0);
+  assert('null old -> just the new rows', R.mergeTimestampedRows(null, [{ ts: 1 }]).length === 1);
+  assert('null new -> just the old rows', R.mergeTimestampedRows([{ ts: 1 }], null).length === 1);
+  assert('garbage entries without a numeric ts are skipped, not thrown on', R.mergeTimestampedRows([{ ts: 1 }, 'garbage', null], [{ noTs: true }]).length === 1);
+})();
+
 section('cacheContainsRange: pure containment check');
 (function () {
   assert('cache exactly matching the request contains it', R.cacheContainsRange({ startTime: 0, endTime: 100 }, 0, 100) === true);
@@ -1078,6 +1170,21 @@ section('mergeBinanceOIOntoDisplayCandles: empty/garbage input never throws');
   assert('empty candles -> []', R.mergeBinanceOIOntoDisplayCandles([], [{ ts: 1, value: 1 }], '15m').length === 0);
   assert('null series -> all null binanceOI, no throw', R.mergeBinanceOIOntoDisplayCandles([{ timestamp: 1 }], null, '15m')[0].binanceOI === null);
   assert('null candles -> []', R.mergeBinanceOIOntoDisplayCandles(null, [], '15m').length === 0);
+})();
+
+section('Cache-classifier fix (tail refresh) is structurally isolated from V1/V2, directional OI chase, zones, and strategy outputs');
+(function () {
+  const src = fs.readFileSync(__dirname + '/oi-exhaustion-render.js', 'utf8');
+  const callStart = src.indexOf('Backtest.runEventStudy(binanceCandles');
+  const callEnd = src.indexOf(');', callStart);
+  const callBlock = src.slice(callStart, callEnd);
+  assert('runEventStudy call site exists', callStart !== -1);
+  assert('runEventStudy call passes no cache-classification internals (binanceCandles/oiRows/zones/settings only, as before)', !callBlock.includes('classifyCryptoHFTCacheAction') && !callBlock.includes('mergeTimestampedRows') && !callBlock.includes('idbEntry'));
+
+  const backtestSrc = fs.readFileSync(__dirname + '/oi-exhaustion-backtest.js', 'utf8');
+  const engineSrc = fs.readFileSync(__dirname + '/oi-exhaustion-engine.js', 'utf8');
+  assert('oi-exhaustion-backtest.js (V1/V2/directional/zones) has no knowledge of the cache classifier at all', !backtestSrc.includes('classifyCryptoHFTCacheAction') && !backtestSrc.includes('mergeTimestampedRows'));
+  assert('oi-exhaustion-engine.js has no knowledge of the cache classifier at all', !engineSrc.includes('classifyCryptoHFTCacheAction') && !engineSrc.includes('mergeTimestampedRows'));
 })();
 
 section('Binance OI reference layer: structurally isolated from strategy inputs (source-level guard)');

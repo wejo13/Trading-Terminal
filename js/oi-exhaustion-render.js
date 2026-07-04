@@ -430,6 +430,88 @@
     return { ts, open, high, low, close };
   }
 
+  // ── CryptoHFT IndexedDB cache: action classification ─────────────────────
+  // The bug this fixes: cacheContainsRange requires idbEntry.endTime >=
+  // requested endTime — but the requested endTime is ALWAYS "latest
+  // completed candle right now" (recomputed every run), so it moves
+  // forward every 15 minutes. A cache fetched even one tick ago fails
+  // strict containment and fell straight through to a full multi-venue
+  // refetch — exactly "hard refresh, rerun a few minutes later -> request
+  // 1/2163 again". The fix: recognize this specific shape (cache covers
+  // the requested HEAD, is just missing some newest TAIL candles) as its
+  // own fast path — fetch only the missing tail, merge, persist — instead
+  // of only ever accepting an exact/wider full match.
+
+  /** Default ceiling on how large a "missing tail" gap can be before it's treated as a full fetch instead of an incremental one. 7 days keeps even an infrequently-reopened tab fast, without unboundedly growing the cache from a stale gap. */
+  const DEFAULT_MAX_TAIL_GAP_MS = 7 * 24 * 60 * 60 * 1000;
+
+  /**
+   * Pure decision function for what to do with a CryptoHFT IndexedDB cache
+   * entry, given the newly requested [startTime, endTime]. Returns
+   * `{ action, reason, gapMs? }` where action is one of:
+   *   'contained_slice' — cache fully covers the request; slice locally, no fetch.
+   *   'tail_refresh'     — cache covers the head but is missing some newest
+   *                         candles at the end; fetch ONLY that tail.
+   *   'resume'           — an INCOMPLETE entry for this EXACT range exists
+   *                         (interrupted previous fetch); resume it.
+   *   'full_fetch'       — nothing usable is cached for this request; fetch
+   *                         everything (reason explains why).
+   *
+   * Every branch is deliberately conservative: a complete entry that
+   * doesn't cover the requested HEAD (e.g. genuinely wider/different
+   * request, or a tail gap larger than the safety ceiling) is never
+   * treated as partially reusable — that would risk silently merging
+   * disjoint ranges. Pure — no fetch, no state — fully unit-testable.
+   */
+  function classifyCryptoHFTCacheAction(idbEntry, idbEntryIsComplete, startTime, endTime, opts) {
+    opts = opts || {};
+    const maxTailGapMs = opts.maxTailGapMs != null ? opts.maxTailGapMs : DEFAULT_MAX_TAIL_GAP_MS;
+
+    if (!idbEntry) {
+      return { action: 'full_fetch', reason: 'no_cache_entry' };
+    }
+
+    if (idbEntryIsComplete && cacheContainsRange(idbEntry, startTime, endTime)) {
+      return { action: 'contained_slice', reason: 'cache_fully_contains_requested_range' };
+    }
+
+    if (idbEntryIsComplete && idbEntry.startTime <= startTime && idbEntry.endTime < endTime) {
+      const gapMs = endTime - idbEntry.endTime;
+      if (gapMs <= maxTailGapMs) {
+        return { action: 'tail_refresh', reason: 'cache_covers_head_missing_recent_tail', gapMs };
+      }
+      return { action: 'full_fetch', reason: 'tail_gap_exceeds_incremental_refresh_ceiling', gapMs };
+    }
+
+    if (idbEntryIsComplete) {
+      // Complete, but doesn't satisfy containment or the tail-refresh
+      // shape — e.g. the request starts BEFORE the cache does (a missing
+      // HEAD, not a missing tail). Never merged; a real gap at the head
+      // can't be safely bridged the same way a trailing gap can.
+      return { action: 'full_fetch', reason: 'complete_cache_does_not_cover_requested_head' };
+    }
+
+    if (idbEntry.startTime === startTime && idbEntry.endTime === endTime) {
+      return { action: 'resume', reason: 'incomplete_entry_matches_exact_requested_range' };
+    }
+
+    return { action: 'full_fetch', reason: 'incomplete_entry_does_not_match_requested_range' };
+  }
+
+  /**
+   * Merges two timestamp-keyed row arrays (candles or OI buckets, both
+   * using a `.ts` field), de-duplicating by exact timestamp (new wins on
+   * collision) and returning ascending by ts. Used to combine an existing
+   * cached dataset with a freshly-fetched tail without needing to re-fetch
+   * or discard anything already known-good.
+   */
+  function mergeTimestampedRows(oldRows, newRows) {
+    const byTs = new Map();
+    for (const r of (Array.isArray(oldRows) ? oldRows : [])) if (r && typeof r.ts === 'number') byTs.set(r.ts, r);
+    for (const r of (Array.isArray(newRows) ? newRows : [])) if (r && typeof r.ts === 'number') byTs.set(r.ts, r);
+    return Array.from(byTs.values()).sort((a, b) => a.ts - b.ts);
+  }
+
   // ── Fetch: Bybit OI (signal source, public, no credentials) ────────────
   // Built on fetchWithRateLimitRetry so a 429/10006 mid-pagination retries
   // the SAME page rather than restarting the whole 90-day pull. fetchFn/
@@ -1245,6 +1327,9 @@
     getCachedRawData,
     cacheContainsRange,
     sliceRawDataToRange,
+    DEFAULT_MAX_TAIL_GAP_MS,
+    classifyCryptoHFTCacheAction,
+    mergeTimestampedRows,
     BINANCE_OI_MAX_LOOKBACK_MS,
     computeBinanceOIReferenceRange,
     RAW_DATA_PACK_SCHEMA,
@@ -1522,8 +1607,15 @@
         binanceCandles = rawDataOverride.binanceCandles;
         coverage = rawDataOverride.coverage || null;
         setStatus(`<span style="color:var(--teal);">Using imported raw-data pack.</span> ${safeUtcDateString(startTime)} → ${safeUtcDateString(endTime)} &middot; ${safeNumber(oiRows.length)} OI buckets / ${safeNumber(binanceCandles.length)} candles &middot; no CryptoHFT fetch.`);
+        console.log('[CryptoHFT cache] path=imported_data_pack', { startTime, endTime, startTimeStr: safeUtcDateString(startTime), endTimeStr: safeUtcDateString(endTime) });
       } else {
       const memCached = forceRefresh ? null : getCachedRawData(state.rawDataCache, startTime, endTime);
+
+      console.log('[CryptoHFT cache] requested range', {
+        startTime, endTime, startTimeStr: safeUtcDateString(startTime), endTimeStr: safeUtcDateString(endTime),
+        forceRefresh,
+        memCacheRange: state.rawDataCache ? { startTime: state.rawDataCache.startTime, endTime: state.rawDataCache.endTime } : null,
+      });
 
       if (memCached) {
         const cachedWindow = `${safeUtcDateString(memCached.startTime)} → ${safeUtcDateString(memCached.endTime)}`;
@@ -1535,11 +1627,13 @@
             : `Reusing already-downloaded raw data (lookback days unchanged, cache still fresh) — rerunning analysis with current parameters, no new fetch. `) +
           `Requested window: ${cachedWindow} &middot; originally fetched at ${cachedAtStr}.`
         );
+        console.log('[CryptoHFT cache] path=memory_hit', { reason: wasWider ? 'wider_memory_cache_sliced' : 'exact_memory_cache_fresh' });
         ({ oiRows, binanceCandles, coverage } = memCached);
       } else if (!IdbCache) {
         // IndexedDB module didn't load (script missing/blocked) — degrade
         // to the old always-fetch behavior rather than failing outright.
         setStatus('Fetching CryptoHFT 3-venue aggregate OI and Binance 15m price candles (persistent cache unavailable this session)…');
+        console.log('[CryptoHFT cache] path=full_fetch', { reason: 'idb_cache_module_unavailable' });
         const fetched = await fetchFreshDataset(startTime, endTime, s, progress);
         ({ oiRows, binanceCandles, coverage } = fetched);
         state.rawDataCache = { lookbackDays: s.lookbackDays, startTime, endTime, oiRows, binanceCandles, coverage, cachedAt: Date.now() };
@@ -1561,8 +1655,20 @@
         let idbEntry = null;
         try { idbEntry = await IdbCache.getCacheEntry(idbKey); } catch (e) { idbEntry = null; }
         const idbEntryIsComplete = idbEntry && IdbCache.isCacheEntryComplete(idbEntry, CRYPTOHFT_REQUIRED_VENUES);
+        const classification = classifyCryptoHFTCacheAction(idbEntry, idbEntryIsComplete, startTime, endTime);
 
-        if (idbEntryIsComplete && cacheContainsRange(idbEntry, startTime, endTime)) {
+        console.log('[CryptoHFT cache] IndexedDB lookup', {
+          idbEntryExists: !!idbEntry,
+          idbEntryStatus: idbEntry ? idbEntry.status : null,
+          idbEntryRange: idbEntry ? { startTime: idbEntry.startTime, endTime: idbEntry.endTime, startTimeStr: safeUtcDateString(idbEntry.startTime), endTimeStr: safeUtcDateString(idbEntry.endTime) } : null,
+          idbEntryIsComplete,
+          chosenAction: classification.action,
+          reason: classification.reason,
+          tailGapMs: classification.gapMs != null ? classification.gapMs : undefined,
+          tailGapMinutes: classification.gapMs != null ? Math.round(classification.gapMs / 60000) : undefined,
+        });
+
+        if (classification.action === 'contained_slice') {
           // Fast path: the persisted dataset already covers this request
           // (exactly, or with room to spare) — slice locally, no fetch at
           // all. This is what makes "30-day cache exists, 28-day request
@@ -1581,22 +1687,71 @@
             `serving: ${safeUtcDateString(startTime)} → ${safeUtcDateString(endTime)} &middot; ` +
             `${safeNumber(oiRows.length)} OI buckets / ${safeNumber(binanceCandles.length)} candles.`
           );
+
+        } else if (classification.action === 'tail_refresh') {
+          // The cache covers the requested HEAD but is missing some newest
+          // candles at the end (the requested endTime moved forward since
+          // this was cached — expected, since it's always "now"). Fetch
+          // ONLY the missing tail, with a small safe overlap so there's
+          // never an exact-boundary gap, then merge with what's already
+          // cached, dedupe, and persist as the new (wider) entry. This is
+          // what makes "hard refresh a few minutes later" fast instead of
+          // re-triggering a full 30-day multi-venue refetch.
+          const OVERLAP_CANDLES = 2;
+          const tailFetchStart = Math.max(idbEntry.startTime, idbEntry.endTime - OVERLAP_CANDLES * CHART_INTERVAL_MS);
+          setStatus(
+            `Cache covers ${safeUtcDateString(idbEntry.startTime)} → ${safeUtcDateString(idbEntry.endTime)} already — ` +
+            `fetching only the newest tail (${safeUtcDateString(tailFetchStart)} → ${safeUtcDateString(endTime)}), not a full refetch…`
+          );
+
+          const tailBinanceCandles = await fetchBinanceCandles(tailFetchStart, endTime, { onProgress: progress, pageDelayMs: BINANCE_PAGE_DELAY_MS });
+          const tailCryptoHftResult = await fetchCryptoHFTAggregateOI(tailFetchStart, endTime, s.cryptoHftApiKey, {
+            onProgress: progress,
+            decodeZst: decodeZstBrowser,
+            parseParquet: parseParquetBrowser,
+            existingPerVenueOI: {}, // a fresh small tail pull — NOT resuming the old entry's (different-range) per-venue state
+          });
+
+          const mergedBinanceCandles = mergeTimestampedRows(idbEntry.binanceCandles, tailBinanceCandles);
+          const mergedOiRows = mergeTimestampedRows(idbEntry.aggregateOI, tailCryptoHftResult.oiRows);
+
+          const sliced = sliceRawDataToRange(mergedBinanceCandles, mergedOiRows, startTime, endTime);
+          binanceCandles = sliced.binanceCandles;
+          oiRows = sliced.oiRows;
+          coverage = tailCryptoHftResult.coverage; // reflects the freshly-fetched tail's own coverage diagnostics
+
+          const workingEntry = Object.assign({}, idbEntry, {
+            binanceCandles: mergedBinanceCandles,
+            aggregateOI: mergedOiRows,
+            coverage,
+            status: 'complete',
+            startTime: idbEntry.startTime, // head is unchanged — only the tail was extended
+            endTime,
+          });
+          try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal for this run, but future reruns won't get the extended tail persisted */ }
+
+          setStatus(
+            `<span style="color:var(--teal);">Tail refresh complete.</span> Fetched only the newest ${safeNumber(tailBinanceCandles.length)} candles ` +
+            `(${safeUtcDateString(tailFetchStart)} → ${safeUtcDateString(endTime)}) instead of a full refetch &middot; ` +
+            `${safeNumber(oiRows.length)} OI buckets / ${safeNumber(binanceCandles.length)} candles now serving this request.`
+          );
+
         } else {
-          // Nothing usable is cached for this exact request. A COMPLETE
-          // entry that exists but doesn't contain the requested range
-          // (e.g. a wider request than what's cached) is a mismatched
+          // 'resume' or 'full_fetch' — nothing usable is cached for this
+          // exact request. A COMPLETE entry that exists but doesn't
+          // qualify for contained_slice or tail_refresh (e.g. missing the
+          // requested HEAD, or a tail gap too large) is a mismatched
           // range, not a partial fetch of THIS range — it must never be
-          // treated as "resumable" for a different window, which would
+          // treated as resumable for a different window, which would
           // silently merge two unrelated date ranges. Resuming an
           // in-progress entry only applies when its own stored
           // startTime/endTime exactly match the current request.
-          const resumableEntry = (idbEntry && !idbEntryIsComplete && idbEntry.startTime === startTime && idbEntry.endTime === endTime)
-            ? idbEntry : null;
+          const resumableEntry = classification.action === 'resume' ? idbEntry : null;
           const resuming = resumableEntry && (IdbCache.completedVenues(resumableEntry, CRYPTOHFT_REQUIRED_VENUES).length > 0 ||
             (Array.isArray(resumableEntry.binanceCandles) && resumableEntry.binanceCandles.length > 0));
           setStatus(resuming
             ? 'Fetching missing data — resuming a previously interrupted pull, already-completed venues will not be re-fetched…'
-            : 'Fetching missing data — this is a fresh dataset, first pull may take a while…');
+            : `Fetching missing data — ${classification.reason.replace(/_/g, ' ')}, first pull may take a while…`);
 
           const workingEntry = resumableEntry || IdbCache.makeEmptyEntry(idbKey, { lookbackDays: s.lookbackDays, startTime, endTime });
           try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal — proceeds without persistence if IDB write fails */ }

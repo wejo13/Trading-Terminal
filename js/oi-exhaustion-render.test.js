@@ -1096,13 +1096,13 @@ section('findDisplayCandleForAlert: correctly places an alert on its containing 
   assert('findDisplayCandleForAlert returns null for a bucket with no displayed candle', R.findDisplayCandleForAlert(dayStart - HOUR_MS, h1Index, '1h') === null);
 })();
 
-section('mergeBinanceOIOntoDisplayCandles(15m): attaches degenerate {close,high,low} from the {ts,value} line series');
+section('mergeBinanceOIOntoDisplayCandles(15m): attaches degenerate OHLC candles (o=h=l=c) from the 15m sample series');
 (function () {
   const M15 = 15 * 60 * 1000;
   const displayCandles = [{ timestamp: 0 }, { timestamp: M15 }, { timestamp: 2 * M15 }];
-  const binanceSeries = [{ ts: 0, value: 50 }, { ts: M15, value: 55 }];
+  const binanceSeries = [{ timestamp: 0, open: 50, high: 50, low: 50, close: 50 }, { timestamp: M15, open: 55, high: 55, low: 55, close: 55 }];
   const merged = R.mergeBinanceOIOntoDisplayCandles(displayCandles, binanceSeries, '15m');
-  assert('matched candle gets close/high/low all equal to the single reading', merged[0].binanceOI.close === 50 && merged[0].binanceOI.high === 50 && merged[0].binanceOI.low === 50);
+  assert('matched candle gets full degenerate OHLC from the single reading', merged[0].binanceOI.open === 50 && merged[0].binanceOI.close === 50 && merged[0].binanceOI.high === 50 && merged[0].binanceOI.low === 50);
   assert('second matched candle correct', merged[1].binanceOI.close === 55);
   assert('unmatched candle gets null (a real gap), not a guessed/carried-over value', merged[2].binanceOI === null);
 })();
@@ -1110,7 +1110,7 @@ section('mergeBinanceOIOntoDisplayCandles(15m): attaches degenerate {close,high,
 section('mergeBinanceOIOntoDisplayCandles(1h/2h/4h): attaches real OHLC close/high/low from the aggregated series');
 (function () {
   const displayCandles = [{ timestamp: 1000 }, { timestamp: 2000 }];
-  const binanceSeries = [{ timestamp: 1000, open: 10, high: 20, low: 5, close: 15 }];
+  const binanceSeries = [{ timestamp: 1000, open: 10, high: 20, low: 5, close: 15 }]; // open now carried through for OHLC candle rendering
   const merged = R.mergeBinanceOIOntoDisplayCandles(displayCandles, binanceSeries, '1h');
   assert('matched candle carries close/high/low from the aggregated bucket', merged[0].binanceOI.close === 15 && merged[0].binanceOI.high === 20 && merged[0].binanceOI.low === 5);
   assert('unmatched candle gets null', merged[1].binanceOI === null);
@@ -1668,7 +1668,7 @@ section('mergeBinanceOIOntoDisplayCandles: already-aligned 15m Binance timestamp
   const M15 = 15 * 60 * 1000;
   const t = Math.floor(1750000000000 / M15) * M15;
   const candles = [{ timestamp: t }, { timestamp: t + M15 }];
-  const series = [{ ts: t, value: 100 }, { ts: t + M15, value: 200 }];
+  const series = [{ timestamp: t, open: 100, high: 100, low: 100, close: 100 }, { timestamp: t + M15, open: 200, high: 200, low: 200, close: 200 }];
   const merged = R.mergeBinanceOIOntoDisplayCandles(candles, series, '15m');
   assert('both aligned readings merged', merged[0].binanceOI.close === 100 && merged[1].binanceOI.close === 200);
   assert('overlap count is 2', R.countBinanceOIOverlap(merged) === 2);
@@ -1680,7 +1680,7 @@ section('mergeBinanceOIOntoDisplayCandles: an UNALIGNED Binance timestamp is flo
   const t = Math.floor(1750000000000 / M15) * M15;
   const candles = [{ timestamp: t }, { timestamp: t + M15 }];
   // e.g. stamped at :14:59.999 inside the bucket — must land in bucket t, not vanish
-  const series = [{ ts: t + M15 - 1, value: 111 }];
+  const series = [{ timestamp: t + M15 - 1, open: 111, high: 111, low: 111, close: 111 }];
   const merged = R.mergeBinanceOIOntoDisplayCandles(candles, series, '15m');
   assert('unaligned reading floored into its own bucket', merged[0].binanceOI && merged[0].binanceOI.close === 111);
   assert('neighboring bucket stays null (floor, NOT nearest-time matching)', merged[1].binanceOI === null);
@@ -1691,7 +1691,7 @@ section('mergeBinanceOIOntoDisplayCandles: zero overlap produces all-null merges
   const M15 = 15 * 60 * 1000;
   const t = Math.floor(1750000000000 / M15) * M15;
   const candles = [{ timestamp: t }, { timestamp: t + M15 }];
-  const series = [{ ts: t - 10 * M15, value: 5 }]; // entirely outside the chart range
+  const series = [{ timestamp: t - 10 * M15, open: 5, high: 5, low: 5, close: 5 }]; // entirely outside the chart range
   const merged = R.mergeBinanceOIOntoDisplayCandles(candles, series, '15m');
   assert('no candle got a reading', merged.every(c => c.binanceOI === null));
   assert('overlap count is 0', R.countBinanceOIOverlap(merged) === 0);

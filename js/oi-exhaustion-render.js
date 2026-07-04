@@ -1144,29 +1144,26 @@
   function mergeBinanceOIOntoDisplayCandles(displayCandles, binanceOISeries, timeframe) {
     const list = Array.isArray(displayCandles) ? displayCandles : [];
     const series = Array.isArray(binanceOISeries) ? binanceOISeries : [];
-    const isLineSeries = timeframe === '15m';
-    // Alignment tolerance: Binance's own reading timestamps are floored to
-    // the explicit 15m bucket grid this feature displays on (or the
-    // coarser display bucket for 1h/2h/4h/1d, whose series timestamps are
-    // already bucket starts). Chart-alignment key ONLY — the fetched rows
-    // and everything shown in the status line keep Binance's original,
-    // untouched timestamps. Deliberately NOT nearest-time matching: a
-    // reading can only land in the bucket it belongs to, never a neighbor.
+    const is15m = timeframe === '15m';
+    // Alignment tolerance (15m only): Binance's own reading timestamps are
+    // floored to the explicit 15m bucket grid this feature displays on.
+    // Coarser timeframes' series timestamps are already exact UTC bucket
+    // starts. Chart-alignment key ONLY — the fetched rows and everything
+    // shown in the status line keep Binance's original, untouched
+    // timestamps. Deliberately NOT nearest-time matching: a reading can
+    // only land in the bucket it belongs to, never a neighbor.
     const bucketMs = CHART_INTERVAL_MS;
     const index = new Map();
     for (const pt of series) {
-      const rawKey = isLineSeries ? pt.ts : pt.timestamp;
+      const rawKey = pt ? pt.timestamp : null;
       if (typeof rawKey !== 'number' || !isFinite(rawKey)) continue;
-      const key = isLineSeries ? Math.floor(rawKey / bucketMs) * bucketMs : rawKey;
+      const key = is15m ? Math.floor(rawKey / bucketMs) * bucketMs : rawKey;
       index.set(key, pt);
     }
     return list.map(c => {
       const match = index.get(c.timestamp);
       if (!match) return Object.assign({}, c, { binanceOI: null });
-      const binanceOI = isLineSeries
-        ? { close: match.value, high: match.value, low: match.value }
-        : { close: match.close, high: match.high, low: match.low };
-      return Object.assign({}, c, { binanceOI });
+      return Object.assign({}, c, { binanceOI: { open: match.open, high: match.high, low: match.low, close: match.close } });
     });
   }
 
@@ -2299,28 +2296,61 @@
     try {
       klinecharts.registerIndicator({
         name: BINANCE_OI_INDICATOR_NAME,
-        shortName: 'Binance OI close w/ range',
+        shortName: 'Binance OI · OI OHLC',
         series: 'normal', // OI data, not price — uses the indicator's own precision, not the price pane's
         precision: 0,
-        // close = prominent reference line; high/low = faint bounding
-        // lines so an OHLC-aggregated bucket's range is still visible
-        // even though this isn't a literal candle body (see chat notes —
-        // true candle-body rendering inside a custom v9 indicator is
-        // unverified API surface; this stays within confidently-known
-        // figure primitives instead).
+        // Figures drive the pane legend/crosshair readout only — the
+        // actual rendering is the custom `draw` below (which returns true
+        // to skip default figure drawing entirely).
         figures: [
-          { key: 'low', title: 'Low: ', type: 'line', styles: () => ({ style: 'dashed', color: 'rgba(154,161,171,0.5)', size: 1, dashedValue: [2, 2] }) },
-          { key: 'high', title: 'High: ', type: 'line', styles: () => ({ style: 'dashed', color: 'rgba(154,161,171,0.5)', size: 1, dashedValue: [2, 2] }) },
-          { key: 'close', title: 'OI: ', type: 'line', styles: () => ({ style: 'solid', color: '#f0b559', size: 1.5 }) },
+          { key: 'open', title: 'O: ', type: 'line' },
+          { key: 'high', title: 'H: ', type: 'line' },
+          { key: 'low', title: 'L: ', type: 'line' },
+          { key: 'close', title: 'C: ', type: 'line' },
         ],
         calc: (kLineDataList) => kLineDataList.map(d => {
           const ref = d.binanceOI;
           return {
-            close: ref && ref.close != null ? ref.close : null,
+            open: ref && ref.open != null ? ref.open : null,
             high: ref && ref.high != null ? ref.high : null,
             low: ref && ref.low != null ? ref.low : null,
+            close: ref && ref.close != null ? ref.close : null,
           };
         }),
+        // Real OI OHLC candlesticks: wick = high→low, body = open→close,
+        // green up / red down / gray flat (15m degenerate candles are all
+        // flat by construction — a horizontal tick-height body). A null
+        // result (missing/incomplete bucket) draws NOTHING — no
+        // forward-fill, no spanning, gaps stay visibly empty.
+        draw: (params) => {
+          const ctx = params.ctx, indicator = params.indicator, visibleRange = params.visibleRange,
+            barSpace = params.barSpace, xAxis = params.xAxis, yAxis = params.yAxis;
+          const result = (indicator && indicator.result) ? indicator.result : [];
+          const from = Math.max(0, visibleRange.realFrom != null ? visibleRange.realFrom : visibleRange.from);
+          const to = Math.min(result.length, visibleRange.realTo != null ? visibleRange.realTo : visibleRange.to);
+          const halfBody = Math.max(1, barSpace.halfGapBar != null ? barSpace.halfGapBar : Math.floor((barSpace.gapBar || 2) / 2));
+          for (let i = from; i < to; i++) {
+            const d = result[i];
+            if (!d || d.open == null || d.high == null || d.low == null || d.close == null) continue;
+            const x = xAxis.convertToPixel(i);
+            const yOpen = yAxis.convertToPixel(d.open);
+            const yClose = yAxis.convertToPixel(d.close);
+            const yHigh = yAxis.convertToPixel(d.high);
+            const yLow = yAxis.convertToPixel(d.low);
+            const color = d.close > d.open ? '#3ddc97' : (d.close < d.open ? '#e2645f' : '#9aa1ab');
+            ctx.strokeStyle = color;
+            ctx.fillStyle = color;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(x, yHigh);
+            ctx.lineTo(x, yLow);
+            ctx.stroke();
+            const bodyTop = Math.min(yOpen, yClose);
+            const bodyHeight = Math.max(1, Math.abs(yClose - yOpen));
+            ctx.fillRect(x - halfBody, bodyTop, Math.max(1, halfBody * 2), bodyHeight);
+          }
+          return true; // fully custom-drawn — skip default figure rendering
+        },
       });
       binanceOIIndicatorRegistered = true;
     } catch (err) {
@@ -2361,7 +2391,7 @@
     const overlapLine = b.lastOverlapCount === 0
       ? ` &middot; <span style="color:var(--amber);">valid Binance points exist but 0 candles on the current chart overlap them — pane will be empty (range mismatch)</span>`
       : (b.lastOverlapCount != null ? ` &middot; ${safeNumber(b.lastOverlapCount)} chart candles aligned` : '');
-    el.innerHTML = `Binance OI reference: ${safeNumber(cov.barCount)} bars &middot; ` +
+    el.innerHTML = `Binance OI reference (OI OHLC): ${safeNumber(cov.barCount)} bars &middot; ` +
       `${safeUtcDateString(cov.startTime)} &rarr; ${safeUtcDateString(cov.endTime)} &middot; ` +
       `${safeNumber(cov.missingBars)} missing bars (no forward-fill — gaps are real)` + latestLine + overlapLine + debugLine;
   }

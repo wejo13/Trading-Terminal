@@ -139,7 +139,10 @@
 
     const bucketMs = BUCKET_MS[timeframe];
     if (!bucketMs || bucketMs <= FIFTEEN_MIN_MS) {
-      return valid.map(r => ({ ts: r.ts, value: r.oi }));
+      // 15m: each available sample IS its own candle — open/high/low/close
+      // all equal to that single reading (a real sampled value, not an
+      // invented range). Missing samples simply produce no candle.
+      return valid.map(r => ({ timestamp: r.ts, open: r.oi, high: r.oi, low: r.oi, close: r.oi }));
     }
 
     const expectedReadingsPerBucket = Math.round(bucketMs / FIFTEEN_MIN_MS);

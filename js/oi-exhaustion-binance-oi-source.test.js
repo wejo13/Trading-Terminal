@@ -67,13 +67,14 @@ section('normalizeBinanceOpenInterestRows: empty/garbage input never throws');
 
 // ── buildBinanceOIDisplaySeries ───────────────────────────────────────────
 
-section('buildBinanceOIDisplaySeries(15m): identity value series, NOT synthesized into OHLC candles');
+section('buildBinanceOIDisplaySeries(15m): one degenerate OHLC candle per sample — open/high/low/close all equal the reading, nothing invented');
 (function () {
   const rows = [row(0, 100), row(FIFTEEN_MIN_MS, 105), row(FIFTEEN_MIN_MS * 2, 110)];
   const out = S.buildBinanceOIDisplaySeries(rows, '15m');
-  assert('3 points, one per reading', out.length === 3);
-  assert('each point is a plain {ts, value} pair, not OHLC', 'value' in out[0] && !('open' in out[0]));
-  assert('values match the raw readings exactly', out[0].value === 100 && out[1].value === 105 && out[2].value === 110);
+  assert('3 candles, one per reading', out.length === 3);
+  assert('each is a full OHLC candle keyed by timestamp', 'open' in out[0] && 'close' in out[0] && out[0].timestamp === 0);
+  assert('o=h=l=c all equal the single sampled value', out[0].open === 100 && out[0].high === 100 && out[0].low === 100 && out[0].close === 100);
+  assert('later values carried exactly', out[1].close === 105 && out[2].close === 110);
 })();
 
 section('buildBinanceOIDisplaySeries(1h): builds real OHLC from four 15m readings per UTC hour');

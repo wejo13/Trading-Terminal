@@ -2732,10 +2732,10 @@
           <div style="margin-top:12px;padding-top:12px;border-top:0.5px solid var(--line-old);display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-dim);cursor:pointer;">
               <input type="checkbox" id="oix-binanceOIReferenceEnabled" onchange="OIExhaustionRender.toggleBinanceOIReference()" style="width:auto;">
-              Binance Futures native OI reference &middot; official exchange API
+              Binance Futures native OI reference &middot; official exchange API &middot; OI OHLC
             </label>
             <span style="font-size:10.5px;color:var(--text-faint);">(external reference only — not strategy input; does not affect V1, V2, directional OI chase, zones, cache, or backtest results)</span>
-            <span style="font-size:10.5px;color:var(--text-faint);">&middot; 1H/2H/4H/1D shown as OI close with high/low range, not literal OI candlesticks</span>
+            <span style="font-size:10.5px;color:var(--text-faint);">&middot; OI OHLC candles per display timeframe &mdash; open/high/low/close of the native 15m OI samples in each UTC bucket; missing buckets stay empty</span>
           </div>
           <div id="oix-binance-oi-status" style="margin-top:4px;font-size:11px;color:var(--text-faint);"></div>
         </div>

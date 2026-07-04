@@ -2690,6 +2690,19 @@
           </button>
           <div id="oix-status" style="font-size:11px;color:var(--text-dim);line-height:1.6;flex:1;"></div>
         </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-6px 0 14px;">
+          <button onclick="OIExhaustionRender.exportRawDataPack()" id="oix-export-data-pack-btn" disabled style="display:flex;align-items:center;gap:6px;background:transparent;color:var(--text-dim);border:0.5px solid var(--line-old);border-radius:7px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;">
+            <i class="ti ti-download" style="font-size:13px;"></i>Export loaded data
+          </button>
+          <button onclick="OIExhaustionRender.chooseRawDataPackFile()" style="display:flex;align-items:center;gap:6px;background:transparent;color:var(--text-dim);border:0.5px solid var(--line-old);border-radius:7px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;">
+            <i class="ti ti-upload" style="font-size:13px;"></i>Import data pack
+          </button>
+          <input id="oix-import-data-pack-file" type="file" accept="application/json,.json" onchange="OIExhaustionRender.importRawDataPackFile(this)" style="display:none;">
+          <button onclick="OIExhaustionRender.runImportedData()" id="oix-run-imported-pack-btn" disabled style="display:flex;align-items:center;gap:6px;background:transparent;color:var(--text-dim);border:0.5px solid var(--line-old);border-radius:7px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;">
+            <i class="ti ti-player-play" style="font-size:13px;"></i>Run imported data
+          </button>
+          <span id="oix-import-data-pack-status" style="font-size:10.5px;color:var(--text-faint);"></span>
+        </div>
 
         <!-- Stale/failed-run banner — hidden unless the most recent run failed -->
         <div id="oix-stale-banner" style="display:none;margin-bottom:16px;padding:10px 14px;background:rgba(226,100,95,0.1);border:1px solid rgba(226,100,95,0.35);border-radius:8px;font-size:12px;color:var(--text);"></div>

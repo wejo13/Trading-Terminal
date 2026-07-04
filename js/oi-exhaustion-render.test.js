@@ -605,6 +605,51 @@ section('sliceRawDataToRange: pure slicing, inclusive boundaries, empty/garbage 
   assert('null arrays -> empty result, no throw', R.sliceRawDataToRange(null, null, 0, 100).binanceCandles.length === 0);
 })();
 
+
+section('rolling completed cache: a one-candle newer request produces a tail-only refresh plan');
+(function () {
+  const step = 15 * 60 * 1000;
+  const day = 24 * 60 * 60 * 1000;
+  const previousEnd = 1000 * day;
+  const requestEnd = previousEnd + step;
+  const requestStart = requestEnd - 30 * day;
+  const entry = { startTime: previousEnd - 30 * day, endTime: previousEnd };
+  const plan = R.buildTailRefreshPlan(entry, requestStart, requestEnd);
+  assert('rolling cache with only a newest tail missing gets a plan', !!plan);
+  assert('tail refresh fetches a small overlap rather than the 30-day window', plan && (plan.fetchEnd - plan.fetchStart) <= (R.CACHE_TAIL_FETCH_OVERLAP_MS + step));
+  assert('retained cache begins before the current requested window', plan && plan.retainStart <= requestStart);
+})();
+
+section('rolling completed cache: head gaps and disjoint ranges are never treated as safe tail refreshes');
+(function () {
+  const day = 24 * 60 * 60 * 1000;
+  assert('head gap returns null', R.buildTailRefreshPlan({ startTime: 10 * day, endTime: 40 * day }, 5 * day, 45 * day) === null);
+  assert('disjoint old cache returns null', R.buildTailRefreshPlan({ startTime: 0, endTime: 5 * day }, 20 * day, 50 * day) === null);
+})();
+
+section('tail-series merge: incoming tail wins at overlap, duplicates are removed, and retention trimming is deterministic');
+(function () {
+  const existing = [{ ts: 0, oi: 1 }, { ts: 10, oi: 2 }, { ts: 20, oi: 3 }];
+  const incoming = [{ ts: 20, oi: 30 }, { ts: 30, oi: 4 }];
+  const merged = R.mergeTimestampSeries(existing, incoming);
+  assert('merged timestamps are unique and ascending', merged.map(x => x.ts).join(',') === '0,10,20,30');
+  assert('fresh tail value wins at timestamp overlap', merged.find(x => x.ts === 20).oi === 30);
+  const trimmed = R.trimTimestampSeries(merged, 10, 30);
+  assert('retention trimming keeps only requested inclusive bounds', trimmed.map(x => x.ts).join(',') === '10,20,30');
+})();
+
+section('tail per-venue merge: each required venue is independently merged and retained');
+(function () {
+  const existing = { a: [{ ts: 0, oi: 1 }, { ts: 10, oi: 2 }], b: [{ ts: 0, oi: 3 }] };
+  const incoming = { a: [{ ts: 10, oi: 20 }, { ts: 20, oi: 30 }], b: [{ ts: 10, oi: 4 }, { ts: 20, oi: 5 }] };
+  const merged = R.mergePerVenueSeries(existing, incoming, ['a', 'b']);
+  assert('venue a merge keeps fresh overlap', merged.a.map(x => x.oi).join(',') === '1,20,30');
+  assert('venue b merge adds tail rows', merged.b.length === 3);
+  const trimmed = R.trimPerVenueSeries(merged, ['a', 'b'], 10, 20);
+  assert('all venues are trimmed to the retained range', trimmed.a.length === 2 && trimmed.b.length === 2);
+})();
+
+
 section('RAW_DATA_CACHE_TTL_MS: default constant is exactly 15 minutes');
 (function () {
   assert('15 * 60 * 1000 ms', R.RAW_DATA_CACHE_TTL_MS === 15 * 60 * 1000);

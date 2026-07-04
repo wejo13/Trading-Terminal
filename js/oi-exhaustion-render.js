@@ -259,6 +259,70 @@
     };
   }
 
+
+  // A rolling 30-day request advances by one completed 15m candle at a time.
+  // A complete cache that is only missing that newest tail must be refreshed
+  // incrementally, not thrown away and rebuilt from thousands of raw files.
+  // One hour of overlap is deliberately re-fetched: CryptoHFT paths are
+  // hourly and this makes the boundary robust while merge-by-timestamp keeps
+  // the final stored data deterministic.
+  const CACHE_TAIL_FETCH_OVERLAP_MS = 60 * 60 * 1000;
+  const CACHE_RETENTION_OVERLAP_MS = 60 * 60 * 1000;
+
+  /**
+   * Returns a safe incremental-tail plan when a completed cached entry
+   * overlaps the requested window and is only stale at the newest end.
+   * Returns null for head gaps / disjoint ranges, which still require a full
+   * fetch because they cannot be repaired without risking hidden holes.
+   */
+  function buildTailRefreshPlan(entry, requestedStart, requestedEnd) {
+    if (!entry || typeof entry.startTime !== 'number' || typeof entry.endTime !== 'number') return null;
+    if (!(entry.startTime <= requestedStart && entry.endTime < requestedEnd && entry.endTime >= requestedStart)) return null;
+    return {
+      fetchStart: Math.max(requestedStart, entry.endTime - CACHE_TAIL_FETCH_OVERLAP_MS),
+      fetchEnd: requestedEnd,
+      // Retain a small overlap before the current requested window so the
+      // next completed 15m candle remains a tail refresh rather than a miss.
+      retainStart: Math.max(entry.startTime, requestedStart - CACHE_RETENTION_OVERLAP_MS),
+      retainEnd: requestedEnd,
+    };
+  }
+
+  /** Merge timestamped rows, with fresh incoming values winning at overlap. */
+  function mergeTimestampSeries(existingRows, incomingRows) {
+    const byTs = new Map();
+    for (const row of (Array.isArray(existingRows) ? existingRows : [])) {
+      if (row && typeof row.ts === 'number' && isFinite(row.ts)) byTs.set(row.ts, row);
+    }
+    for (const row of (Array.isArray(incomingRows) ? incomingRows : [])) {
+      if (row && typeof row.ts === 'number' && isFinite(row.ts)) byTs.set(row.ts, row);
+    }
+    return Array.from(byTs.values()).sort((a, b) => a.ts - b.ts);
+  }
+
+  function trimTimestampSeries(rows, startTime, endTime) {
+    return (Array.isArray(rows) ? rows : []).filter(row => row && row.ts >= startTime && row.ts <= endTime);
+  }
+
+  function mergePerVenueSeries(existingPerVenueOI, incomingPerVenueOI, venues) {
+    const out = {};
+    for (const venue of (Array.isArray(venues) ? venues : [])) {
+      out[venue] = mergeTimestampSeries(
+        existingPerVenueOI && existingPerVenueOI[venue],
+        incomingPerVenueOI && incomingPerVenueOI[venue]
+      );
+    }
+    return out;
+  }
+
+  function trimPerVenueSeries(perVenueOI, venues, startTime, endTime) {
+    const out = {};
+    for (const venue of (Array.isArray(venues) ? venues : [])) {
+      out[venue] = trimTimestampSeries(perVenueOI && perVenueOI[venue], startTime, endTime);
+    }
+    return out;
+  }
+
   // Binance's openInterestHist only retains ~30 days of history and 400s
   // on a request spanning too much of it. 29d23h45m — 15 minutes under 30
   // days — is deliberately NOT a round 29 days: it reserves exactly the
@@ -1145,6 +1209,13 @@
     getCachedRawData,
     cacheContainsRange,
     sliceRawDataToRange,
+    CACHE_TAIL_FETCH_OVERLAP_MS,
+    CACHE_RETENTION_OVERLAP_MS,
+    buildTailRefreshPlan,
+    mergeTimestampSeries,
+    trimTimestampSeries,
+    mergePerVenueSeries,
+    trimPerVenueSeries,
     BINANCE_OI_MAX_LOOKBACK_MS,
     computeBinanceOIReferenceRange,
     safeNumber,
@@ -1468,61 +1539,131 @@
             `${safeNumber(oiRows.length)} OI buckets / ${safeNumber(binanceCandles.length)} candles.`
           );
         } else {
-          // Nothing usable is cached for this exact request. A COMPLETE
-          // entry that exists but doesn't contain the requested range
-          // (e.g. a wider request than what's cached) is a mismatched
-          // range, not a partial fetch of THIS range — it must never be
-          // treated as "resumable" for a different window, which would
-          // silently merge two unrelated date ranges. Resuming an
-          // in-progress entry only applies when its own stored
-          // startTime/endTime exactly match the current request.
-          const resumableEntry = (idbEntry && !idbEntryIsComplete && idbEntry.startTime === startTime && idbEntry.endTime === endTime)
-            ? idbEntry : null;
-          const resuming = resumableEntry && (IdbCache.completedVenues(resumableEntry, CRYPTOHFT_REQUIRED_VENUES).length > 0 ||
-            (Array.isArray(resumableEntry.binanceCandles) && resumableEntry.binanceCandles.length > 0));
-          setStatus(resuming
-            ? 'Fetching missing data — resuming a previously interrupted pull, already-completed venues will not be re-fetched…'
-            : 'Fetching missing data — this is a fresh dataset, first pull may take a while…');
+          // A rolling request normally differs from the previous completed
+          // cache by only its newest 15m tail. Repair that tail incrementally
+          // instead of discarding 30 days of valid downloaded data.
+          const tailPlan = idbEntryIsComplete
+            ? buildTailRefreshPlan(idbEntry, startTime, endTime)
+            : null;
 
-          const workingEntry = resumableEntry || IdbCache.makeEmptyEntry(idbKey, { lookbackDays: s.lookbackDays, startTime, endTime });
-          try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal — proceeds without persistence if IDB write fails */ }
-
-          if (Array.isArray(workingEntry.binanceCandles) && workingEntry.binanceCandles.length > 0) {
-            binanceCandles = workingEntry.binanceCandles;
-          } else {
-            binanceCandles = await fetchBinanceCandles(startTime, endTime, { onProgress: progress, pageDelayMs: BINANCE_PAGE_DELAY_MS });
-            workingEntry.binanceCandles = binanceCandles;
-            try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal */ }
-          }
-
-          const cryptoHftResult = await fetchCryptoHFTAggregateOI(startTime, endTime, s.cryptoHftApiKey, {
-            onProgress: progress,
-            decodeZst: decodeZstBrowser,
-            parseParquet: parseParquetBrowser,
-            existingPerVenueOI: workingEntry.perVenueOI || {},
-            onVenueComplete: async (venue, bucketed) => {
-              workingEntry.perVenueOI[venue] = bucketed;
-              try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal — this venue's work is still in memory for this run */ }
-            },
-          });
-          oiRows = cryptoHftResult.oiRows;
-          coverage = cryptoHftResult.coverage;
-
-          if (oiRows.length === 0 || binanceCandles.length === 0) {
-            throw new Error(
-              `Zero usable rows returned — CryptoHFT aggregate buckets: ${oiRows.length}, Binance candles: ${binanceCandles.length}. ` +
-              `Raw rows collected this run: ${cryptoHftResult.rawRowCount}, complete buckets: ${coverage.completeBuckets}/${coverage.totalBucketsSeen} seen, ` +
-              `venues seen: ${coverage.venuesSeen.join(', ') || 'none'}. Aborting rather than running on partial data — the cache entry stays marked incomplete, so nothing invalid can be reused.`
+          if (tailPlan) {
+            const tailMinutes = Math.max(1, Math.round((tailPlan.fetchEnd - tailPlan.fetchStart) / 60000));
+            setStatus(
+              `<span style="color:var(--teal);">Refreshing newest cached tail only.</span> ` +
+              `Keeping prior coverage and fetching approximately ${tailMinutes} min of overlap/new data — no full CryptoHFT re-download.`
             );
-          }
 
-          workingEntry.aggregateOI = oiRows;
-          workingEntry.coverage = coverage;
-          workingEntry.status = 'complete';
-          workingEntry.startTime = startTime;
-          workingEntry.endTime = endTime;
-          try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal for this run, but future reruns won't get the cache benefit */ }
-          setStatus(`<span style="color:var(--teal);">Cached dataset complete.</span> ${safeNumber(oiRows.length)} OI buckets / ${safeNumber(binanceCandles.length)} candles saved for instant reruns.`);
+            // Fetch a deliberately overlapping tail as a fresh mini-pull.
+            // Do not mutate the complete entry until every venue succeeds;
+            // an interrupted tail refresh must leave the last known-good
+            // complete cache intact.
+            const [tailCandles, tailCryptoHftResult] = await Promise.all([
+              fetchBinanceCandles(tailPlan.fetchStart, tailPlan.fetchEnd, {
+                onProgress: progress,
+                pageDelayMs: BINANCE_PAGE_DELAY_MS,
+              }),
+              fetchCryptoHFTAggregateOI(tailPlan.fetchStart, tailPlan.fetchEnd, s.cryptoHftApiKey, {
+                onProgress: progress,
+                decodeZst: decodeZstBrowser,
+                parseParquet: parseParquetBrowser,
+              }),
+            ]);
+
+            const mergedCandles = trimTimestampSeries(
+              mergeTimestampSeries(idbEntry.binanceCandles, tailCandles),
+              tailPlan.retainStart,
+              tailPlan.retainEnd
+            );
+            const mergedPerVenueOI = trimPerVenueSeries(
+              mergePerVenueSeries(idbEntry.perVenueOI, tailCryptoHftResult.perVenueOI, CRYPTOHFT_REQUIRED_VENUES),
+              CRYPTOHFT_REQUIRED_VENUES,
+              tailPlan.retainStart,
+              tailPlan.retainEnd
+            );
+            const mergedOiRows = CryptoHFTSource.aggregateFromPerVenueBuckets(mergedPerVenueOI, CRYPTOHFT_REQUIRED_VENUES);
+            const mergedCoverage = CryptoHFTSource.summarizeBucketCoverageFromPerVenue(mergedPerVenueOI, CRYPTOHFT_REQUIRED_VENUES);
+
+            if (mergedOiRows.length === 0 || mergedCandles.length === 0) {
+              throw new Error(
+                `Tail refresh returned zero usable rows — aggregate OI buckets: ${mergedOiRows.length}, Binance candles: ${mergedCandles.length}. ` +
+                `The prior completed cache was left unchanged.`
+              );
+            }
+
+            // Persist a bounded rolling window. Retaining one hour before the
+            // current requested start means the next completed candle can be
+            // fetched as another small tail rather than forcing a full pull.
+            idbEntry.perVenueOI = mergedPerVenueOI;
+            idbEntry.binanceCandles = mergedCandles;
+            idbEntry.aggregateOI = mergedOiRows;
+            idbEntry.coverage = mergedCoverage;
+            idbEntry.status = 'complete';
+            idbEntry.lookbackDays = Math.max(Number(idbEntry.lookbackDays) || 0, s.lookbackDays);
+            idbEntry.startTime = tailPlan.retainStart;
+            idbEntry.endTime = tailPlan.retainEnd;
+            idbEntry.updatedAt = Date.now();
+            try { await IdbCache.putCacheEntry(idbEntry); } catch (e) { /* non-fatal for this run */ }
+
+            const sliced = sliceRawDataToRange(mergedCandles, mergedOiRows, startTime, endTime);
+            binanceCandles = sliced.binanceCandles;
+            oiRows = sliced.oiRows;
+            coverage = mergedCoverage;
+            setStatus(
+              `<span style="color:var(--teal);">Cached tail refreshed.</span> ` +
+              `Fetched only ${tailMinutes} min of new/overlap data; serving ${safeNumber(oiRows.length)} OI buckets / ${safeNumber(binanceCandles.length)} candles.`
+            );
+          } else {
+            // No safely reusable tail exists. Resume an interrupted entry
+            // only when its requested range is exactly the current request;
+            // otherwise fetch cleanly rather than merge unrelated windows.
+            const resumableEntry = (idbEntry && !idbEntryIsComplete && idbEntry.startTime === startTime && idbEntry.endTime === endTime)
+              ? idbEntry : null;
+            const resuming = resumableEntry && (IdbCache.completedVenues(resumableEntry, CRYPTOHFT_REQUIRED_VENUES).length > 0 ||
+              (Array.isArray(resumableEntry.binanceCandles) && resumableEntry.binanceCandles.length > 0));
+            setStatus(resuming
+              ? 'Fetching missing data — resuming a previously interrupted pull, already-completed venues will not be re-fetched…'
+              : 'Fetching missing data — this is a fresh dataset, first pull may take a while…');
+
+            const workingEntry = resumableEntry || IdbCache.makeEmptyEntry(idbKey, { lookbackDays: s.lookbackDays, startTime, endTime });
+            try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal — proceeds without persistence if IDB write fails */ }
+
+            if (Array.isArray(workingEntry.binanceCandles) && workingEntry.binanceCandles.length > 0) {
+              binanceCandles = workingEntry.binanceCandles;
+            } else {
+              binanceCandles = await fetchBinanceCandles(startTime, endTime, { onProgress: progress, pageDelayMs: BINANCE_PAGE_DELAY_MS });
+              workingEntry.binanceCandles = binanceCandles;
+              try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal */ }
+            }
+
+            const cryptoHftResult = await fetchCryptoHFTAggregateOI(startTime, endTime, s.cryptoHftApiKey, {
+              onProgress: progress,
+              decodeZst: decodeZstBrowser,
+              parseParquet: parseParquetBrowser,
+              existingPerVenueOI: workingEntry.perVenueOI || {},
+              onVenueComplete: async (venue, bucketed) => {
+                workingEntry.perVenueOI[venue] = bucketed;
+                try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal — this venue's work is still in memory for this run */ }
+              },
+            });
+            oiRows = cryptoHftResult.oiRows;
+            coverage = cryptoHftResult.coverage;
+
+            if (oiRows.length === 0 || binanceCandles.length === 0) {
+              throw new Error(
+                `Zero usable rows returned — CryptoHFT aggregate buckets: ${oiRows.length}, Binance candles: ${binanceCandles.length}. ` +
+                `Raw rows collected this run: ${cryptoHftResult.rawRowCount}, complete buckets: ${coverage.completeBuckets}/${coverage.totalBucketsSeen} seen, ` +
+                `venues seen: ${coverage.venuesSeen.join(', ') || 'none'}. Aborting rather than running on partial data — the cache entry stays marked incomplete, so nothing invalid can be reused.`
+              );
+            }
+
+            workingEntry.aggregateOI = oiRows;
+            workingEntry.coverage = coverage;
+            workingEntry.status = 'complete';
+            workingEntry.startTime = startTime;
+            workingEntry.endTime = endTime;
+            try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal for this run, but future reruns won't get the cache benefit */ }
+            setStatus(`<span style="color:var(--teal);">Cached dataset complete.</span> ${safeNumber(oiRows.length)} OI buckets / ${safeNumber(binanceCandles.length)} candles saved for instant reruns.`);
+          }
         }
 
         // Populate the in-memory (session) cache too, for the fastest

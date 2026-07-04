@@ -907,10 +907,10 @@ section('nextHelpTooltipState: only one tooltip open at a time');
   assert('clicking a different icon switches to it (closes the old one)', R.nextHelpTooltipState('a', 'b') === 'b');
 })();
 
-section('createOverlaySafely: creates without points, then sets them via overrideOverlay (klinecharts 9.8.10 workaround)');
+section('createOverlaySafely: passes points directly at creation time (no overrideOverlay call)');
 (function () {
   function makeFakeChart() {
-    const calls = { createOverlay: [], overrideOverlay: [] };
+    const calls = { createOverlay: [] };
     let nextId = 1;
     return {
       calls,
@@ -918,44 +918,61 @@ section('createOverlaySafely: creates without points, then sets them via overrid
         calls.createOverlay.push(config);
         return 'overlay_' + (nextId++);
       },
-      overrideOverlay(override) {
-        calls.overrideOverlay.push(override);
+      overrideOverlay() {
+        throw new Error('overrideOverlay should never be called by createOverlaySafely');
       },
     };
   }
 
   const chart = makeFakeChart();
   const points = [{ timestamp: 123, value: 456 }];
-  const id = R.createOverlaySafely(chart, { name: 'verticalStraightLine', lock: true, points: [{ timestamp: 999, value: 999 }] }, points);
+  const id = R.createOverlaySafely(chart, { name: 'verticalStraightLine', lock: true }, points);
 
   assert('returns the id from createOverlay', id === 'overlay_1');
   assert('createOverlay was called exactly once', chart.calls.createOverlay.length === 1);
-  assert('createOverlay was NOT given points (that is the buggy path)', !('points' in chart.calls.createOverlay[0]));
+  assert('createOverlay received the points directly', chart.calls.createOverlay[0].points === points);
   assert('createOverlay still received the rest of the config (name, lock)', chart.calls.createOverlay[0].name === 'verticalStraightLine' && chart.calls.createOverlay[0].lock === true);
-  assert('overrideOverlay was called exactly once, after createOverlay', chart.calls.overrideOverlay.length === 1);
-  assert('overrideOverlay received the real id', chart.calls.overrideOverlay[0].id === 'overlay_1');
-  assert('overrideOverlay received the intended points', chart.calls.overrideOverlay[0].points === points);
+})();
+
+section('createOverlaySafely: regression — creating several overlays in sequence must not lose earlier ones');
+(function () {
+  // The prior "create empty, then overrideOverlay" approach was confirmed
+  // broken in the browser: creating N alert-marker overlays in a loop left
+  // only the LAST one visible. Passing points directly avoids the
+  // "overlay left mid-draw" state that caused that, so every overlay in a
+  // sequence must independently retain its own points — this is the exact
+  // scenario that broke before.
+  const created = [];
+  const chart = {
+    createOverlay(config) {
+      const id = 'overlay_' + (created.length + 1);
+      created.push({ id, points: config.points });
+      return id;
+    },
+  };
+  const groups = [
+    [{ timestamp: 100, value: 10 }],
+    [{ timestamp: 200, value: 20 }],
+    [{ timestamp: 300, value: 30 }],
+  ];
+  const ids = groups.map(pts => R.createOverlaySafely(chart, { name: 'verticalStraightLine' }, pts));
+
+  assert('3 distinct overlay ids returned', new Set(ids).size === 3);
+  assert('all 3 overlays were created (not just the last)', created.length === 3);
+  assert('each overlay retains its OWN points, not overwritten by a later call', created.every((c, i) => c.points === groups[i]));
 })();
 
 section('createOverlaySafely: handles an array return from createOverlay (klinecharts returns an array for array input)');
 (function () {
-  const chart = {
-    createOverlay: () => ['overlay_arr_1'],
-    overrideOverlay: () => {},
-  };
+  const chart = { createOverlay: () => ['overlay_arr_1'] };
   assert('unwraps the first id from an array return', R.createOverlaySafely(chart, { name: 'x' }, []) === 'overlay_arr_1');
 })();
 
-section('createOverlaySafely: does not call overrideOverlay if createOverlay fails (null/falsy id)');
+section('createOverlaySafely: returns null (not throw) if createOverlay fails');
 (function () {
-  let overrideCalled = false;
-  const chart = {
-    createOverlay: () => null,
-    overrideOverlay: () => { overrideCalled = true; },
-  };
+  const chart = { createOverlay: () => null };
   const result = R.createOverlaySafely(chart, { name: 'x' }, []);
   assert('returns null when createOverlay fails', result === null);
-  assert('overrideOverlay is never called on failure', overrideCalled === false);
 })();
 
 // ── reconcileChartMarkers / formatChartMarkerDiagnosticLine ──────────────

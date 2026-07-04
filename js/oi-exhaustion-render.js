@@ -794,25 +794,32 @@
   }
 
   /**
-   * klinecharts 9.8.10 has a confirmed library bug where createOverlay can
-   * fail to render when `points` are supplied directly at creation time
-   * (fixed only in v10, which has breaking API changes we don't want —
-   * removes applyNewData among others — so not something to pull in here).
-   * Workaround: create the overlay with no points to get a valid id, then
-   * set its points via a separate overrideOverlay call, which does not
-   * hit the same bug. Returns the overlay id, or null if creation failed.
+   * Creates a klinecharts overlay with its points supplied directly at
+   * creation time — the officially documented usage. A prior version of
+   * this function worked around a suspected "points may not render when
+   * supplied at creation" library bug by creating with no points and
+   * setting them via a separate overrideOverlay call instead. That
+   * workaround was reverted after confirmed empirical breakage: creating
+   * several such "empty then override" overlays in sequence (e.g. one per
+   * alert) left only the LAST one visible — every earlier one silently
+   * disappeared. This matches a different, also-documented klinecharts
+   * bug ("overlays that are forced to end drawing cannot be restored") —
+   * an overlay created with fewer points than its totalStep is left in an
+   * interactive "still drawing" state, and only one such state can exist
+   * at a time; starting a new one discards the previous, even after its
+   * points were set via override. Supplying points immediately at
+   * creation avoids that state entirely — the overlay is complete from
+   * the moment it exists, never "still drawing".
+   *
    * No real DOM/klinecharts dependency of its own — `chart` is just an
-   * object with createOverlay/overrideOverlay methods, dependency-injected,
-   * so this is testable in Node against a fake chart.
+   * object with a createOverlay method, dependency-injected, so this is
+   * testable in Node against a fake chart.
    */
   function createOverlaySafely(chart, overlayConfig, points) {
-    const withoutPoints = Object.assign({}, overlayConfig);
-    delete withoutPoints.points;
-    const created = chart.createOverlay(withoutPoints);
+    const config = Object.assign({}, overlayConfig, { points });
+    const created = chart.createOverlay(config);
     const id = Array.isArray(created) ? created[0] : created;
-    if (!id) return null;
-    chart.overrideOverlay({ id, points });
-    return id;
+    return id || null;
   }
 
   /**

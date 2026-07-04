@@ -2,6 +2,7 @@
 'use strict';
 
 const R = require('./oi-exhaustion-render.js');
+const fs = require('fs');
 
 let passed = 0, failed = 0;
 const asyncTests = []; // collects promises from async test IIFEs so the summary waits for them
@@ -491,46 +492,117 @@ section('parseRateLimitResetWaitMs: never returns negative — floors at 0 if re
   assert('past reset time floors to 0, not negative', R.parseRateLimitResetWaitMs(headers, now, 500) === 0);
 })();
 
-section('getCachedRawData: hit when lookbackDays matches and cache is still fresh');
+section('getCachedRawData: hit when the cache CONTAINS the requested range and is still fresh');
 (function () {
   const now = 1000000;
-  const cache = { lookbackDays: 90, startTime: 1, endTime: 2, oiRows: [1], bybitCandles: [2], binanceCandles: [3], cachedAt: now - 1000 };
-  assert('matching lookbackDays + fresh cache -> hit', R.getCachedRawData(cache, 90, now, 15 * 60 * 1000) === cache);
-  assert('different lookbackDays -> miss (null) even if fresh', R.getCachedRawData(cache, 30, now, 15 * 60 * 1000) === null);
-  assert('null cache -> miss', R.getCachedRawData(null, 90, now, 15 * 60 * 1000) === null);
+  const cache = { lookbackDays: 90, startTime: 100, endTime: 200, oiRows: [{ ts: 100 }, { ts: 150 }, { ts: 200 }], binanceCandles: [{ ts: 100 }, { ts: 150 }, { ts: 200 }], cachedAt: now - 1000 };
+  const hit = R.getCachedRawData(cache, 100, 200, now, 15 * 60 * 1000);
+  assert('exact-range request against a matching cache -> hit', hit !== null);
+  const narrower = R.getCachedRawData(cache, 150, 200, now, 15 * 60 * 1000);
+  assert('a NARROWER request fully contained in a wider cache also hits (the actual bug fix)', narrower !== null);
+  const wider = R.getCachedRawData(cache, 50, 200, now, 15 * 60 * 1000);
+  assert('a request extending BEFORE the cached start is a miss (not contained)', wider === null);
+  assert('null cache -> miss', R.getCachedRawData(null, 100, 200, now, 15 * 60 * 1000) === null);
 })();
 
-section('getCachedRawData: TTL freshness — expired cache misses even with matching lookbackDays');
+section('getCachedRawData: a cache hit SLICES candles/OI down to exactly the requested range, never returning extra history');
+(function () {
+  const now = 1000000;
+  const cache = {
+    startTime: 0, endTime: 300,
+    binanceCandles: [{ ts: 0 }, { ts: 100 }, { ts: 200 }, { ts: 300 }],
+    oiRows: [{ ts: 0 }, { ts: 100 }, { ts: 200 }, { ts: 300 }],
+    coverage: { fake: true },
+    cachedAt: now - 1000,
+  };
+  const result = R.getCachedRawData(cache, 100, 200, now, 15 * 60 * 1000);
+  assert('sliced binanceCandles only includes the requested range', result.binanceCandles.length === 2 && result.binanceCandles.every(c => c.ts >= 100 && c.ts <= 200));
+  assert('sliced oiRows only includes the requested range', result.oiRows.length === 2);
+  assert('returned startTime/endTime reflect the REQUEST, not the wider cache', result.startTime === 100 && result.endTime === 200);
+  assert('coverage is carried through from the cache', result.coverage === cache.coverage);
+})();
+
+section('getCachedRawData: TTL freshness — expired cache misses even when the range is contained');
 (function () {
   const ttl = 15 * 60 * 1000;
   const now = 1000000;
-  const freshCache = { lookbackDays: 90, cachedAt: now - (ttl - 1000) }; // 1s inside the window
-  const expiredCache = { lookbackDays: 90, cachedAt: now - (ttl + 1000) }; // 1s past the window
-  assert('just inside TTL -> hit', R.getCachedRawData(freshCache, 90, now, ttl) === freshCache);
-  assert('just past TTL -> miss', R.getCachedRawData(expiredCache, 90, now, ttl) === null);
+  const base = { startTime: 0, endTime: 1000, binanceCandles: [], oiRows: [] };
+  const freshCache = Object.assign({}, base, { cachedAt: now - (ttl - 1000) }); // 1s inside the window
+  const expiredCache = Object.assign({}, base, { cachedAt: now - (ttl + 1000) }); // 1s past the window
+  assert('just inside TTL -> hit', R.getCachedRawData(freshCache, 0, 1000, now, ttl) !== null);
+  assert('just past TTL -> miss', R.getCachedRawData(expiredCache, 0, 1000, now, ttl) === null);
 })();
 
 section('getCachedRawData: exact TTL boundary is inclusive (age === ttl still hits)');
 (function () {
   const ttl = 15 * 60 * 1000;
   const now = 1000000;
-  const boundaryCache = { lookbackDays: 90, cachedAt: now - ttl };
-  assert('age exactly equal to ttl still counts as fresh', R.getCachedRawData(boundaryCache, 90, now, ttl) === boundaryCache);
+  const boundaryCache = { startTime: 0, endTime: 1000, binanceCandles: [], oiRows: [], cachedAt: now - ttl };
+  assert('age exactly equal to ttl still counts as fresh', R.getCachedRawData(boundaryCache, 0, 1000, now, ttl) !== null);
 })();
 
 section('getCachedRawData: missing cachedAt is treated as stale, not assumed fresh');
 (function () {
   const now = 1000000;
-  const cache = { lookbackDays: 90 }; // no cachedAt at all
-  assert('no cachedAt -> always a miss', R.getCachedRawData(cache, 90, now, 15 * 60 * 1000) === null);
+  const cache = { startTime: 0, endTime: 1000, binanceCandles: [], oiRows: [] }; // no cachedAt at all
+  assert('no cachedAt -> always a miss', R.getCachedRawData(cache, 0, 1000, now, 15 * 60 * 1000) === null);
 })();
 
 section('getCachedRawData: defaults (no nowMs/ttlMs passed) use the real clock and 15-minute TTL');
 (function () {
-  const justFetched = { lookbackDays: 90, cachedAt: Date.now() - 1000 }; // 1s ago
-  assert('a cache from 1 second ago hits using real-clock defaults', R.getCachedRawData(justFetched, 90) === justFetched);
-  const longAgo = { lookbackDays: 90, cachedAt: Date.now() - 20 * 60 * 1000 }; // 20 min ago > default 15-min TTL
-  assert('a cache from 20 minutes ago misses using the default 15-minute TTL', R.getCachedRawData(longAgo, 90) === null);
+  const justFetched = { startTime: 0, endTime: 1000, binanceCandles: [], oiRows: [], cachedAt: Date.now() - 1000 }; // 1s ago
+  assert('a cache from 1 second ago hits using real-clock defaults', R.getCachedRawData(justFetched, 0, 1000) !== null);
+  const longAgo = { startTime: 0, endTime: 1000, binanceCandles: [], oiRows: [], cachedAt: Date.now() - 20 * 60 * 1000 }; // 20 min ago > default 15-min TTL
+  assert('a cache from 20 minutes ago misses using the default 15-minute TTL', R.getCachedRawData(longAgo, 0, 1000) === null);
+})();
+
+section('getCachedRawData: the exact reported scenario — a completed 30-day cache satisfies a subsequent 28-day request');
+(function () {
+  const now = Date.UTC(2026, 6, 1);
+  const dayMs = 24 * 60 * 60 * 1000;
+  const cacheEnd = now;
+  const cacheStart = cacheEnd - 30 * dayMs;
+  // A realistic-shaped 30-day cache: one candle/OI row per day for simplicity.
+  const binanceCandles = [];
+  const oiRows = [];
+  for (let t = cacheStart; t <= cacheEnd; t += dayMs) {
+    binanceCandles.push({ ts: t, close: 100 });
+    oiRows.push({ ts: t, oi: 1000 });
+  }
+  const cache30d = { lookbackDays: 30, startTime: cacheStart, endTime: cacheEnd, binanceCandles, oiRows, coverage: { ok: true }, cachedAt: now - 1000 };
+
+  // User switches Lookback days from 30 to 28 — the new request window:
+  const requestEnd = cacheEnd; // "latest completed candle" doesn't move within the same session
+  const requestStart = requestEnd - 28 * dayMs;
+
+  const result = R.getCachedRawData(cache30d, requestStart, requestEnd, now, 15 * 60 * 1000);
+  assert('the 28-day request is satisfied by the 30-day cache (no null miss)', result !== null);
+  assert('no candle before the newly requested (28-day) start leaks through', result.binanceCandles.every(c => c.ts >= requestStart));
+  assert('no OI row before the newly requested (28-day) start leaks through', result.oiRows.every(r => r.ts >= requestStart));
+  assert('the returned window reflects the NEW 28-day request, not the original 30', result.startTime === requestStart && result.endTime === requestEnd);
+
+  // And switching back to 30 immediately re-hits the same original cache, unsliced.
+  const backTo30 = R.getCachedRawData(cache30d, cacheStart, cacheEnd, now, 15 * 60 * 1000);
+  assert('switching back to 30 days still hits the same cache instantly', backTo30 !== null && backTo30.binanceCandles.length === binanceCandles.length);
+})();
+
+section('cacheContainsRange: pure containment check');
+(function () {
+  assert('cache exactly matching the request contains it', R.cacheContainsRange({ startTime: 0, endTime: 100 }, 0, 100) === true);
+  assert('wider cache contains a narrower request', R.cacheContainsRange({ startTime: 0, endTime: 100 }, 20, 80) === true);
+  assert('cache starting after the request does not contain it', R.cacheContainsRange({ startTime: 50, endTime: 100 }, 0, 100) === false);
+  assert('cache ending before the request does not contain it', R.cacheContainsRange({ startTime: 0, endTime: 50 }, 0, 100) === false);
+  assert('null cache never contains anything', R.cacheContainsRange(null, 0, 100) === false);
+})();
+
+section('sliceRawDataToRange: pure slicing, inclusive boundaries, empty/garbage input never throws');
+(function () {
+  const candles = [{ ts: 0 }, { ts: 50 }, { ts: 100 }, { ts: 150 }];
+  const oi = [{ ts: 0 }, { ts: 50 }, { ts: 100 }, { ts: 150 }];
+  const sliced = R.sliceRawDataToRange(candles, oi, 50, 100);
+  assert('inclusive on both boundaries', sliced.binanceCandles.length === 2 && sliced.oiRows.length === 2);
+  assert('empty arrays -> empty result, no throw', R.sliceRawDataToRange([], [], 0, 100).binanceCandles.length === 0);
+  assert('null arrays -> empty result, no throw', R.sliceRawDataToRange(null, null, 0, 100).binanceCandles.length === 0);
 })();
 
 section('RAW_DATA_CACHE_TTL_MS: default constant is exactly 15 minutes');
@@ -932,6 +1004,97 @@ section('findDisplayCandleForAlert: correctly places an alert on its containing 
   assert('findDisplayCandleForAlert returns null for a bucket with no displayed candle', R.findDisplayCandleForAlert(dayStart - HOUR_MS, h1Index, '1h') === null);
 })();
 
+section('mergeBinanceOIOntoDisplayCandles(15m): attaches degenerate {close,high,low} from the {ts,value} line series');
+(function () {
+  const displayCandles = [{ timestamp: 1000 }, { timestamp: 2000 }, { timestamp: 3000 }];
+  const binanceSeries = [{ ts: 1000, value: 50 }, { ts: 2000, value: 55 }];
+  const merged = R.mergeBinanceOIOntoDisplayCandles(displayCandles, binanceSeries, '15m');
+  assert('matched candle gets close/high/low all equal to the single reading', merged[0].binanceOI.close === 50 && merged[0].binanceOI.high === 50 && merged[0].binanceOI.low === 50);
+  assert('second matched candle correct', merged[1].binanceOI.close === 55);
+  assert('unmatched candle gets null (a real gap), not a guessed/carried-over value', merged[2].binanceOI === null);
+})();
+
+section('mergeBinanceOIOntoDisplayCandles(1h/2h/4h): attaches real OHLC close/high/low from the aggregated series');
+(function () {
+  const displayCandles = [{ timestamp: 1000 }, { timestamp: 2000 }];
+  const binanceSeries = [{ timestamp: 1000, open: 10, high: 20, low: 5, close: 15 }];
+  const merged = R.mergeBinanceOIOntoDisplayCandles(displayCandles, binanceSeries, '1h');
+  assert('matched candle carries close/high/low from the aggregated bucket', merged[0].binanceOI.close === 15 && merged[0].binanceOI.high === 20 && merged[0].binanceOI.low === 5);
+  assert('unmatched candle gets null', merged[1].binanceOI === null);
+})();
+
+section('mergeBinanceOIOntoDisplayCandles: does not mutate the original price candle objects');
+(function () {
+  const original = { timestamp: 1000, close: 999 };
+  const merged = R.mergeBinanceOIOntoDisplayCandles([original], [{ ts: 1000, value: 1 }], '15m');
+  assert('original object is untouched (no binanceOI field added to it)', !('binanceOI' in original));
+  assert('merged result is a new object', merged[0] !== original);
+  assert('merged result still has the original price fields', merged[0].close === 999);
+})();
+
+section('computeBinanceOIReferenceRange: visible window under 30 days is used as-is, unclamped');
+(function () {
+  const visibleStart = Date.UTC(2026, 5, 1);
+  const visibleEnd = visibleStart + 10 * 24 * 60 * 60 * 1000; // 10 days
+  const range = R.computeBinanceOIReferenceRange(visibleStart, visibleEnd);
+  assert('effectiveStart equals the visible start (no clamping needed)', range.effectiveStart === visibleStart);
+  assert('effectiveEnd equals the visible end', range.effectiveEnd === visibleEnd);
+  assert('wasClamped is false', range.wasClamped === false);
+})();
+
+section('computeBinanceOIReferenceRange: 30-day internal strategy coverage (with room for baseline/warmup) still derives from the VISIBLE range only, and clamps under 30 days');
+(function () {
+  // Simulates the exact reported bug: a 30-day lookback plus internal
+  // baseline/warmup could make the underlying dataset spans wider than
+  // "visible" — but analysisStartTime/analysisEndTime (what this function
+  // takes) is ALWAYS the true visible window regardless of that, so a
+  // clean 30-day visible window must clamp to just under 30 days, not
+  // silently balloon to ~30.2 days from unrelated internal buffers.
+  const visibleEnd = Date.UTC(2026, 6, 1);
+  const visibleStart = visibleEnd - 30 * 24 * 60 * 60 * 1000; // exactly 30 days
+  const range = R.computeBinanceOIReferenceRange(visibleStart, visibleEnd);
+  assert('clamping occurred (visible window is exactly 30 days, over the safe ceiling)', range.wasClamped === true);
+  assert('effectiveStart is LATER than visibleStart (clamped inward)', range.effectiveStart > visibleStart);
+  const spanMs = range.effectiveEnd - range.effectiveStart;
+  assert('effective span is under 30 days', spanMs < 30 * 24 * 60 * 60 * 1000);
+  assert('effective span reserves exactly 15 minutes of headroom (29d23h45m) for the endTime pad', spanMs === R.BINANCE_OI_MAX_LOOKBACK_MS);
+  assert('effectiveEnd always equals the visible end — clamping only ever moves the START inward', range.effectiveEnd === visibleEnd);
+})();
+
+section('computeBinanceOIReferenceRange: never influenced by anything other than its two explicit inputs (no hidden baseline/warmup coupling)');
+(function () {
+  // Same visible window, called twice — must be byte-identical regardless
+  // of call order/context, proving there is no hidden global state (like
+  // a raw-data cache's wider bounds) leaking into the computation.
+  const visibleStart = Date.UTC(2026, 5, 15);
+  const visibleEnd = visibleStart + 5 * 24 * 60 * 60 * 1000;
+  const r1 = R.computeBinanceOIReferenceRange(visibleStart, visibleEnd);
+  const r2 = R.computeBinanceOIReferenceRange(visibleStart, visibleEnd);
+  assert('pure function — identical inputs always produce identical output', JSON.stringify(r1) === JSON.stringify(r2));
+})();
+
+section('mergeBinanceOIOntoDisplayCandles: empty/garbage input never throws');
+(function () {
+  assert('empty candles -> []', R.mergeBinanceOIOntoDisplayCandles([], [{ ts: 1, value: 1 }], '15m').length === 0);
+  assert('null series -> all null binanceOI, no throw', R.mergeBinanceOIOntoDisplayCandles([{ timestamp: 1 }], null, '15m')[0].binanceOI === null);
+  assert('null candles -> []', R.mergeBinanceOIOntoDisplayCandles(null, [], '15m').length === 0);
+})();
+
+section('Binance OI reference layer: structurally isolated from strategy inputs (source-level guard)');
+(function () {
+  const src = fs.readFileSync(__dirname + '/oi-exhaustion-render.js', 'utf8');
+  const callStart = src.indexOf('Backtest.runEventStudy(binanceCandles');
+  const callEnd = src.indexOf(');', callStart);
+  const callBlock = src.slice(callStart, callEnd);
+  assert('the actual runEventStudy call site exists', callStart !== -1);
+  assert('runEventStudy call passes NO binanceOI-derived field', !callBlock.includes('binanceOI') && !callBlock.includes('BinanceOI'));
+
+  const idbCacheSrc = fs.readFileSync(__dirname + '/oi-exhaustion-idb-cache.js', 'utf8');
+  assert('the IndexedDB raw-data cache module has no knowledge of Binance OI reference data at all', !idbCacheSrc.includes('binanceOI') && !idbCacheSrc.includes('BinanceOI'));
+
+  assert('state.binanceOI is a distinct top-level state key, not nested inside settings/lastRun', /binanceOI:\s*\{[\s\S]{0,120}enabled: false/.test(src));
+})();
+
 section('nextHelpTooltipState: only one tooltip open at a time');
 (function () {
   assert('opening from closed returns the clicked id', R.nextHelpTooltipState(null, 'a') === 'a');
@@ -998,6 +1161,19 @@ section('createOverlaySafely: handles an array return from createOverlay (klinec
 (function () {
   const chart = { createOverlay: () => ['overlay_arr_1'] };
   assert('unwraps the first id from an array return', R.createOverlaySafely(chart, { name: 'x' }, []) === 'overlay_arr_1');
+})();
+
+section('createOverlaySafely: optional paneId targets a specific pane (e.g. the Binance OI reference pane)');
+(function () {
+  const calls = [];
+  const chart = { createOverlay: (config, paneId) => { calls.push({ config, paneId }); return 'ov1'; } };
+  R.createOverlaySafely(chart, { name: 'x' }, [], 'some-pane-id');
+  assert('paneId passed through as createOverlay\'s second positional argument', calls[0].paneId === 'some-pane-id');
+
+  const calls2 = [];
+  const chart2 = { createOverlay: (config, paneId) => { calls2.push({ config, paneId }); return 'ov2'; } };
+  R.createOverlaySafely(chart2, { name: 'x' }, []);
+  assert('omitting paneId calls createOverlay with only one argument (default candle pane)', calls2[0].paneId === undefined);
 })();
 
 section('createOverlaySafely: returns null (not throw) if createOverlay fails');

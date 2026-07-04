@@ -229,13 +229,97 @@
     return d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
   }
 
-  function getCachedRawData(cache, lookbackDays, nowMs, ttlMs) {
-    if (!cache || cache.lookbackDays !== lookbackDays) return null;
+  /**
+   * True only if `cache` fully contains [startTime, endTime] — i.e. the
+   * cached window starts at or before the requested start AND ends at or
+   * after the requested end. This is the containment rule a completed
+   * larger-lookback cache must satisfy for a smaller overlapping request
+   * to reuse it, per the explicit fix requirement: a 30-day cache must
+   * satisfy a 28-day request without a new download.
+   */
+  function cacheContainsRange(cache, startTime, endTime) {
+    return !!cache && typeof cache.startTime === 'number' && typeof cache.endTime === 'number' &&
+      cache.startTime <= startTime && cache.endTime >= endTime;
+  }
+
+  /**
+   * Slices raw candle/OI arrays down to exactly [startTime, endTime] —
+   * used when reusing a larger cached window for a smaller request, so
+   * the returned dataset is indistinguishable from one fetched fresh at
+   * exactly the requested window (same candles, same OI buckets, same
+   * resulting scores/alerts). Never returns extra history beyond what was
+   * actually requested, even if the cache has more.
+   */
+  function sliceRawDataToRange(binanceCandles, oiRows, startTime, endTime) {
+    const candles = Array.isArray(binanceCandles) ? binanceCandles : [];
+    const rows = Array.isArray(oiRows) ? oiRows : [];
+    return {
+      binanceCandles: candles.filter(c => c && c.ts >= startTime && c.ts <= endTime),
+      oiRows: rows.filter(r => r && r.ts >= startTime && r.ts <= endTime),
+    };
+  }
+
+  // Binance's openInterestHist only retains ~30 days of history and 400s
+  // on a request spanning too much of it. 29d23h45m — 15 minutes under 30
+  // days — is deliberately NOT a round 29 days: it reserves exactly the
+  // 15-minute headroom that fetchBinanceOpenInterestHist's own endTime
+  // padding needs, so a clamped request plus that padding still lands at
+  // or under the real 30-day ceiling instead of tipping it over.
+  const BINANCE_OI_MAX_LOOKBACK_MS = (29 * 24 * 60 * 60 * 1000) + (23 * 60 * 60 * 1000) + (45 * 60 * 1000);
+
+  /**
+   * Derives the Binance OI reference request range from the VISIBLE
+   * analysis window ONLY (analysisStartTime/analysisEndTime as stored on
+   * state.lastRun) — never from internal baseline/warmup/signal-window
+   * buffers, and never from the raw binanceCandles array's own bounds
+   * (which is what silently pulled in extra history before this fix).
+   * Hard-clamps to just under 30 days if the visible window is wider than
+   * that, per Binance's own retention limit.
+   *
+   * Pure — no fetch, no state — so this is fully unit-testable on its own,
+   * separately from whatever the actual analysis window happens to be.
+   *
+   * @returns {{visibleStart:number, visibleEnd:number, effectiveStart:number, effectiveEnd:number, wasClamped:boolean}}
+   */
+  function computeBinanceOIReferenceRange(analysisStartTime, analysisEndTime) {
+    const effectiveEnd = analysisEndTime;
+    const clampedStart = effectiveEnd - BINANCE_OI_MAX_LOOKBACK_MS;
+    const effectiveStart = Math.max(analysisStartTime, clampedStart);
+    return {
+      visibleStart: analysisStartTime,
+      visibleEnd: analysisEndTime,
+      effectiveStart,
+      effectiveEnd,
+      wasClamped: effectiveStart > analysisStartTime,
+    };
+  }
+
+  /**
+   * Cache hit requires the cached window to CONTAIN [startTime, endTime]
+   * (not an exact lookbackDays match — a completed wider-lookback cache
+   * must satisfy a narrower overlapping request) AND still be within the
+   * freshness TTL (default 15 minutes) measured from when it was fetched.
+   * On a hit, returns a NEW object with candles/OI sliced to exactly the
+   * requested range — never the cache's full wider window.
+   * `nowMs`/`ttlMs` are injectable for testing; in normal use they default
+   * to the real clock and the 15-minute default above. A cache with no
+   * `cachedAt` is treated as stale (never hits) rather than assumed fresh.
+   */
+  function getCachedRawData(cache, startTime, endTime, nowMs, ttlMs) {
+    if (!cacheContainsRange(cache, startTime, endTime)) return null;
     if (typeof cache.cachedAt !== 'number') return null;
     const now = nowMs != null ? nowMs : Date.now();
     const ttl = ttlMs != null ? ttlMs : RAW_DATA_CACHE_TTL_MS;
     if (now - cache.cachedAt > ttl) return null; // expired
-    return cache;
+    const sliced = sliceRawDataToRange(cache.binanceCandles, cache.oiRows, startTime, endTime);
+    return {
+      startTime,
+      endTime,
+      binanceCandles: sliced.binanceCandles,
+      oiRows: sliced.oiRows,
+      coverage: cache.coverage,
+      cachedAt: cache.cachedAt,
+    };
   }
 
   function parseBybitKlineRow(raw) {
@@ -1059,6 +1143,10 @@
     fetchWithRateLimitRetry,
     RAW_DATA_CACHE_TTL_MS,
     getCachedRawData,
+    cacheContainsRange,
+    sliceRawDataToRange,
+    BINANCE_OI_MAX_LOOKBACK_MS,
+    computeBinanceOIReferenceRange,
     safeNumber,
     safeUtcDateString,
     fetchBybitOI,
@@ -1130,7 +1218,10 @@
     // Binance native OI — external reference layer ONLY. Deliberately its
     // own top-level state key, never touched by anything under
     // Backtest.runEventStudy or the IndexedDB raw-data cache.
-    binanceOI: { enabled: false, rawRows: null, fetching: false, error: null, rangeStart: null, rangeEnd: null },
+    binanceOI: {
+      enabled: false, rawRows: null, fetching: false, error: null, rangeStart: null, rangeEnd: null,
+      visibleStart: null, visibleEnd: null, effectiveStart: null, effectiveEnd: null, wasClamped: false,
+    },
   };
 
   function loadSettings() {
@@ -1318,14 +1409,17 @@
       };
 
       let oiRows, binanceCandles, coverage;
-      const memCached = forceRefresh ? null : getCachedRawData(state.rawDataCache, s.lookbackDays);
+      const memCached = forceRefresh ? null : getCachedRawData(state.rawDataCache, startTime, endTime);
 
       if (memCached) {
         const cachedWindow = `${safeUtcDateString(memCached.startTime)} → ${safeUtcDateString(memCached.endTime)}`;
         const cachedAtStr = safeUtcDateString(memCached.cachedAt);
+        const wasWider = state.rawDataCache && (state.rawDataCache.startTime < startTime || state.rawDataCache.endTime > endTime);
         setStatus(
-          `Reusing already-downloaded raw data (lookback days unchanged, cache still fresh) — rerunning analysis with current parameters, no new fetch. ` +
-          `Cached window: ${cachedWindow} &middot; fetched at ${cachedAtStr}.`
+          (wasWider
+            ? `Reusing the newest ${escapeHtml(String(s.lookbackDays))} days from a wider already-downloaded dataset — sliced locally, no new fetch. `
+            : `Reusing already-downloaded raw data (lookback days unchanged, cache still fresh) — rerunning analysis with current parameters, no new fetch. `) +
+          `Requested window: ${cachedWindow} &middot; originally fetched at ${cachedAtStr}.`
         );
         ({ oiRows, binanceCandles, coverage } = memCached);
       } else if (!IdbCache) {
@@ -1336,7 +1430,14 @@
         ({ oiRows, binanceCandles, coverage } = fetched);
         state.rawDataCache = { lookbackDays: s.lookbackDays, startTime, endTime, oiRows, binanceCandles, coverage, cachedAt: Date.now() };
       } else {
-        const idbKey = IdbCache.buildCacheKey({ venues: CRYPTOHFT_REQUIRED_VENUES, bucketMs: CRYPTOHFT_BUCKET_MS, lookbackDays: s.lookbackDays });
+        // Key is deliberately independent of lookbackDays — venues+bucketMs
+        // only — so there is exactly ONE persisted slot per venue-set,
+        // always representing whatever the most recently fetched dataset
+        // covers. A completed wider-lookback entry then satisfies any
+        // smaller overlapping request via containment (below), instead of
+        // requiring an exact lookbackDays match that previously forced a
+        // full re-download for every different lookback value tried.
+        const idbKey = IdbCache.buildCacheKey({ venues: CRYPTOHFT_REQUIRED_VENUES, bucketMs: CRYPTOHFT_BUCKET_MS });
 
         if (forceRefresh) {
           setStatus('Refresh requested — deleting the cached dataset and starting a full re-fetch…');
@@ -1345,44 +1446,63 @@
 
         let idbEntry = null;
         try { idbEntry = await IdbCache.getCacheEntry(idbKey); } catch (e) { idbEntry = null; }
+        const idbEntryIsComplete = idbEntry && IdbCache.isCacheEntryComplete(idbEntry, CRYPTOHFT_REQUIRED_VENUES);
 
-        if (idbEntry && IdbCache.isCacheEntryComplete(idbEntry, CRYPTOHFT_REQUIRED_VENUES)) {
+        if (idbEntryIsComplete && cacheContainsRange(idbEntry, startTime, endTime)) {
+          // Fast path: the persisted dataset already covers this request
+          // (exactly, or with room to spare) — slice locally, no fetch at
+          // all. This is what makes "30-day cache exists, 28-day request
+          // arrives" instant instead of a fresh download.
+          const sliced = sliceRawDataToRange(idbEntry.binanceCandles, idbEntry.aggregateOI, startTime, endTime);
+          binanceCandles = sliced.binanceCandles;
+          oiRows = sliced.oiRows;
+          coverage = idbEntry.coverage;
+          const wasWider = idbEntry.startTime < startTime || idbEntry.endTime > endTime;
           const ageMin = Math.round((Date.now() - idbEntry.updatedAt) / 60000);
           setStatus(
-            `<span style="color:var(--teal);">Loaded cached data.</span> ` +
-            `Cache age: ${ageMin} min &middot; Coverage range: ${safeUtcDateString(idbEntry.startTime)} → ${safeUtcDateString(idbEntry.endTime)} &middot; ` +
-            `${safeNumber(idbEntry.aggregateOI.length)} OI buckets / ${safeNumber(idbEntry.binanceCandles.length)} candles — rerunning parameters locally, no fetch.`
+            (wasWider
+              ? `<span style="color:var(--teal);">Reusing the newest ${escapeHtml(String(s.lookbackDays))} days from a wider cached dataset</span> (sliced locally, no fetch). `
+              : `<span style="color:var(--teal);">Loaded cached data.</span> `) +
+            `Cache age: ${ageMin} min &middot; original coverage: ${safeUtcDateString(idbEntry.startTime)} → ${safeUtcDateString(idbEntry.endTime)} &middot; ` +
+            `serving: ${safeUtcDateString(startTime)} → ${safeUtcDateString(endTime)} &middot; ` +
+            `${safeNumber(oiRows.length)} OI buckets / ${safeNumber(binanceCandles.length)} candles.`
           );
-          oiRows = idbEntry.aggregateOI;
-          binanceCandles = idbEntry.binanceCandles;
-          coverage = idbEntry.coverage;
         } else {
-          const resuming = idbEntry && (IdbCache.completedVenues(idbEntry, CRYPTOHFT_REQUIRED_VENUES).length > 0 || (Array.isArray(idbEntry.binanceCandles) && idbEntry.binanceCandles.length > 0));
+          // Nothing usable is cached for this exact request. A COMPLETE
+          // entry that exists but doesn't contain the requested range
+          // (e.g. a wider request than what's cached) is a mismatched
+          // range, not a partial fetch of THIS range — it must never be
+          // treated as "resumable" for a different window, which would
+          // silently merge two unrelated date ranges. Resuming an
+          // in-progress entry only applies when its own stored
+          // startTime/endTime exactly match the current request.
+          const resumableEntry = (idbEntry && !idbEntryIsComplete && idbEntry.startTime === startTime && idbEntry.endTime === endTime)
+            ? idbEntry : null;
+          const resuming = resumableEntry && (IdbCache.completedVenues(resumableEntry, CRYPTOHFT_REQUIRED_VENUES).length > 0 ||
+            (Array.isArray(resumableEntry.binanceCandles) && resumableEntry.binanceCandles.length > 0));
           setStatus(resuming
             ? 'Fetching missing data — resuming a previously interrupted pull, already-completed venues will not be re-fetched…'
             : 'Fetching missing data — this is a fresh dataset, first pull may take a while…');
 
-          if (!idbEntry) {
-            idbEntry = IdbCache.makeEmptyEntry(idbKey, { lookbackDays: s.lookbackDays, startTime, endTime });
-          }
-          try { await IdbCache.putCacheEntry(idbEntry); } catch (e) { /* non-fatal — proceeds without persistence if IDB write fails */ }
+          const workingEntry = resumableEntry || IdbCache.makeEmptyEntry(idbKey, { lookbackDays: s.lookbackDays, startTime, endTime });
+          try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal — proceeds without persistence if IDB write fails */ }
 
-          if (Array.isArray(idbEntry.binanceCandles) && idbEntry.binanceCandles.length > 0) {
-            binanceCandles = idbEntry.binanceCandles;
+          if (Array.isArray(workingEntry.binanceCandles) && workingEntry.binanceCandles.length > 0) {
+            binanceCandles = workingEntry.binanceCandles;
           } else {
             binanceCandles = await fetchBinanceCandles(startTime, endTime, { onProgress: progress, pageDelayMs: BINANCE_PAGE_DELAY_MS });
-            idbEntry.binanceCandles = binanceCandles;
-            try { await IdbCache.putCacheEntry(idbEntry); } catch (e) { /* non-fatal */ }
+            workingEntry.binanceCandles = binanceCandles;
+            try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal */ }
           }
 
           const cryptoHftResult = await fetchCryptoHFTAggregateOI(startTime, endTime, s.cryptoHftApiKey, {
             onProgress: progress,
             decodeZst: decodeZstBrowser,
             parseParquet: parseParquetBrowser,
-            existingPerVenueOI: idbEntry.perVenueOI || {},
+            existingPerVenueOI: workingEntry.perVenueOI || {},
             onVenueComplete: async (venue, bucketed) => {
-              idbEntry.perVenueOI[venue] = bucketed;
-              try { await IdbCache.putCacheEntry(idbEntry); } catch (e) { /* non-fatal — this venue's work is still in memory for this run */ }
+              workingEntry.perVenueOI[venue] = bucketed;
+              try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal — this venue's work is still in memory for this run */ }
             },
           });
           oiRows = cryptoHftResult.oiRows;
@@ -1396,10 +1516,12 @@
             );
           }
 
-          idbEntry.aggregateOI = oiRows;
-          idbEntry.coverage = coverage;
-          idbEntry.status = 'complete';
-          try { await IdbCache.putCacheEntry(idbEntry); } catch (e) { /* non-fatal for this run, but future reruns won't get the cache benefit */ }
+          workingEntry.aggregateOI = oiRows;
+          workingEntry.coverage = coverage;
+          workingEntry.status = 'complete';
+          workingEntry.startTime = startTime;
+          workingEntry.endTime = endTime;
+          try { await IdbCache.putCacheEntry(workingEntry); } catch (e) { /* non-fatal for this run, but future reruns won't get the cache benefit */ }
           setStatus(`<span style="color:var(--teal);">Cached dataset complete.</span> ${safeNumber(oiRows.length)} OI buckets / ${safeNumber(binanceCandles.length)} candles saved for instant reruns.`);
         }
 
@@ -1437,7 +1559,7 @@
 
       // Only now — after everything above succeeded — do we touch the
       // rendered state. Nothing partial ever reaches state.lastRun.
-      state.lastRun = { result, binanceCandles, binanceIndex, chartPoints, coverage };
+      state.lastRun = { result, binanceCandles, binanceIndex, chartPoints, coverage, analysisStartTime: startTime, analysisEndTime: endTime };
       state.lastRunAt = Date.now();
       state.lastRunFailed = false;
       renderStaleBanner();
@@ -1806,18 +1928,31 @@
     }
   }
 
+  /** The "visible vs effective vs clamped" debug line — shown in every state (fetching/error/loaded) so range issues are visible even when a fetch fails. */
+  function formatBinanceOIRangeDebugLine(b) {
+    if (b.visibleStart == null || b.visibleEnd == null) return '';
+    const visible = `${safeUtcDateString(b.visibleStart)} &rarr; ${safeUtcDateString(b.visibleEnd)}`;
+    const effective = `${safeUtcDateString(b.effectiveStart)} &rarr; ${safeUtcDateString(b.effectiveEnd)}`;
+    const clampedNote = b.wasClamped
+      ? `<span style="color:var(--amber);">clamped — Binance only retains ~30 days</span>`
+      : `<span style="color:var(--text-faint);">not clamped</span>`;
+    return `<div style="color:var(--text-faint);margin-top:2px;">Visible analysis range: ${visible} &middot; ` +
+      `Binance request range: ${effective} &middot; ${clampedNote}</div>`;
+  }
+
   function renderBinanceOIStatus() {
     const el = document.getElementById('oix-binance-oi-status');
     if (!el) return;
     const b = state.binanceOI;
     if (!b.enabled) { el.innerHTML = ''; return; }
-    if (b.fetching) { el.innerHTML = 'Fetching Binance native OI reference…'; return; }
-    if (b.error) { el.innerHTML = `<span style="color:var(--red);">Binance OI reference fetch failed: ${escapeHtml(b.error)}</span>`; return; }
-    if (!b.rawRows || !b.rawRows.length) { el.innerHTML = '<span style="color:var(--text-faint);">No Binance OI reference data loaded yet.</span>'; return; }
+    const debugLine = formatBinanceOIRangeDebugLine(b);
+    if (b.fetching) { el.innerHTML = 'Fetching Binance native OI reference…' + debugLine; return; }
+    if (b.error) { el.innerHTML = `<span style="color:var(--red);">Binance OI reference fetch failed: ${escapeHtml(b.error)}</span>` + debugLine; return; }
+    if (!b.rawRows || !b.rawRows.length) { el.innerHTML = '<span style="color:var(--text-faint);">No Binance OI reference data loaded yet.</span>' + debugLine; return; }
     const cov = BinanceOISource.computeBinanceOICoverage(b.rawRows);
     el.innerHTML = `Binance OI reference: ${safeNumber(cov.barCount)} bars &middot; ` +
       `${safeUtcDateString(cov.startTime)} &rarr; ${safeUtcDateString(cov.endTime)} &middot; ` +
-      `${safeNumber(cov.missingBars)} missing bars (no forward-fill — gaps are real)`;
+      `${safeNumber(cov.missingBars)} missing bars (no forward-fill — gaps are real)` + debugLine;
   }
 
   /** Fetches the Binance OI reference series for the currently loaded price range (capped to Binance's own ~30-day retention). External reference only — never touches state.lastRun, the IndexedDB cache, or anything scoring-related. */
@@ -1829,16 +1964,27 @@
     b.error = null;
     renderBinanceOIStatus();
     try {
-      const priceEnd = run.binanceCandles[run.binanceCandles.length - 1].ts;
-      const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
-      const priceStart = run.binanceCandles[0].ts;
-      const startTime = Math.max(priceStart, priceEnd - thirtyDaysMs);
-      const rows = await BinanceOISource.fetchBinanceOpenInterestHist({ startTime, endTime: priceEnd });
+      // Derived ONLY from the visible analysis window (analysisStartTime/
+      // analysisEndTime, stored on state.lastRun as exactly the
+      // startTime/endTime the CryptoHFT/Binance candle fetch itself used)
+      // — never from run.binanceCandles[0/length-1].ts, which can silently
+      // include more history than the person actually requested, and
+      // never from baseline/warmup/signalWindow buffers, which are purely
+      // internal to scoring and have nothing to do with what's "visible".
+      const range = computeBinanceOIReferenceRange(run.analysisStartTime, run.analysisEndTime);
+      b.visibleStart = range.visibleStart;
+      b.visibleEnd = range.visibleEnd;
+      b.effectiveStart = range.effectiveStart;
+      b.effectiveEnd = range.effectiveEnd;
+      b.wasClamped = range.wasClamped;
+
+      const rows = await BinanceOISource.fetchBinanceOpenInterestHist({ startTime: range.effectiveStart, endTime: range.effectiveEnd });
       b.rawRows = rows;
-      b.rangeStart = startTime;
-      b.rangeEnd = priceEnd;
+      b.rangeStart = range.effectiveStart;
+      b.rangeEnd = range.effectiveEnd;
     } catch (err) {
       b.error = err.message || String(err);
+      console.error('[Binance OI reference] fetch failed:', err);
     } finally {
       b.fetching = false;
       renderBinanceOIStatus();

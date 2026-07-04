@@ -276,6 +276,49 @@ asyncTests.push((async () => {
   assert('error message mentions the HTTP status', message.includes('451'));
 })());
 
+section('fetchBinanceOpenInterestHist: surfaces the actual Binance response body, not just the status code');
+asyncTests.push((async () => {
+  let message = '';
+  try {
+    await S.fetchBinanceOpenInterestHist({
+      startTime: 0, endTime: 1000,
+      fetchFn: async () => ({ ok: false, status: 400, text: async () => '{"code":-1130,"msg":"Data sent for parameter \'startTime\' is not valid."}' }),
+    });
+  } catch (e) { message = e.message; }
+  assert('error message includes Binance\'s own error code', message.includes('-1130'));
+  assert('error message includes Binance\'s own error text', message.includes('is not valid'));
+})());
+
+section('fetchBinanceOpenInterestHist: the endTime pad is skipped if it would push the request over the 30-day ceiling');
+asyncTests.push((async () => {
+  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+  const start = 0;
+  // Exactly at the 30-day span already — padding by 15m would tip it over.
+  const end = THIRTY_DAYS_MS;
+  const requestedEndTimes = [];
+  const fetchFn = async (url) => {
+    const params = new URL(url);
+    requestedEndTimes.push(Number(params.searchParams.get('endTime')));
+    return { ok: true, status: 200, json: async () => [] };
+  };
+  await S.fetchBinanceOpenInterestHist({ startTime: start, endTime: end, fetchFn });
+  assert('the request endTime was NOT padded past the 30-day span', requestedEndTimes[0] === end);
+})());
+
+section('fetchBinanceOpenInterestHist: the endTime pad IS applied when it safely stays under the 30-day ceiling');
+asyncTests.push((async () => {
+  const start = 0;
+  const end = 10 * FIFTEEN_MIN_MS; // well under 30 days — padding is safe
+  const requestedEndTimes = [];
+  const fetchFn = async (url) => {
+    const params = new URL(url);
+    requestedEndTimes.push(Number(params.searchParams.get('endTime')));
+    return { ok: true, status: 200, json: async () => [] };
+  };
+  await S.fetchBinanceOpenInterestHist({ startTime: start, endTime: end, fetchFn });
+  assert('the request endTime WAS padded by 15 minutes', requestedEndTimes[0] === end + FIFTEEN_MIN_MS);
+})());
+
 section('fetchBinanceOpenInterestHist: requires startTime and endTime');
 asyncTests.push((async () => {
   let threw = false;

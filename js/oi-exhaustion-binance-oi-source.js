@@ -180,8 +180,15 @@
     if (startTime == null || endTime == null) throw new Error('fetchBinanceOpenInterestHist requires both startTime and endTime.');
 
     // Pad the actual HTTP request range — never assume endTime is
-    // inclusive on Binance's side.
-    const requestEndTime = endTime + FIFTEEN_MIN_MS;
+    // inclusive on Binance's side — but ONLY if doing so still keeps the
+    // total requested span under Binance's own ~30-day retention ceiling.
+    // Without this guard, a caller already requesting close to 30 days
+    // (e.g. after computeBinanceOIReferenceRange's own clamp) could have
+    // the pad alone push the request over the limit and trigger the exact
+    // HTTP 400 this is meant to avoid.
+    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+    const paddedEndTime = endTime + FIFTEEN_MIN_MS;
+    const requestEndTime = (paddedEndTime - startTime) < THIRTY_DAYS_MS ? paddedEndTime : endTime;
 
     const allRows = [];
     let cursor = startTime;
@@ -193,7 +200,15 @@
       const res = await fetchFn(url);
       if (!res || !res.ok) {
         const status = res ? res.status : 'no response';
-        throw new Error(`Binance openInterestHist request failed (HTTP ${status}) for ${url}`);
+        // Surface Binance's actual response body (usually a JSON error
+        // object with a code/msg) rather than just the HTTP status — this
+        // is what actually explains a 400 (e.g. "range too large") instead
+        // of leaving it a mystery.
+        let bodyText = '';
+        if (res && typeof res.text === 'function') {
+          try { bodyText = await res.text(); } catch (e) { bodyText = '(could not read response body)'; }
+        }
+        throw new Error(`Binance openInterestHist request failed (HTTP ${status}): ${bodyText || '(empty response body)'} — url: ${url}`);
       }
       const json = await res.json();
       if (!Array.isArray(json) || json.length === 0) break;

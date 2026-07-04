@@ -455,6 +455,43 @@ asyncTests.push((async () => {
   assert('throws when startTime/endTime are missing', threw);
 })());
 
+// ── THE EMPTY-PANE BUG: fetcher returns parsed {ts,oi}, consumers re-parse ──
+
+section('parseBinanceOpenInterestRow: accepts already-parsed {ts,oi} rows — what fetchBinanceOpenInterestHist itself returns');
+(function () {
+  assert('parsed shape accepted', JSON.stringify(S.parseBinanceOpenInterestRow({ ts: 900000, oi: 123.5 })) === JSON.stringify({ ts: 900000, oi: 123.5 }));
+  assert('raw API shape still accepted (string value coerced)', JSON.stringify(S.parseBinanceOpenInterestRow({ timestamp: 900000, sumOpenInterestValue: '123.5' })) === JSON.stringify({ ts: 900000, oi: 123.5 }));
+  assert('neither shape -> null, never a guess', S.parseBinanceOpenInterestRow({ foo: 1 }) === null);
+})();
+
+section('normalizeBinanceOpenInterestRows: re-normalizing the fetcher OUTPUT is now lossless (regression for fetchedRows=2689/validCount=0)');
+(function () {
+  const fetched = [{ ts: 1800000, oi: 20 }, { ts: 900000, oi: 10 }]; // exactly what the fetcher returns
+  const renormalized = S.normalizeBinanceOpenInterestRows(fetched);
+  assert('all parsed rows survive a second normalization pass', renormalized.length === 2);
+  assert('still sorted ascending', renormalized[0].ts === 900000 && renormalized[1].ts === 1800000);
+})();
+
+section('summarizeBinanceOIParse: valid count, first/last ts+value, rejection counts split by invalid field');
+(function () {
+  const rows = [
+    { ts: 900000, oi: 10 },
+    { timestamp: 1800000, sumOpenInterestValue: '20' },
+    { timestamp: 'garbage', sumOpenInterestValue: '5' }, // invalid timestamp
+    { ts: 2700000, oi: 'NaN-ish' },                       // invalid value
+  ];
+  const d = S.summarizeBinanceOIParse(rows);
+  assert('fetchedRows counts everything', d.fetchedRows === 4);
+  assert('validCount counts only clean rows', d.validCount === 2);
+  assert('first/last parsed ts', d.firstTs === 900000 && d.lastTs === 1800000);
+  assert('first/last parsed value', d.firstValue === 10 && d.lastValue === 20);
+  assert('one rejected for invalid timestamp', d.rejectedInvalidTimestamp === 1);
+  assert('one rejected for invalid value', d.rejectedInvalidValue === 1);
+  assert('sample row is the first raw row', d.sampleRow === rows[0]);
+  const empty = S.summarizeBinanceOIParse([]);
+  assert('empty input -> zero counts, null ts/values', empty.fetchedRows === 0 && empty.validCount === 0 && empty.firstTs === null && empty.lastValue === null);
+})();
+
 (async () => {
   await Promise.all(asyncTests);
   console.log('\n────────────────────────────────────────');

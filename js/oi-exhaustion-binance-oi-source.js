@@ -36,12 +36,52 @@
   };
 
   /** Parses one raw Binance openInterestHist row. Returns null (not a guess) if either field is missing/non-finite. */
+  /**
+   * Parses one Binance openInterestHist row. Accepts BOTH shapes:
+   *   raw API row    — { timestamp, sumOpenInterestValue } (value arrives as a string)
+   *   already-parsed — { ts, oi } (what fetchBinanceOpenInterestHist itself RETURNS)
+   * The second case is the fix for the empty-pane bug: the fetcher returns
+   * parsed {ts, oi} rows, but every downstream consumer (coverage, display
+   * series, status) re-ran this parser expecting only the raw shape — so
+   * 100% of perfectly good rows were rejected (fetchedRows: 2689,
+   * validCount: 0, coverage unknown → unknown, overlap 0).
+   * Returns null (not a guess) if neither shape yields finite numbers.
+   */
   function parseBinanceOpenInterestRow(row) {
     if (!row || typeof row !== 'object') return null;
-    const ts = Number(row.timestamp);
-    const oi = Number(row.sumOpenInterestValue); // NEVER sumOpenInterest (contracts) — must be the USD notional value
+    const ts = Number(row.ts != null ? row.ts : row.timestamp);
+    const oi = Number(row.oi != null ? row.oi : row.sumOpenInterestValue); // NEVER sumOpenInterest (contracts) — must be the USD notional value
     if (!Number.isFinite(ts) || !Number.isFinite(oi)) return null;
     return { ts, oi };
+  }
+
+  /**
+   * One-shot parse diagnostic for the reference layer: how many rows
+   * normalized cleanly, the parsed first/last timestamp+value, and how
+   * many rows were rejected split by WHICH field was invalid. Pure.
+   */
+  function summarizeBinanceOIParse(rawRows) {
+    const rows = Array.isArray(rawRows) ? rawRows : [];
+    let rejectedInvalidTimestamp = 0, rejectedInvalidValue = 0;
+    for (const row of rows) {
+      const r = row && typeof row === 'object' ? row : {};
+      const ts = Number(r.ts != null ? r.ts : r.timestamp);
+      const oi = Number(r.oi != null ? r.oi : r.sumOpenInterestValue);
+      if (!Number.isFinite(ts)) { rejectedInvalidTimestamp++; continue; }
+      if (!Number.isFinite(oi)) { rejectedInvalidValue++; }
+    }
+    const parsed = normalizeBinanceOpenInterestRows(rows);
+    return {
+      fetchedRows: rows.length,
+      sampleRow: rows.length ? rows[0] : null,
+      validCount: parsed.length,
+      firstTs: parsed.length ? parsed[0].ts : null,
+      lastTs: parsed.length ? parsed[parsed.length - 1].ts : null,
+      firstValue: parsed.length ? parsed[0].oi : null,
+      lastValue: parsed.length ? parsed[parsed.length - 1].oi : null,
+      rejectedInvalidTimestamp,
+      rejectedInvalidValue,
+    };
   }
 
   /** Parses, drops invalid rows, de-dupes exact-timestamp collisions (last write wins), sorts ascending. */
@@ -351,6 +391,7 @@
     BUCKET_MS,
     parseBinanceOpenInterestRow,
     normalizeBinanceOpenInterestRows,
+    summarizeBinanceOIParse,
     getUtcBucketStart,
     buildBinanceOIDisplaySeries,
     computeBinanceOICoverage,

@@ -2351,12 +2351,15 @@
     if (!b.rawRows || !b.rawRows.length) { el.innerHTML = '<span style="color:var(--text-faint);">No Binance OI reference data loaded yet.</span>' + debugLine; return; }
     const cov = BinanceOISource.computeBinanceOICoverage(b.rawRows);
     const parsed = BinanceOISource.normalizeBinanceOpenInterestRows(b.rawRows);
-    const latest = parsed.length ? parsed[parsed.length - 1] : null;
-    const latestLine = latest
-      ? ` &middot; latest: ${safeNumber(Math.round(latest.oi))} @ ${safeUtcDateString(latest.ts)}`
-      : '';
+    if (!parsed.length) {
+      el.innerHTML = `<span style="color:var(--red);">${safeNumber(b.rawRows.length)} Binance rows fetched but 0 valid parsed points — ` +
+        `field mapping/normalization problem, not a chart-range mismatch (see [Binance OI reference] parse in console).</span>` + debugLine;
+      return;
+    }
+    const latest = parsed[parsed.length - 1];
+    const latestLine = ` &middot; latest: ${safeNumber(Math.round(latest.oi))} @ ${safeUtcDateString(latest.ts)}`;
     const overlapLine = b.lastOverlapCount === 0
-      ? ` &middot; <span style="color:var(--amber);">0 candles on the current chart overlap this data — pane will be empty (range mismatch)</span>`
+      ? ` &middot; <span style="color:var(--amber);">valid Binance points exist but 0 candles on the current chart overlap them — pane will be empty (range mismatch)</span>`
       : (b.lastOverlapCount != null ? ` &middot; ${safeNumber(b.lastOverlapCount)} chart candles aligned` : '');
     el.innerHTML = `Binance OI reference: ${safeNumber(cov.barCount)} bars &middot; ` +
       `${safeUtcDateString(cov.startTime)} &rarr; ${safeUtcDateString(cov.endTime)} &middot; ` +
@@ -2388,6 +2391,9 @@
 
       const rows = await BinanceOISource.fetchBinanceOpenInterestHist({ startTime: range.effectiveStart, endTime: range.effectiveEnd });
       b.rawRows = rows;
+      // One-shot parse diagnostic — raw sample, valid count, first/last
+      // parsed ts+value, rejection counts split by invalid field.
+      console.log('[Binance OI reference] parse', BinanceOISource.summarizeBinanceOIParse(rows));
       b.rangeStart = range.effectiveStart;
       b.rangeEnd = range.effectiveEnd;
     } catch (err) {

@@ -157,9 +157,8 @@
       var sentPrice = outcome.send_price_reference && isFiniteNumber(outcome.send_price_reference.price)
         ? outcome.send_price_reference.price
         : outcome.base && isFiniteNumber(outcome.base.price_close) ? outcome.base.price_close : null;
-      var directionText = signal.direction ? signal.direction.toUpperCase() : 'n/a';
       return '<tr>' +
-        '<td class="oiar-alert-type"><span class="oiar-badge oiar-badge-' + escapeHtml(cls.bias) + '">' + escapeHtml(cls.label) + '</span><small>' + escapeHtml(directionText) + '</small></td>' +
+        '<td class="oiar-alert-type"><span class="oiar-badge oiar-badge-' + escapeHtml(cls.bias) + '">' + escapeHtml(cls.label) + '</span></td>' +
         '<td><div class="oiar-strong">' + escapeHtml(typeLabel(cls.type)) + '</div><small>' + escapeHtml(signal.direction_source || 'source unknown') + '</small></td>' +
         '<td><div class="oiar-strong">' + escapeHtml(formatCET(signal.sent_ts)) + '</div><small>sent</small></td>' +
         '<td><div class="oiar-strong">' + escapeHtml(formatMoney(sentPrice)) + '</div><small>' + escapeHtml(outcome.send_price_reference ? 'Binance 1m open' : '15m bucket close') + '</small></td>' +
@@ -179,7 +178,7 @@
   function render(report) {
     renderSummary(report);
     renderRows(report);
-    setText('oiar-status', 'Loaded');
+    setText('oiar-status', 'Active - Scanning');
   }
 
   function init() {

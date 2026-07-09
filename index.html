@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/3.35.0/tabler-icons.min.css">
+<link rel="stylesheet" href="css/hypertracker.css">
 <style>
   /* ===================== DESIGN TOKENS ===================== */
   /* Palette sampled directly from the Selimor dashboard reference - background,
@@ -1072,6 +1073,9 @@
     </div>
 
     <div class="sidebar-section-label">Research</div>
+    <div class="nav-item" data-tab="hypertracker" onclick="switchTab('hypertracker')">
+      <i class="ti ti-whale"></i>HyperTracker
+    </div>
     <div class="nav-group-label">
       <i class="ti ti-currency-bitcoin"></i>Bitcoin
     </div>
@@ -1118,6 +1122,119 @@
     <div class="main-header">
       <div class="main-title" id="mainTitle">Dashboard</div>
       <div class="live-pill" id="sp5-live-pill"><span class="dot" id="sp5-live-dot"></span><span id="sp5-live-label">Live</span></div>
+    </div>
+
+    <!-- ===================== HYPERTRACKER RESEARCH TAB ===================== -->
+    <div class="tab-view" id="tab-hypertracker" data-title="HyperTracker">
+      <section class="ht-shell">
+        <header class="ht-hero">
+          <div>
+            <div class="ht-eyebrow"><span class="ht-pulse"></span>Hyperliquid · free public data</div>
+            <h1>Profitable scalpers</h1>
+            <p>Find profitable wallets that repeatedly close positions within two days, then inspect the evidence behind the ranking.</p>
+          </div>
+          <div class="ht-updated">
+            <span>Research snapshot</span>
+            <strong>09 Jul 2026</strong>
+            <small>Latest 2,000 fills per wallet</small>
+          </div>
+        </header>
+
+        <div class="ht-filter-strip" aria-label="Active HyperTracker filters">
+          <div class="ht-filter-label"><i class="ti ti-adjustments-horizontal"></i>Active screen</div>
+          <div class="ht-filter"><span>Median hold</span><strong>≤ 2 days</strong></div>
+          <div class="ht-filter"><span>Monthly PnL</span><strong>&gt; $1K</strong></div>
+          <div class="ht-filter"><span>Monthly volume</span><strong>&gt; $100K</strong></div>
+          <div class="ht-filter"><span>Account value</span><strong>&gt; $2K</strong></div>
+          <div class="ht-filter"><span>Completed episodes</span><strong>≥ 10</strong></div>
+        </div>
+
+        <div class="ht-metric-grid">
+          <article class="ht-metric">
+            <div class="ht-metric-icon teal"><i class="ti ti-users"></i></div>
+            <span>Leaderboard universe</span>
+            <strong>40,255</strong>
+            <small>public wallets</small>
+          </article>
+          <article class="ht-metric">
+            <div class="ht-metric-icon violet"><i class="ti ti-filter-check"></i></div>
+            <span>Financial matches</span>
+            <strong>3,835</strong>
+            <small>need fill analysis</small>
+          </article>
+          <article class="ht-metric">
+            <div class="ht-metric-icon amber"><i class="ti ti-radar"></i></div>
+            <span>Wallets analyzed</span>
+            <strong>22</strong>
+            <small>unique wallets so far</small>
+          </article>
+          <article class="ht-metric">
+            <div class="ht-metric-icon green"><i class="ti ti-bolt"></i></div>
+            <span>Confirmed scalpers</span>
+            <strong>8</strong>
+            <small>pass every rule</small>
+          </article>
+        </div>
+
+        <div class="ht-callout">
+          <i class="ti ti-info-circle"></i>
+          <div><strong>3,835 are candidates, not confirmed scalpers.</strong> Holding time is only known after reconstructing each wallet’s flat-to-flat position episodes. The current table contains eight confirmed wallets from 22 unique wallets analyzed.</div>
+        </div>
+
+        <div class="ht-workspace">
+          <section class="ht-board">
+            <div class="ht-section-head">
+              <div>
+                <span class="ht-kicker">Ranked evidence</span>
+                <div class="ht-title-line">
+                  <h2>Confirmed short-hold traders</h2>
+                  <span class="ht-result-count" id="htResultCount">8 wallets shown</span>
+                </div>
+              </div>
+              <div class="ht-tools">
+                <label class="ht-search">
+                  <i class="ti ti-search"></i>
+                  <input id="htSearch" type="search" placeholder="Search wallet">
+                </label>
+                <select id="htSort" aria-label="Sort confirmed scalpers">
+                  <option value="observedPnl">Observed PnL</option>
+                  <option value="medianHold">Shortest hold</option>
+                  <option value="profitFactor">Profit factor</option>
+                  <option value="winRate">Win rate</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="ht-table-wrap">
+              <table class="ht-table">
+                <thead>
+                  <tr>
+                    <th>Rank / wallet</th>
+                    <th>Observed PnL</th>
+                    <th>Median hold</th>
+                    <th>Win rate</th>
+                    <th>Profit factor</th>
+                    <th>Episodes</th>
+                    <th>Coverage</th>
+                  </tr>
+                </thead>
+                <tbody id="htTraderRows"></tbody>
+              </table>
+            </div>
+            <div class="ht-empty" id="htEmpty">No confirmed wallet matches that search.</div>
+          </section>
+
+          <aside class="ht-detail" id="htDetail">
+            <div class="ht-detail-placeholder">Select a wallet to inspect its evidence.</div>
+          </aside>
+        </div>
+
+        <footer class="ht-method">
+          <div><i class="ti ti-route"></i><span><strong>Holding time:</strong> exact flat → position → flat or flip duration.</span></div>
+          <div><i class="ti ti-calculator"></i><span><strong>Episode PnL:</strong> closed PnL minus trading fees; funding comes next.</span></div>
+          <div><i class="ti ti-shield-check"></i><span><strong>Coverage guard:</strong> ≥50% of fills must belong to fully observed episodes.</span></div>
+        </footer>
+      </section>
     </div>
 
     <!-- ===================== DASHBOARD TAB ===================== -->
@@ -1173,6 +1290,7 @@
           <div class="section-title">Most likely direction — BTC</div>
           <div class="section-sub" id="mldPriceLabel">loading…</div>
         </div>
+        <div id="mldHeadline" style="padding:8px 0 12px 0;">loading…</div>
         <div id="mldSignals"><div class="loading">loading…</div></div>
         <div id="mldSynthesis" style="margin-top:10px;font-size:12px;color:var(--text-dim);line-height:1.6;"></div>
         <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
@@ -3424,6 +3542,7 @@
 <script src="js/most-likely-direction.js"></script>
 
 <script src="js/altcoin-events.js"></script>
+<script src="js/hypertracker.js"></script>
 
 <script src="js/backtest.js"></script>
 

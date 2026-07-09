@@ -10,7 +10,8 @@
 var MLD_GREEN='#3ddc97', MLD_RED='#e2645f', MLD_FAINT='#6b7178', MLD_AMBER='#d9a93f';
 var MLD_STORAGE_KEY='mld_reading_log_v1';
 
-var mldState={ price:null, klines1h:[], klines4h:[], impulse:null, emaSignal:null, clusterSignal:null };
+var mldState={ price:null, klines1h:[], klines4h:[], impulse:null, emaSignal:null, clusterSignal:null,
+  keyLevels:null, macroEvents:null, oiLevel:null };
 
 // Retracement odds lookup - Pump Dump Reversion Study (1H, 12mo BTCUSDT, no news filter).
 var MLD_RETRACE_ODDS=[
@@ -150,6 +151,104 @@ function mldComputeClusterSignal(candles, price){
   return { price:nearest.price, side:nearest.side, prominence:nearest.prominence, distPct:(nearest.price-price)/price*100 };
 }
 
+// ── Signal 4: key levels (daily/weekly open, distance to each) ───────────
+function mldComputeKeyLevels(candles4h, price){
+  if(!candles4h.length) return null;
+  var now=new Date();
+  var dailyOpenTs=Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate(),0,0,0);
+  var dow=now.getUTCDay(); // Sun=0..Sat=6
+  var daysSinceMonday=(dow+6)%7;
+  var weeklyOpenTs=dailyOpenTs-daysSinceMonday*86400000;
+
+  function candleAtOrAfter(ts){
+    var i;
+    for(i=0;i<candles4h.length;i++){ if(candles4h[i].ts>=ts) return candles4h[i]; }
+    return null;
+  }
+  var dailyC=candleAtOrAfter(dailyOpenTs);
+  var weeklyC=candleAtOrAfter(weeklyOpenTs);
+  if(!dailyC||!weeklyC) return null;
+  return {
+    dailyOpen:dailyC.o, dailyChgPct:(price-dailyC.o)/dailyC.o*100,
+    weeklyOpen:weeklyC.o, weeklyChgPct:(price-weeklyC.o)/weeklyC.o*100,
+  };
+}
+
+// ── Signal 5: macro calendar (USD high/medium impact, via Worker proxy) ──
+// The free ForexFactory feed only covers "this week" - no forward-looking
+// endpoint exists (confirmed: nextweek.json 404s). FOMC dates are set months
+// in advance by the Fed, so they're hardcoded here as a fallback the "this
+// week" feed can't provide. CPI/NFP dates are NOT hardcoded (BLS doesn't
+// publish them on a fixed formula far enough out to hardcode reliably) -
+// those only show once they enter the live "this week" window.
+var MLD_CALENDAR_URL='https://royal-darkness-0ac6.wimneys.workers.dev/api/macro-calendar';
+// 2026 FOMC decision dates (2nd day of each meeting), 14:00 ET, converted to
+// exact UTC offsets per date (source: federalreserve.gov official calendar).
+var MLD_FOMC_DATES=[
+  '2026-01-28T14:00:00-05:00','2026-03-18T14:00:00-04:00','2026-04-29T14:00:00-04:00',
+  '2026-06-17T14:00:00-04:00','2026-07-29T14:00:00-04:00','2026-09-16T14:00:00-04:00',
+  '2026-10-28T14:00:00-04:00','2026-12-09T14:00:00-05:00',
+];
+function mldNextFomc(){
+  var now=Date.now(), i;
+  for(i=0;i<MLD_FOMC_DATES.length;i++){
+    var ts=Date.parse(MLD_FOMC_DATES[i]);
+    if(ts>=now) return { ts:ts, daysAway:Math.ceil((ts-now)/86400000) };
+  }
+  return null;
+}
+function mldFetchMacroCalendar(){
+  return fetch(MLD_CALENDAR_URL).then(function(res){ return res.json(); }).then(function(data){
+    if(!data||!data.events) return [];
+    var now=Date.now(), horizon=now+4*86400000; // next 4 days
+    return data.events
+      .map(function(e){ return { title:e.title, impact:e.impact, ts:Date.parse(e.date), forecast:e.forecast, previous:e.previous }; })
+      .filter(function(e){ return e.ts && e.ts>=now-3600000 && e.ts<=horizon; })
+      .sort(function(a,b){ return a.ts-b.ts; })
+      .slice(0,6);
+  }).catch(function(e){ console.error('mldFetchMacroCalendar',e); return null; });
+}
+
+// ── Signal 6: OI level context (Binance native OI, 30d rolling z-score) ──
+// Single-venue (Binance only) live reference, NOT the same as the vault's
+// Binance+Bybit combined research series. See "OI-Extreme Reversal Study"
+// in the vault: this framing (OI level z-score -> reversal) was tested and
+// showed no reliable edge - shown here as context only, not a signal.
+var MLD_OI_HIST_URL='https://fapi.binance.com/futures/data/openInterestHist';
+function mldFetchOiHistory(){
+  var endTime=Date.now(), results=[], calls=0, maxCalls=8;
+  function step(){
+    var url=MLD_OI_HIST_URL+'?symbol=BTCUSDT&period=15m&limit=500&endTime='+endTime;
+    return fetch(url).then(function(res){return res.json();}).then(function(rows){
+      if(!rows||!rows.length) return results;
+      rows.forEach(function(r){ results.push({ts:Number(r.timestamp),oi:parseFloat(r.sumOpenInterest)}); });
+      var oldest=Number(rows[0].timestamp);
+      endTime=oldest-1;
+      calls++;
+      var cutoff=Date.now()-30*86400000;
+      if(oldest<=cutoff||calls>=maxCalls) return results;
+      return step();
+    });
+  }
+  return step().then(function(rows){
+    rows.sort(function(a,b){return a.ts-b.ts;});
+    return rows;
+  }).catch(function(e){ console.error('mldFetchOiHistory',e); return null; });
+}
+function mldComputeOiZScore(rows){
+  if(!rows||rows.length<200) return null;
+  var vals=rows.map(function(r){return r.oi;});
+  var n=vals.length, sum=0, sumSq=0, i;
+  for(i=0;i<n;i++){ sum+=vals[i]; sumSq+=vals[i]*vals[i]; }
+  var mean=sum/n, variance=Math.max(0,sumSq/n-mean*mean), std=Math.sqrt(variance);
+  var current=vals[n-1];
+  var z=std>0?(current-mean)/std:0;
+  var sorted=vals.slice().sort(function(a,b){return a-b;});
+  var rank=0; for(i=0;i<sorted.length;i++){ if(sorted[i]<=current) rank=i; }
+  var pctile=Math.round(100*rank/(sorted.length-1));
+  return { current:current, z:z, pctile:pctile, days:Math.round((rows[n-1].ts-rows[0].ts)/86400000) };
+}
+
 // ── Render ─────────────────────────────────────────────────────────────
 function mldRender(){
   var priceLabel=document.getElementById('mldPriceLabel');
@@ -196,9 +295,94 @@ function mldRender(){
       +'</div>');
   }
 
+  if(mldState.keyLevels){
+    var kl=mldState.keyLevels;
+    var dColor=kl.dailyChgPct>=0?MLD_GREEN:MLD_RED, wColor=kl.weeklyChgPct>=0?MLD_GREEN:MLD_RED;
+    cards.push('<div style="background:var(--bg1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;">'
+      +'<div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.04em;text-transform:uppercase;margin-bottom:4px;">Key levels</div>'
+      +'<div style="font-size:13px;">Daily open $'+kl.dailyOpen.toFixed(0)+' (<span style="color:'+dColor+';font-weight:600;">'+(kl.dailyChgPct>=0?'+':'')+kl.dailyChgPct.toFixed(2)+'%</span>)</div>'
+      +'<div style="font-size:13px;margin-top:2px;">Weekly open $'+kl.weeklyOpen.toFixed(0)+' (<span style="color:'+wColor+';font-weight:600;">'+(kl.weeklyChgPct>=0?'+':'')+kl.weeklyChgPct.toFixed(2)+'%</span>)</div>'
+      +'</div>');
+  }
+
+  if(mldState.oiLevel){
+    var oi=mldState.oiLevel;
+    var oiNote=Math.abs(oi.z)>=2?(oi.z>0?'unusually high':'unusually low'):(Math.abs(oi.z)>=1?(oi.z>0?'elevated':'low'):'normal range');
+    var oiColor=Math.abs(oi.z)>=1.5?MLD_AMBER:'var(--text)';
+    cards.push('<div style="background:var(--bg1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;">'
+      +'<div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.04em;text-transform:uppercase;margin-bottom:4px;">OI level (Binance, '+oi.days+'d)</div>'
+      +'<div style="font-size:13px;">'+Math.round(oi.current)+' BTC · <span style="color:'+oiColor+';font-weight:600;">'+oiNote+'</span> (z='+oi.z.toFixed(2)+', p'+oi.pctile+')</div>'
+      +'<div style="font-size:11px;color:var(--text-faint);margin-top:4px;">Context only — vault testing found OI-level extremes don\'t reliably predict reversals.</div>'
+      +'</div>');
+  }
+
+  var fomc=mldNextFomc();
+  var fomcLine=fomc?('<div style="font-size:12px;margin-top:3px;padding-top:5px;border-top:0.5px solid var(--border);"><span style="color:'+MLD_RED+';font-weight:600;">●</span> Next FOMC: '+new Date(fomc.ts).toLocaleDateString(undefined,{month:'short',day:'numeric'})+' ('+fomc.daysAway+'d away)</div>'):'';
+  if(mldState.macroEvents && mldState.macroEvents.length){
+    var evRows=mldState.macroEvents.map(function(e){
+      var when=new Date(e.ts);
+      var impactColor=e.impact==='High'?MLD_RED:MLD_AMBER;
+      return '<div style="font-size:12px;margin-top:3px;"><span style="color:'+impactColor+';font-weight:600;">●</span> '+when.toLocaleString(undefined,{weekday:'short',hour:'2-digit',minute:'2-digit'})+' — '+e.title+'</div>';
+    }).join('');
+    cards.push('<div style="background:var(--bg1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;">'
+      +'<div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.04em;text-transform:uppercase;margin-bottom:4px;">Macro calendar (USD)</div>'
+      +evRows+fomcLine+'</div>');
+  } else if(mldState.macroEvents){
+    cards.push('<div style="background:var(--bg1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;">'
+      +'<div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.04em;text-transform:uppercase;margin-bottom:4px;">Macro calendar (USD)</div>'
+      +'<div style="color:var(--text-faint);font-size:12px;">Nothing high/medium-impact in the next 4 days.</div>'+fomcLine+'</div>');
+  }
+
   el.innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;">'+cards.join('')+'</div>';
 
   mldRenderSynthesis();
+  mldRenderHeadline();
+}
+
+// ── Headline: single plain-language verdict, shown above the cards ───────
+function mldRenderHeadline(){
+  var el=document.getElementById('mldHeadline');
+  if(!el) return;
+  var bullish=0, bearish=0, notes=[];
+
+  if(mldState.impulse){
+    var im=mldState.impulse;
+    if(im.retracedPct<50){
+      if(im.direction==='up'){ bearish++; notes.push('pump not yet retraced'); }
+      else { bullish++; notes.push('dump not yet retraced'); }
+    }
+  }
+  if(mldState.emaSignal){
+    var es=mldState.emaSignal;
+    if(es.touching){
+      if(es.side==='above'){ bearish++; notes.push('at 4H 200EMA from above (reject zone)'); }
+      else { bullish++; notes.push('at 4H 200EMA from below (reject zone)'); }
+    }
+  }
+  if(mldState.clusterSignal && Math.abs(mldState.clusterSignal.distPct)<0.3){
+    if(mldState.clusterSignal.side==='resistance') bearish++; else bullish++;
+    notes.push('sitting at a '+mldState.clusterSignal.side+' cluster');
+  }
+  if(mldState.keyLevels){
+    if(mldState.keyLevels.dailyChgPct>0) bullish++; else bearish++;
+  }
+
+  var verdict, color;
+  if(bullish>bearish+1){ verdict='Leaning bullish'; color=MLD_GREEN; }
+  else if(bearish>bullish+1){ verdict='Leaning bearish'; color=MLD_RED; }
+  else { verdict='No clear lean'; color=MLD_FAINT; }
+
+  var hasHighImpactToday=false;
+  if(mldState.macroEvents){
+    var todayEnd=new Date(); todayEnd.setUTCHours(23,59,59,999);
+    hasHighImpactToday=mldState.macroEvents.some(function(e){ return e.impact==='High' && e.ts<=todayEnd.getTime(); });
+  }
+  var fomcToday=mldNextFomc();
+  if(fomcToday && fomcToday.daysAway<=0) hasHighImpactToday=true;
+  var macroNote=hasHighImpactToday?' High-impact USD data today — expect volatility around the release.':'';
+
+  el.innerHTML='<span style="color:'+color+';font-weight:700;font-size:15px;">'+verdict+'</span>'
+    +'<span style="font-size:12px;color:var(--text-dim);"> ('+(notes.length?notes.join(', '):'no signals aligned')+')'+macroNote+'</span>';
 }
 
 function mldRenderSynthesis(){
@@ -282,6 +466,7 @@ function mldRefresh(){
     mldState.impulse=mldComputeImpulseSignal(mldState.klines1h);
     mldState.emaSignal=mldComputeEmaSignal(mldState.klines4h);
     mldState.clusterSignal=mldComputeClusterSignal(mldState.klines4h, mldState.price);
+    mldState.keyLevels=mldComputeKeyLevels(mldState.klines4h, mldState.price);
     mldRender();
     mldRenderHistory();
   }).catch(function(e){
@@ -291,9 +476,22 @@ function mldRefresh(){
   });
 }
 
+// Slower cycle for the heavier/less time-critical cards (macro calendar,
+// OI level, key levels) — no need to hit these every 5 min like price.
+function mldSlowRefresh(){
+  if(mldState.klines4h.length && mldState.price){
+    mldState.keyLevels=mldComputeKeyLevels(mldState.klines4h, mldState.price);
+    mldRender();
+  }
+  mldFetchMacroCalendar().then(function(events){ mldState.macroEvents=events; mldRender(); });
+  mldFetchOiHistory().then(function(rows){ mldState.oiLevel=mldComputeOiZScore(rows); mldRender(); });
+}
+
 function mldInit(){
   mldRefresh();
   setInterval(mldRefresh, 5*60*1000);
+  mldSlowRefresh();
+  setInterval(mldSlowRefresh, 30*60*1000);
 }
 
 (function(){

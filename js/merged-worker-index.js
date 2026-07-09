@@ -3,6 +3,7 @@ const SP500_TICKERS = ['SPY','NVDA','MSFT','AMZN','META','GOOGL','AAPL','AVGO','
 
 // ── Simple in-memory cache (~5 min) ───────────────────────────────────────────
 let _sp500Cache = null; // { payload, expiresAt }
+let _calendarCache = null; // { payload, expiresAt }
 
 // ── Twelve Data fetch ─────────────────────────────────────────────────────────
 async function fetchSP500Prices(apiKey) {
@@ -65,6 +66,39 @@ export default {
       try {
         const payload = await fetchSP500Prices(apiKey);
         _sp500Cache = { payload, expiresAt: now + cacheTtl * 1000 };
+        return new Response(
+          JSON.stringify(payload),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } catch (e) {
+        return new Response(
+          JSON.stringify({ error: 'Provider unavailable', detail: e.message }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    // ── NEW: GET /api/macro-calendar ──────────────────────────────────────────
+    if (url.pathname === '/api/macro-calendar' && request.method === 'GET') {
+      const cacheTtl = parseInt(env.CALENDAR_CACHE_TTL_SECONDS ?? '1800', 10);
+      const now = Date.now();
+      if (_calendarCache && _calendarCache.expiresAt > now) {
+        return new Response(
+          JSON.stringify({ ..._calendarCache.payload, cached: true }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      try {
+        const res = await fetch('https://nfs.faireconomy.media/ff_calendar_thisweek.json');
+        if (!res.ok) throw new Error('ForexFactory HTTP ' + res.status);
+        const raw = await res.json();
+        // keep it to USD, medium+high impact only — this is a BTC dashboard,
+        // not a full FX calendar, and we want a short list.
+        const events = raw
+          .filter((e) => e.country === 'USD' && (e.impact === 'High' || e.impact === 'Medium'))
+          .map((e) => ({ title: e.title, date: e.date, impact: e.impact, forecast: e.forecast, previous: e.previous }));
+        const payload = { asOf: new Date().toISOString(), events };
+        _calendarCache = { payload, expiresAt: now + cacheTtl * 1000 };
         return new Response(
           JSON.stringify(payload),
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

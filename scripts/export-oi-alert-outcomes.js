@@ -49,6 +49,18 @@ function usage() {
   ].join('\n');
 }
 
+function comparableReport(report) {
+  const copy = JSON.parse(JSON.stringify(report));
+  delete copy.generated_ts;
+  delete copy.generated_iso;
+  return copy;
+}
+
+function reportsMatchIgnoringGeneratedTime(a, b) {
+  if (!a || !b) return false;
+  return JSON.stringify(comparableReport(a)) === JSON.stringify(comparableReport(b));
+}
+
 function floorMinute(ts) {
   return Math.floor(ts / MINUTE_MS) * MINUTE_MS;
 }
@@ -258,10 +270,25 @@ async function main() {
   report.state_path = report.source_state;
 
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  if (fs.existsSync(outPath)) {
+    const previous = JSON.parse(fs.readFileSync(outPath, 'utf8'));
+    if (reportsMatchIgnoringGeneratedTime(previous, report)) {
+      console.log(JSON.stringify({
+        tag: 'oi-alert-outcomes-export',
+        out_path: outPath,
+        changed: false,
+        signal_count: previous.signal_count,
+        complete_horizons: previous.complete_horizons,
+        pending_horizons: previous.pending_horizons
+      }, null, 2));
+      return;
+    }
+  }
   fs.writeFileSync(outPath, JSON.stringify(report, null, 2) + '\n', 'utf8');
   console.log(JSON.stringify({
     tag: 'oi-alert-outcomes-export',
     out_path: outPath,
+    changed: true,
     signal_count: report.signal_count,
     complete_horizons: report.complete_horizons,
     pending_horizons: report.pending_horizons

@@ -12,6 +12,8 @@ var MLD_STORAGE_KEY='mld_reading_log_v1';
 var MLD_MANUAL_CLUSTER_KEY='mld_manual_liquidity_clusters_v1';
 var MLD_FAST_REFRESH_MS=60*1000;
 var MLD_SLOW_REFRESH_MS=30*60*1000;
+var mldImpulseDotOverlayRegistered=false;
+var mldImpulseChartInstance=null;
 
 var mldState={ price:null, klines1h:[], klines4h:[], impulse:null, emaSignal:null, clusterSignal:null,
   keyLevels:null, macroEvents:null, oiLevel:null, manualClusters:[] };
@@ -20,6 +22,12 @@ function mldEscapeHtml(value){
   return String(value===undefined||value===null?'':value)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function mldFormatTime(ts, withDate){
+  if(!ts) return '—';
+  return new Date(ts).toLocaleString(undefined, withDate
+    ? {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}
+    : {hour:'2-digit',minute:'2-digit'});
 }
 
 // Retracement odds lookup - Pump Dump Reversion Study (1H, 12mo BTCUSDT, no news filter).
@@ -79,10 +87,10 @@ function mldComputeImpulseSignal(candles){
     for(j=i+1;j<N;j++){
       var cj=candles[j];
       if(direction==='up'){
-        if(cj.h>extremePrice) extremePrice=cj.h;
+        if(cj.h>extremePrice){ extremePrice=cj.h; extremeIdx=j; }
         if(cj.c<cj.o) break;
       } else {
-        if(cj.l<extremePrice) extremePrice=cj.l;
+        if(cj.l<extremePrice){ extremePrice=cj.l; extremeIdx=j; }
         if(cj.c>cj.o) break;
       }
     }
@@ -97,6 +105,8 @@ function mldComputeImpulseSignal(candles){
     return {
       direction:direction, moveSizePct:moveSizePct, retracedPct:retracedPct,
       anchorPrice:anchor, extremePrice:extremePrice, impulseEndIdx:impulseEndIdx,
+      impulseStartTs:candles[i].ts, impulseAnchorTs:candles[i-1].ts,
+      impulseExtremeTs:candles[extremeIdx].ts, impulseEndTs:candles[impulseEndIdx].ts,
       hoursAgo:(N-1-impulseEndIdx), odds:mldOddsForMove(moveSizePct),
     };
   }
@@ -194,6 +204,136 @@ function mldComputeClusterSignal(price){
   clusters.sort(function(a,b){ return Math.abs(a.price-price)-Math.abs(b.price-price); });
   var nearest=clusters[0];
   return { price:nearest.price, side:nearest.side, distPct:(nearest.price-price)/price*100, source:'manual', label:nearest.label, type:nearest.type||'' };
+}
+
+function mldEnsureImpulseDotOverlay(){
+  if(mldImpulseDotOverlayRegistered || typeof klinecharts==='undefined') return;
+  try{
+    klinecharts.registerOverlay({
+      name:'mldImpulseDot',
+      totalStep:1,
+      needDefaultPointFigure:false,
+      needDefaultXAxisFigure:false,
+      needDefaultYAxisFigure:false,
+      createPointFigures:function(ctx){
+        var coordinates=ctx.coordinates||[];
+        var overlay=ctx.overlay||{};
+        if(!coordinates.length) return [];
+        var p=coordinates[0];
+        var data=overlay.extendData||{};
+        var color=data.color||MLD_GREEN;
+        return [
+          { type:'circle', attrs:{ x:p.x, y:p.y, r:6 }, styles:{ style:'fill', color:color }, ignoreEvent:true },
+          { type:'circle', attrs:{ x:p.x, y:p.y, r:11 }, styles:{ style:'stroke', color:color, size:2 }, ignoreEvent:true },
+          { type:'text', attrs:{ x:p.x+12, y:p.y-10, text:data.label||'Impulse', align:'left', baseline:'middle' }, styles:{ color:color, size:11 }, ignoreEvent:true }
+        ];
+      }
+    });
+    mldImpulseDotOverlayRegistered=true;
+  }catch(e){
+    console.error('mldEnsureImpulseDotOverlay', e);
+  }
+}
+function mldFindImpulse4hMarker(){
+  var im=mldState.impulse;
+  if(!im || !mldState.klines4h.length) return null;
+  var ts=im.impulseExtremeTs||im.impulseStartTs;
+  var i, candle=null;
+  for(i=0;i<mldState.klines4h.length;i++){
+    var c=mldState.klines4h[i];
+    if(ts>=c.ts && ts<c.ts+4*3600000){ candle=c; break; }
+  }
+  if(!candle){
+    candle=mldState.klines4h.reduce(function(best,c){
+      if(!best) return c;
+      return Math.abs(c.ts-ts)<Math.abs(best.ts-ts)?c:best;
+    }, null);
+  }
+  if(!candle) return null;
+  return {
+    timestamp:candle.ts,
+    value:im.extremePrice,
+    candle:candle,
+    color:im.direction==='up'?MLD_GREEN:MLD_RED,
+    label:(im.direction==='up'?'Bullish':'Bearish')+' impulse'
+  };
+}
+function mldEnsureImpulseModal(){
+  var modal=document.getElementById('mldImpulseModal');
+  if(modal) return modal;
+  modal=document.createElement('div');
+  modal.id='mldImpulseModal';
+  modal.style.cssText='position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.72);z-index:9999;padding:22px;';
+  modal.innerHTML='<div style="width:min(980px,96vw);background:var(--bg);border:0.5px solid var(--border);border-radius:14px;box-shadow:0 22px 70px rgba(0,0,0,.55);overflow:hidden;">'
+    +'<div style="display:flex;justify-content:space-between;gap:12px;align-items:center;padding:13px 16px;border-bottom:0.5px solid var(--border);background:var(--bg1);">'
+      +'<div><div id="mldImpulseModalTitle" style="font-size:14px;font-weight:700;color:var(--text);">Impulse 4H view</div><div id="mldImpulseModalSub" style="font-size:11px;color:var(--text-faint);margin-top:2px;"></div></div>'
+      +'<button onclick="mldCloseImpulseChart()" style="background:transparent;border:0.5px solid var(--border);border-radius:7px;color:var(--text-faint);padding:6px 10px;font-size:12px;cursor:pointer;">Close</button>'
+    +'</div>'
+    +'<div id="mldImpulseChartError" style="display:none;padding:12px 16px;color:'+MLD_RED+';font-size:12px;"></div>'
+    +'<div id="mldImpulseChartCanvas" style="height:430px;background:#050911;"></div>'
+  +'</div>';
+  modal.addEventListener('click', function(e){ if(e.target===modal) mldCloseImpulseChart(); });
+  document.body.appendChild(modal);
+  return modal;
+}
+function mldCloseImpulseChart(){
+  var modal=document.getElementById('mldImpulseModal');
+  if(modal) modal.style.display='none';
+  try{
+    if(typeof klinecharts!=='undefined') klinecharts.dispose('mldImpulseChartCanvas');
+  }catch(e){}
+  mldImpulseChartInstance=null;
+}
+function mldOpenImpulseChart(){
+  var im=mldState.impulse;
+  var modal=mldEnsureImpulseModal();
+  var errorEl=document.getElementById('mldImpulseChartError');
+  var titleEl=document.getElementById('mldImpulseModalTitle');
+  var subEl=document.getElementById('mldImpulseModalSub');
+  if(errorEl){ errorEl.style.display='none'; errorEl.textContent=''; }
+  modal.style.display='flex';
+  if(!im || !mldState.klines4h.length){
+    if(errorEl){ errorEl.style.display='block'; errorEl.textContent='No impulse or 4H candles loaded yet.'; }
+    return;
+  }
+  if(typeof klinecharts==='undefined'){
+    if(errorEl){ errorEl.style.display='block'; errorEl.textContent='Chart library is not loaded.'; }
+    return;
+  }
+  var marker=mldFindImpulse4hMarker();
+  if(!marker){
+    if(errorEl){ errorEl.style.display='block'; errorEl.textContent='Could not map this impulse to a 4H candle.'; }
+    return;
+  }
+  if(titleEl) titleEl.textContent='BTCUSDT 4H · '+(im.direction==='up'?'bullish':'bearish')+' impulse';
+  if(subEl) subEl.textContent='Impulse start '+mldFormatTime(im.impulseStartTs,true)+' · extreme '+mldFormatTime(im.impulseExtremeTs,true)+' · move '+im.moveSizePct.toFixed(2)+'% · retraced '+im.retracedPct.toFixed(0)+'%';
+  try{
+    klinecharts.dispose('mldImpulseChartCanvas');
+  }catch(e){}
+  var chart=klinecharts.init('mldImpulseChartCanvas');
+  if(!chart){
+    if(errorEl){ errorEl.style.display='block'; errorEl.textContent='Chart failed to initialize.'; }
+    return;
+  }
+  mldImpulseChartInstance=chart;
+  chart.setStyles({
+    grid:{ horizontal:{ color:'rgba(255,255,255,0.06)' }, vertical:{ show:false } },
+    candle:{ bar:{ upColor:MLD_GREEN, downColor:MLD_RED, noChangeColor:'#6b7178', upBorderColor:MLD_GREEN, downBorderColor:MLD_RED, upWickColor:MLD_GREEN, downWickColor:MLD_RED } },
+    xAxis:{ tickText:{ color:'#7186a0' }, axisLine:{ color:'rgba(255,255,255,0.08)' } },
+    yAxis:{ tickText:{ color:'#7186a0' }, axisLine:{ color:'rgba(255,255,255,0.08)' } }
+  });
+  var chartData=mldState.klines4h.map(function(c){
+    return { timestamp:c.ts, open:c.o, high:c.h, low:c.l, close:c.c };
+  });
+  chart.applyNewData(chartData);
+  mldEnsureImpulseDotOverlay();
+  chart.createOverlay({
+    name:'mldImpulseDot',
+    lock:true,
+    points:[{ timestamp:marker.timestamp, value:marker.value }],
+    extendData:{ color:marker.color, label:'Impulse' }
+  });
+  if(chart.scrollToTimestamp) chart.scrollToTimestamp(marker.timestamp, 0);
 }
 
 // ── Signal 4: key levels (daily/weekly open, distance to each) ───────────
@@ -311,9 +451,14 @@ function mldRender(){
     var im=mldState.impulse;
     var dirLabel=im.direction==='up'?'Pump':'Dump';
     var dirColor=im.direction==='up'?MLD_GREEN:MLD_RED;
+    var impulseTime='Impulse '+mldFormatTime(im.impulseStartTs,true)+' → '+mldFormatTime(im.impulseEndTs,true);
     cards.push('<div style="background:var(--bg1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;">'
-      +'<div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.04em;text-transform:uppercase;margin-bottom:4px;">Impulse retracement</div>'
+      +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:4px;">'
+        +'<div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.04em;text-transform:uppercase;">Impulse retracement</div>'
+        +'<button onclick="mldOpenImpulseChart()" style="background:transparent;border:0.5px solid var(--border);border-radius:6px;color:var(--text);padding:3px 8px;font-size:10px;cursor:pointer;">View</button>'
+      +'</div>'
       +'<div style="font-size:13px;"><span style="color:'+dirColor+';font-weight:600;">'+dirLabel+'</span> of '+im.moveSizePct.toFixed(2)+'%, ~'+im.hoursAgo+'h ago. Retraced so far: <b>'+im.retracedPct.toFixed(0)+'%</b></div>'
+      +'<div style="font-size:11px;color:var(--text-faint);margin-top:5px;">'+impulseTime+'</div>'
       +'</div>');
   } else {
     cards.push('<div style="background:var(--bg1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text-faint);font-size:12px;">Impulse retracement: no qualifying move (≥1%) found in the recent window.</div>');

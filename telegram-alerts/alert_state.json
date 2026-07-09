@@ -1,11 +1,11 @@
 {
   "BTCUSDT": "below",
-  "ETHUSDT": "touching",
+  "ETHUSDT": "above",
   "SOLUSDT": "above",
   "XRPUSDT": "below",
   "ZECUSDT": "above",
-  "BNBUSDT": "below",
   "XLMUSDT": "below",
+  "BNBUSDT": "below",
   "GRAMUSDT": "above",
   "DOGEUSDT": "below",
   "ADAUSDT": "below",
@@ -32,7 +32,7 @@
   "WLFIUSDT": "below",
   "DEXEUSDT": "above",
   "DOTUSDT": "below",
-  "ARBUSDT": "touching",
+  "ARBUSDT": "above",
   "INJUSDT": "below",
   "ICPUSDT": "below",
   "ASTERUSDT": "below",
@@ -46,7 +46,7 @@
   "ALGOUSDT": "below",
   "ETCUSDT": "below",
   "NIGHTUSDT": "below",
-  "ATOMUSDT": "below",
   "SKYUSDT": "touching",
+  "ATOMUSDT": "below",
   "QNTUSDT": "below"
 }

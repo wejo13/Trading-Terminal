@@ -12,7 +12,7 @@ var lcState={
   liqFeed:[],                 // recent liquidation events, newest first
   clusters:[],                // estimated cluster levels
   ws:null, liqWs:null,
-  connected:false,
+  connected:false, liqConnected:false,
   sweptLevels:{},             // level key -> true, once swept (avoid re-logging)
 };
 
@@ -56,6 +56,7 @@ function lcConnectDepth(){
     }
     lcDrawDepth();
     lcCheckSweeps();
+    lcRenderClusterTable();
   };
 }
 
@@ -63,7 +64,8 @@ function lcConnectDepth(){
 function lcConnectLiq(){
   var ws=new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@forceOrder');
   lcState.liqWs=ws;
-  ws.onclose=function(){ setTimeout(lcConnectLiq,3000); };
+  ws.onopen=function(){ lcState.liqConnected=true; lcRenderLiqFeed(); };
+  ws.onclose=function(){ lcState.liqConnected=false; lcRenderLiqFeed(); setTimeout(lcConnectLiq,3000); };
   ws.onerror=function(){ ws.close(); };
   ws.onmessage=function(ev){
     var msg;
@@ -85,6 +87,12 @@ function lcConnectLiq(){
 function lcRenderLiqFeed(){
   var el=document.getElementById('lcLiqFeed');
   if(!el)return;
+  if(!lcState.liqFeed.length){
+    el.innerHTML='<div style="padding:10px;color:var(--text-faint);font-size:11px;">'
+      +(lcState.liqConnected?'Connected - waiting for the next liquidation to fire...':'Connecting...')
+      +'</div>';
+    return;
+  }
   el.innerHTML=lcState.liqFeed.map(function(l){
     var isLongLiq=(l.side==='SELL');   // a SELL forceOrder = a long position got liquidated
     var color=isLongLiq?LC_RED:LC_GREEN;
@@ -280,6 +288,7 @@ function lcLogSweep(cl){
 
 // ── Init / lifecycle ──────────────────────────────────────────────────────
 function lcInit(){
+  lcRenderLiqFeed();
   lcConnectDepth();
   lcConnectLiq();
   lcFetchKlinesAndBuildClusters();

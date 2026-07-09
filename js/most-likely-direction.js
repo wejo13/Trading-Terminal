@@ -9,9 +9,18 @@
 
 var MLD_GREEN='#3ddc97', MLD_RED='#e2645f', MLD_FAINT='#6b7178', MLD_AMBER='#d9a93f';
 var MLD_STORAGE_KEY='mld_reading_log_v1';
+var MLD_MANUAL_CLUSTER_KEY='mld_manual_liquidity_clusters_v1';
+var MLD_FAST_REFRESH_MS=60*1000;
+var MLD_SLOW_REFRESH_MS=30*60*1000;
 
 var mldState={ price:null, klines1h:[], klines4h:[], impulse:null, emaSignal:null, clusterSignal:null,
-  keyLevels:null, macroEvents:null, oiLevel:null };
+  keyLevels:null, macroEvents:null, oiLevel:null, manualClusters:[] };
+
+function mldEscapeHtml(value){
+  return String(value===undefined||value===null?'':value)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
 
 // Retracement odds lookup - Pump Dump Reversion Study (1H, 12mo BTCUSDT, no news filter).
 var MLD_RETRACE_ODDS=[
@@ -143,12 +152,92 @@ function mldBuildClusters(candles){
   merged.forEach(function(m){ m.prominence=Math.min(100,Math.round(m.weight*12)); });
   return merged;
 }
+function mldManualTypeMeta(type){
+  if(type==='eq_low') return { label:'EQ Low', side:'support' };
+  if(type==='swing_high') return { label:'Swing High', side:'resistance' };
+  if(type==='swing_low') return { label:'Swing Low', side:'support' };
+  return { label:'EQ High', side:'resistance' };
+}
+function mldLoadManualClusters(){
+  try{
+    var parsed=JSON.parse(localStorage.getItem(MLD_MANUAL_CLUSTER_KEY))||[];
+    if(!Array.isArray(parsed)) return [];
+    return parsed.filter(function(c){ return c && isFinite(c.price) && c.price>0; }).map(function(c){
+      var meta=mldManualTypeMeta(c.type);
+      return { id:String(c.id), type:c.type, label:meta.label, side:meta.side, price:Number(c.price), note:String(c.note||''), createdTs:Number(c.createdTs)||Date.now(), source:'manual', prominence:100, touches:1 };
+    });
+  }catch(e){ return []; }
+}
+function mldSaveManualClusters(clusters){
+  try{ localStorage.setItem(MLD_MANUAL_CLUSTER_KEY, JSON.stringify(clusters)); }catch(e){}
+}
+function mldSetManualClusterStatus(text,color){
+  var el=document.getElementById('mldManualClusterStatus');
+  if(el){ el.textContent=text||''; el.style.color=color||'var(--text-faint)'; }
+}
+function mldRefreshClusterSignalFromManual(){
+  mldState.manualClusters=mldLoadManualClusters();
+  if(mldState.klines4h.length && mldState.price){
+    mldState.clusterSignal=mldComputeClusterSignal(mldState.klines4h, mldState.price);
+  }
+  mldRender();
+  mldRenderManualClusters();
+}
+function mldAddManualCluster(){
+  var typeEl=document.getElementById('mldManualClusterType');
+  var priceEl=document.getElementById('mldManualClusterPrice');
+  var noteEl=document.getElementById('mldManualClusterNote');
+  var price=priceEl?Number(priceEl.value):NaN;
+  if(!isFinite(price)||price<=0){
+    mldSetManualClusterStatus('Enter a valid BTC price first.', MLD_RED);
+    return;
+  }
+  var type=typeEl?typeEl.value:'eq_high';
+  var meta=mldManualTypeMeta(type);
+  var clusters=mldLoadManualClusters();
+  clusters.unshift({ id:String(Date.now()), type:type, label:meta.label, side:meta.side, price:price, note:noteEl?noteEl.value.trim():'', createdTs:Date.now(), source:'manual', prominence:100, touches:1 });
+  mldSaveManualClusters(clusters.slice(0,50));
+  if(priceEl) priceEl.value='';
+  if(noteEl) noteEl.value='';
+  mldSetManualClusterStatus('Manual cluster added.', MLD_GREEN);
+  mldRefreshClusterSignalFromManual();
+}
+function mldDeleteManualCluster(id){
+  var clusters=mldLoadManualClusters().filter(function(c){ return String(c.id)!==String(id); });
+  mldSaveManualClusters(clusters);
+  mldSetManualClusterStatus('Manual cluster removed.', 'var(--text-faint)');
+  mldRefreshClusterSignalFromManual();
+}
+function mldRenderManualClusters(){
+  var el=document.getElementById('mldManualClusterList');
+  if(!el) return;
+  var clusters=mldLoadManualClusters();
+  mldState.manualClusters=clusters;
+  if(!clusters.length){
+    el.innerHTML='<div style="font-size:11px;color:var(--text-faint);">No manual liquidity clusters saved yet.</div>';
+    return;
+  }
+  el.innerHTML=clusters.map(function(c){
+    var color=c.side==='resistance'?MLD_RED:MLD_GREEN;
+    var dist=mldState.price?(((c.price-mldState.price)/mldState.price*100)) : null;
+    var distText=dist===null?'':' · '+(dist>0?'+':'')+dist.toFixed(2)+'% from price';
+    return '<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:7px 8px;border:0.5px solid var(--border);border-radius:7px;background:rgba(255,255,255,.02);">'
+      +'<div style="font-size:12px;"><span style="color:'+color+';font-weight:700;">'+mldEscapeHtml(c.label)+'</span> <span style="color:var(--text);font-weight:700;">$'+c.price.toFixed(0)+'</span><span style="color:var(--text-faint);">'+distText+'</span>'+(c.note?'<div style="font-size:10px;color:var(--text-faint);margin-top:2px;">'+mldEscapeHtml(c.note)+'</div>':'')+'</div>'
+      +'<button onclick="mldDeleteManualCluster(\''+mldEscapeHtml(c.id)+'\')" style="background:transparent;border:0.5px solid var(--border);border-radius:6px;color:var(--text-faint);padding:4px 8px;font-size:10px;cursor:pointer;">Remove</button>'
+      +'</div>';
+  }).join('');
+}
 function mldComputeClusterSignal(candles, price){
-  var clusters=mldBuildClusters(candles);
+  var clusters=mldBuildClusters(candles).map(function(c){
+    c.source='estimated';
+    c.label=c.reason;
+    c.type=c.reason==='swing high'?'swing_high':'swing_low';
+    return c;
+  }).concat(mldLoadManualClusters());
   if(!clusters.length) return null;
   clusters.sort(function(a,b){ return Math.abs(a.price-price)-Math.abs(b.price-price); });
   var nearest=clusters[0];
-  return { price:nearest.price, side:nearest.side, prominence:nearest.prominence, distPct:(nearest.price-price)/price*100 };
+  return { price:nearest.price, side:nearest.side, prominence:nearest.prominence, distPct:(nearest.price-price)/price*100, source:nearest.source||'estimated', label:nearest.label||nearest.reason||'cluster', type:nearest.type||'', note:nearest.note||'' };
 }
 
 // ── Signal 4: key levels (daily/weekly open, distance to each) ───────────
@@ -284,9 +373,13 @@ function mldRender(){
   if(mldState.clusterSignal){
     var cs=mldState.clusterSignal;
     var csColor=cs.side==='resistance'?MLD_RED:MLD_GREEN;
+    var csSource=cs.source==='manual'?'manual':'estimated';
+    var csDetail=cs.source==='manual'
+      ? mldEscapeHtml(cs.label)+' · '+mldEscapeHtml(cs.side)+(cs.note?' · '+mldEscapeHtml(cs.note):'')
+      : mldEscapeHtml(cs.side)+', prominence '+cs.prominence+'/100';
     cards.push('<div style="background:var(--bg1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;">'
-      +'<div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.04em;text-transform:uppercase;margin-bottom:4px;">Nearest liquidity cluster (estimated)</div>'
-      +'<div style="font-size:13px;">$'+cs.price.toFixed(0)+' <span style="color:'+csColor+';font-weight:600;">'+cs.side+'</span>, '+(cs.distPct>0?'+':'')+cs.distPct.toFixed(2)+'% away, prominence '+cs.prominence+'/100</div>'
+      +'<div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.04em;text-transform:uppercase;margin-bottom:4px;">Nearest liquidity cluster ('+csSource+')</div>'
+      +'<div style="font-size:13px;">$'+cs.price.toFixed(0)+' <span style="color:'+csColor+';font-weight:600;">'+csDetail+'</span>, '+(cs.distPct>0?'+':'')+cs.distPct.toFixed(2)+'% away</div>'
       +'</div>');
   }
 
@@ -331,6 +424,7 @@ function mldRender(){
 
   mldRenderSynthesis();
   mldRenderHeadline();
+  mldRenderManualClusters();
 }
 
 // ── Headline: single plain-language verdict, shown above the cards ───────
@@ -355,7 +449,7 @@ function mldRenderHeadline(){
   }
   if(mldState.clusterSignal && Math.abs(mldState.clusterSignal.distPct)<0.3){
     if(mldState.clusterSignal.side==='resistance') bearish++; else bullish++;
-    notes.push('sitting at a '+mldState.clusterSignal.side+' cluster');
+    notes.push('sitting at a '+(mldState.clusterSignal.source==='manual'?'manual ':'')+mldState.clusterSignal.side+' cluster');
   }
   if(mldState.keyLevels){
     if(mldState.keyLevels.dailyChgPct>0) bullish++; else bearish++;
@@ -392,7 +486,7 @@ function mldRenderSynthesis(){
     notes.push('price is actively at the 4H 200EMA, historically a high-reject-rate zone');
   }
   if(mldState.clusterSignal && Math.abs(mldState.clusterSignal.distPct)<0.3){
-    notes.push('price is sitting right at an estimated liquidity cluster ('+mldState.clusterSignal.side+')');
+    notes.push('price is sitting right at a '+(mldState.clusterSignal.source==='manual'?'manual':'estimated')+' liquidity cluster ('+mldState.clusterSignal.side+')');
   }
   var text=notes.length
     ? 'Read: '+notes.join('; ')+'. This is a directional tilt from independently-measured base rates, not a combined probability - treat agreement across signals as a reason to pay closer attention, not as added statistical confidence.'
@@ -483,9 +577,9 @@ function mldSlowRefresh(){
 
 function mldInit(){
   mldRefresh();
-  setInterval(mldRefresh, 5*60*1000);
+  setInterval(mldRefresh, MLD_FAST_REFRESH_MS);
   mldSlowRefresh();
-  setInterval(mldSlowRefresh, 30*60*1000);
+  setInterval(mldSlowRefresh, MLD_SLOW_REFRESH_MS);
 }
 
 (function(){

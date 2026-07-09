@@ -301,6 +301,10 @@ function mldRender(){
 
   var el=document.getElementById('mldSignals');
   if(!el) return;
+  var manualTypeBefore=document.getElementById('mldManualClusterType');
+  var manualPriceBefore=document.getElementById('mldManualClusterPrice');
+  var manualTypeValue=manualTypeBefore?manualTypeBefore.value:'';
+  var manualPriceValue=manualPriceBefore?manualPriceBefore.value:'';
   var cards=[];
 
   if(mldState.impulse){
@@ -326,15 +330,30 @@ function mldRender(){
     cards.push('<div style="background:var(--bg1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text-faint);font-size:12px;">EMA200 4H: not enough history loaded yet.</div>');
   }
 
-  if(mldState.clusterSignal){
-    var cs=mldState.clusterSignal;
-    var csColor=cs.side==='resistance'?MLD_RED:MLD_GREEN;
-    var csDetail=mldEscapeHtml(cs.label)+' · '+mldEscapeHtml(cs.side);
-    cards.push('<div style="background:var(--bg1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;">'
-      +'<div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.04em;text-transform:uppercase;margin-bottom:4px;">Nearest liquidity cluster</div>'
-      +'<div style="font-size:13px;">$'+cs.price.toFixed(0)+' <span style="color:'+csColor+';font-weight:600;">'+csDetail+'</span>, '+(cs.distPct>0?'+':'')+cs.distPct.toFixed(2)+'% away</div>'
-      +'</div>');
-  }
+  var cs=mldState.clusterSignal;
+  var csColor=cs&&cs.side==='resistance'?MLD_RED:MLD_GREEN;
+  var csText=cs
+    ? '$'+cs.price.toFixed(0)+' <span style="color:'+csColor+';font-weight:600;">'+mldEscapeHtml(cs.label)+' · '+mldEscapeHtml(cs.side)+'</span>, '+(cs.distPct>0?'+':'')+cs.distPct.toFixed(2)+'% away'
+    : '—';
+  cards.push('<div style="background:var(--bg1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;">'
+    +'<div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.04em;text-transform:uppercase;margin-bottom:4px;">Nearest liquidity cluster</div>'
+    +'<div style="font-size:13px;margin-bottom:9px;">'+csText+'</div>'
+    +'<div style="display:grid;grid-template-columns:minmax(96px,1fr) 86px auto;gap:6px;align-items:end;">'
+      +'<label style="font-size:9px;color:var(--text-faint);letter-spacing:.04em;text-transform:uppercase;">Type'
+        +'<select id="mldManualClusterType" style="width:100%;margin-top:3px;background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;color:var(--text);padding:5px 7px;font-size:10px;">'
+          +'<option value="eq_high">EQ HIGHS</option>'
+          +'<option value="eq_low">EQ LOWS</option>'
+          +'<option value="swing_high">SWING HIGH</option>'
+          +'<option value="swing_low">SWING LOW</option>'
+        +'</select>'
+      +'</label>'
+      +'<label style="font-size:9px;color:var(--text-faint);letter-spacing:.04em;text-transform:uppercase;">Price'
+        +'<input id="mldManualClusterPrice" type="number" step="0.1" placeholder="63250" style="width:100%;margin-top:3px;background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;color:var(--text);padding:5px 7px;font-size:10px;box-sizing:border-box;">'
+      +'</label>'
+      +'<button onclick="mldAddManualCluster()" style="background:var(--teal);color:var(--bg);border:none;border-radius:6px;padding:6px 10px;font-size:10px;font-weight:600;cursor:pointer;">Add</button>'
+    +'</div>'
+    +'<div id="mldManualClusterList" style="margin-top:8px;display:flex;flex-direction:column;gap:6px;"></div>'
+    +'</div>');
 
   if(mldState.keyLevels){
     var kl=mldState.keyLevels;
@@ -374,6 +393,14 @@ function mldRender(){
   }
 
   el.innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;">'+cards.join('')+'</div>';
+  if(manualTypeValue){
+    var manualTypeAfter=document.getElementById('mldManualClusterType');
+    if(manualTypeAfter) manualTypeAfter.value=manualTypeValue;
+  }
+  if(manualPriceValue){
+    var manualPriceAfter=document.getElementById('mldManualClusterPrice');
+    if(manualPriceAfter) manualPriceAfter.value=manualPriceValue;
+  }
 
   mldRenderSynthesis();
   mldRenderHeadline();

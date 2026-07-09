@@ -1,12 +1,12 @@
 {
   "tag": "direct-feed-signal-outcomes",
   "outcome_version": "DIRECT_SIGNAL_OUTCOMES_V2",
-  "generated_ts": 1783636844143,
-  "generated_iso": "2026-07-09T22:40:44.143Z",
+  "generated_ts": 1783638772263,
+  "generated_iso": "2026-07-09T23:12:52.263Z",
   "state_path": "oi-radar/direct-feed/observations/telegram-sent.json",
   "signal_count": 8,
-  "complete_horizons": 33,
-  "pending_horizons": 7,
+  "complete_horizons": 34,
+  "pending_horizons": 6,
   "horizons": [
     {
       "label": "1h",
@@ -57,8 +57,8 @@
         "total_oi_usd": 8218606906.056076,
         "input_fingerprint": "c61f3eb9cabf0c4f70ad9d4ea0a50ec5549f5e7fe1fd886eca2c82eece942190"
       },
-      "latest_aggregate_ts": 1783635300000,
-      "latest_aggregate_iso": "2026-07-09T22:15:00.000Z",
+      "latest_aggregate_ts": 1783637100000,
+      "latest_aggregate_iso": "2026-07-09T22:45:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -215,8 +215,8 @@
         "total_oi_usd": 8132768680.6439,
         "input_fingerprint": "23deb38cd7416200a9ce5c8dceb7dcac6650294fafda2be5e4278c86ede337e9"
       },
-      "latest_aggregate_ts": 1783635300000,
-      "latest_aggregate_iso": "2026-07-09T22:15:00.000Z",
+      "latest_aggregate_ts": 1783637100000,
+      "latest_aggregate_iso": "2026-07-09T22:45:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -373,8 +373,8 @@
         "total_oi_usd": 8173937381.981745,
         "input_fingerprint": "5601e379cf5eff1adb7022877db5525f79855087ef57b03625c64bc0d5ba83f7"
       },
-      "latest_aggregate_ts": 1783635300000,
-      "latest_aggregate_iso": "2026-07-09T22:15:00.000Z",
+      "latest_aggregate_ts": 1783637100000,
+      "latest_aggregate_iso": "2026-07-09T22:45:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -531,8 +531,8 @@
         "total_oi_usd": 8313994632.722041,
         "input_fingerprint": "d5e32db31c0ad86ad8ba4b0a7ad7a7fb029a9609cf4f14d8eed5dfe8d18a6dcd"
       },
-      "latest_aggregate_ts": 1783635300000,
-      "latest_aggregate_iso": "2026-07-09T22:15:00.000Z",
+      "latest_aggregate_ts": 1783637100000,
+      "latest_aggregate_iso": "2026-07-09T22:45:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -689,8 +689,8 @@
         "total_oi_usd": 8469725465.586305,
         "input_fingerprint": "63bc6d9b683c5e359aa34267cd920da991755500de43d6dabc99f94a03bd4740"
       },
-      "latest_aggregate_ts": 1783635300000,
-      "latest_aggregate_iso": "2026-07-09T22:15:00.000Z",
+      "latest_aggregate_ts": 1783637100000,
+      "latest_aggregate_iso": "2026-07-09T22:45:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -847,8 +847,8 @@
         "total_oi_usd": 8099807001.238525,
         "input_fingerprint": "9371ccf3265ef4cf8f645452cb837b1fbae73ed65dbbfe5a63334f12432921fa"
       },
-      "latest_aggregate_ts": 1783635300000,
-      "latest_aggregate_iso": "2026-07-09T22:15:00.000Z",
+      "latest_aggregate_ts": 1783637100000,
+      "latest_aggregate_iso": "2026-07-09T22:45:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -985,8 +985,8 @@
         "total_oi_usd": 8089162179.728844,
         "input_fingerprint": "98796e4c674bf3fe44ccb52e41837110ad1e6078d540d6eda0db622db547d6f5"
       },
-      "latest_aggregate_ts": 1783635300000,
-      "latest_aggregate_iso": "2026-07-09T22:15:00.000Z",
+      "latest_aggregate_ts": 1783637100000,
+      "latest_aggregate_iso": "2026-07-09T22:45:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -1123,8 +1123,8 @@
         "total_oi_usd": 8083001669.1192,
         "input_fingerprint": "6dbc0784a3089391a32820f42078744820fc34a5dbac0c10cd0cba8b45e8066c"
       },
-      "latest_aggregate_ts": 1783635300000,
-      "latest_aggregate_iso": "2026-07-09T22:15:00.000Z",
+      "latest_aggregate_ts": 1783637100000,
+      "latest_aggregate_iso": "2026-07-09T22:45:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -1157,7 +1157,13 @@
           "buckets": 16,
           "target_ts": 1783636200000,
           "target_iso": "2026-07-09T22:30:00.000Z",
-          "status": "pending"
+          "status": "complete",
+          "price_close": 63333,
+          "total_oi_usd": 8097543308.581489,
+          "price_delta": 34.19999999999709,
+          "price_return": 0.0005402946027412382,
+          "total_oi_delta_usd": 14541639.462288857,
+          "total_oi_return": 0.001799039522389886
         },
         {
           "label": "12h",
@@ -1208,7 +1214,11 @@
           "label": "4h",
           "target_ts": 1783637160000,
           "target_iso": "2026-07-09T22:46:00.000Z",
-          "status": "pending"
+          "status": "complete",
+          "price": 63354.7,
+          "price_delta": 31.599999999998545,
+          "price_return": 0.0004990280008401128,
+          "price_source": "binance_futures_1m"
         },
         {
           "label": "12h",
@@ -1232,8 +1242,8 @@
     "interval": "1m",
     "price_field": "open",
     "note": "Sent price is approximated by the open of the 1-minute candle containing sent_ts; exact message-send tick is not stored.",
-    "complete_horizons": 33,
-    "pending_horizons": 7
+    "complete_horizons": 34,
+    "pending_horizons": 6
   },
   "exported_for_site": true,
   "exported_path": "data/oi-alert-outcomes.json",

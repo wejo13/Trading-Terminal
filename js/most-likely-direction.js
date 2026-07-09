@@ -265,7 +265,6 @@ function mldRender(){
     cards.push('<div style="background:var(--bg1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;">'
       +'<div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.04em;text-transform:uppercase;margin-bottom:4px;">Impulse retracement</div>'
       +'<div style="font-size:13px;"><span style="color:'+dirColor+';font-weight:600;">'+dirLabel+'</span> of '+im.moveSizePct.toFixed(2)+'%, ~'+im.hoursAgo+'h ago. Retraced so far: <b>'+im.retracedPct.toFixed(0)+'%</b></div>'
-      +'<div style="font-size:11px;color:var(--text-faint);margin-top:4px;">Matched study bucket n='+im.odds.n+': 50%+ retrace ~'+im.odds.r24.p50+'% (24h), 75%+ ~'+im.odds.r24.p75+'%, full ~'+im.odds.r24.p100+'% (24h) / '+im.odds.r72.p100+'% (72h)</div>'
       +'</div>');
   } else {
     cards.push('<div style="background:var(--bg1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text-faint);font-size:12px;">Impulse retracement: no qualifying move (≥1%) found in the recent window.</div>');
@@ -274,13 +273,9 @@ function mldRender(){
   if(mldState.emaSignal){
     var es=mldState.emaSignal;
     var sideColor=es.side==='above'?MLD_GREEN:MLD_RED;
-    var touchNote=es.touching
-      ? 'Currently touching. First-touch reject rate in study: '+MLD_EMA_STUDY.firstTouchRejectLow+'-'+MLD_EMA_STUDY.firstTouchRejectHigh+'% (2nd touch: '+MLD_EMA_STUDY.secondTouchRejectLow+'-'+MLD_EMA_STUDY.secondTouchRejectHigh+'%). Recent touches (last 10 bars): '+es.recentTouchCount
-      : 'Not currently touching (recent touches in last 10 bars: '+es.recentTouchCount+')';
     cards.push('<div style="background:var(--bg1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;">'
       +'<div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.04em;text-transform:uppercase;margin-bottom:4px;">EMA200 · 4H</div>'
       +'<div style="font-size:13px;">Price is <span style="color:'+sideColor+';font-weight:600;">'+es.side+'</span> EMA200, '+(es.distPct>0?'+':'')+es.distPct.toFixed(2)+'% away ($'+es.emaValue.toFixed(0)+')</div>'
-      +'<div style="font-size:11px;color:var(--text-faint);margin-top:4px;">'+touchNote+'</div>'
       +'</div>');
   } else {
     cards.push('<div style="background:var(--bg1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text-faint);font-size:12px;">EMA200 4H: not enough history loaded yet.</div>');
@@ -312,7 +307,6 @@ function mldRender(){
     cards.push('<div style="background:var(--bg1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;">'
       +'<div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.04em;text-transform:uppercase;margin-bottom:4px;">OI level (Binance, '+oi.days+'d)</div>'
       +'<div style="font-size:13px;">'+Math.round(oi.current)+' BTC · <span style="color:'+oiColor+';font-weight:600;">'+oiNote+'</span> (z='+oi.z.toFixed(2)+', p'+oi.pctile+')</div>'
-      +'<div style="font-size:11px;color:var(--text-faint);margin-top:4px;">Context only — vault testing found OI-level extremes don\'t reliably predict reversals.</div>'
       +'</div>');
   }
 

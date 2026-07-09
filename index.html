@@ -222,6 +222,9 @@
     width:6px;height:6px;border-radius:50%;background:var(--teal);
     box-shadow:0 0 8px rgba(56,189,248,0.65);
   }
+  .main-header .live-pill{
+    display:none !important;
+  }
 
   /* generic card, used across all tabs */
   .card{
@@ -1409,9 +1412,6 @@
             <p>Balances, BTC read, and highest-quality setups in one review screen.</p>
           </div>
         </div>
-        <div class="dash-blue-actions">
-          <span class="dash-status-pill"><i></i>Live terminal</span>
-        </div>
       </div>
 
       <!-- hide/show balance toggle - useful when streaming or screensharing -->
@@ -1461,7 +1461,7 @@
            the underlying research doesn't support collapsing these into one number. -->
       <div class="card">
         <div class="section-head">
-          <div class="section-title">Most likely direction — BTC</div>
+          <div class="section-title">BTC Forecast using multiple strategies</div>
           <div class="section-sub" id="mldPriceLabel">loading…</div>
         </div>
         <div id="mldHeadline" style="padding:8px 0 12px 0;">loading…</div>
@@ -4221,7 +4221,7 @@
 
 <script src="js/liq-clusters.js"></script>
 
-<script src="js/most-likely-direction.js"></script>
+<script src="js/most-likely-direction.js?v=dashboard-cleanup"></script>
 
 <script src="js/altcoin-events.js"></script>
 <script src="js/hypertracker.js"></script>

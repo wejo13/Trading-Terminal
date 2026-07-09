@@ -1084,6 +1084,9 @@
     <div class="nav-sub-item" data-tab="sea-daily" onclick="switchTab('sea-daily')">
       <span class="nav-sub-dot"></span>Daily Performance
     </div>
+    <div class="nav-sub-item" data-tab="sea-liq" onclick="switchTab('sea-liq')">
+      <span class="nav-sub-dot"></span>Liquidity Clusters
+    </div>
     <div class="nav-group-label">
       <i class="ti ti-chart-line"></i>Altcoins
     </div>
@@ -2970,6 +2973,46 @@
       </div>
     </div>
 
+    <!-- ===================== LIQUIDITY CLUSTERS TAB ===================== -->
+    <div class="tab-view" id="tab-sea-liq" data-title="Liquidity Clusters">
+      <div style="padding:16px">
+
+        <div style="font-size:12px;color:var(--text-faint);line-height:1.7;margin-bottom:14px;max-width:760px;">
+          Real order book depth + real fired liquidations (both live, both genuine exchange data) alongside an <b>estimated</b> liquidity-cluster model (swing highs/lows, equal levels, OI buildup — inferred, not observed). No exchange exposes unfilled stop/liquidation orders; estimated clusters are a model, calibrated against real fired liquidations over time, same category as Coinglass-style heatmaps.
+          <span id="lcStatus" style="display:block;margin-top:8px;font-weight:600;"></span>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+          <div style="background:var(--bg1);border:0.5px solid var(--border);border-radius:8px;padding:12px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px;">Live order book depth (real)</div>
+            <div style="position:relative;border-radius:6px;overflow:hidden;background:#0d0f10;" id="lcDepthWrap">
+              <canvas id="lcDepthC" style="display:block;width:100%;"></canvas>
+            </div>
+          </div>
+          <div style="background:var(--bg1);border:0.5px solid var(--border);border-radius:8px;padding:12px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px;">Live liquidations (real, as they fire)</div>
+            <div style="max-height:260px;overflow-y:auto;" id="lcLiqFeed"></div>
+          </div>
+        </div>
+
+        <div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px;">Estimated clusters near price</div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px;">
+          <thead><tr style="border-bottom:0.5px solid var(--border);">
+            <th style="text-align:left;padding:5px 8px;font-weight:500;color:var(--text-faint);font-size:11px;">Price level</th>
+            <th style="text-align:left;padding:5px 8px;font-weight:500;color:var(--text-faint);font-size:11px;">Side</th>
+            <th style="text-align:right;padding:5px 8px;font-weight:500;color:var(--text-faint);font-size:11px;">Distance</th>
+            <th style="text-align:right;padding:5px 8px;font-weight:500;color:var(--text-faint);font-size:11px;">Prominence</th>
+            <th style="text-align:left;padding:5px 8px;font-weight:500;color:var(--text-faint);font-size:11px;">Why</th>
+          </tr></thead>
+          <tbody id="lcClusterTbody"></tbody>
+        </table>
+
+        <div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px;">Sweep events + retracement odds (from validated study)</div>
+        <div id="lcSweepLog" style="font-size:12px;color:var(--text-dim);"></div>
+
+      </div>
+    </div>
+
     <!-- ===================== ALTCOIN EVENT RESEARCH TABS ===================== -->
     <div class="tab-view" id="tab-alt-eth" data-title="ETH — Altcoin Events">
       <div style="padding:16px">
@@ -3345,6 +3388,8 @@
 <script src="js/daily-perf-data.js"></script>
 
 <script src="js/daily-perf.js"></script>
+
+<script src="js/liq-clusters.js"></script>
 
 <script src="js/altcoin-events.js"></script>
 

@@ -141,13 +141,27 @@
   .nav-item.disabled{opacity:0.4;cursor:default;}
   .nav-item.disabled:hover{background:transparent;color:var(--text-dim);}
 
-  /* sidebar sub-items (indented children under a parent nav group) */
+  /* sidebar dropdown groups */
+  .nav-group{margin:2px 0;}
   .nav-group-label{
+    width:calc(100% - 16px);
     display:flex;align-items:center;gap:10px;
-    padding:10px 20px 6px;color:var(--text-faint);font-size:12px;font-weight:500;
-    user-select:none;cursor:default;
+    padding:10px 20px;margin-right:16px;border:0;
+    border-radius:0 var(--radius-pill) var(--radius-pill) 0;
+    background:transparent;color:var(--text-dim);font:inherit;font-size:13px;font-weight:500;
+    text-align:left;user-select:none;cursor:pointer;
+    transition:background 0.12s,color 0.12s;
   }
+  .nav-group-label:hover{color:var(--text);background:rgba(56,189,248,0.07);}
   .nav-group-label i{font-size:17px;flex-shrink:0;}
+  .nav-group-label .nav-group-title{flex:1;}
+  .nav-group-chevron{font-size:14px;transition:transform .14s ease;color:currentColor;opacity:.7;}
+  .nav-group.open .nav-group-chevron{transform:rotate(180deg);}
+  .nav-group.has-active > .nav-group-label{
+    color:var(--text);background:rgba(56,189,248,0.055);
+  }
+  .nav-group-items{display:none;padding:1px 0 4px;}
+  .nav-group.open > .nav-group-items{display:block;}
   .nav-sub-item{
     display:flex;align-items:center;gap:8px;
     padding:7px 20px 7px 44px;margin-right:16px;
@@ -1179,17 +1193,21 @@
     <div class="nav-item active" data-tab="dashboard" onclick="switchTab('dashboard')">
       <i class="ti ti-layout-dashboard"></i>Dashboard
     </div>
-    <div class="nav-group-label">
-      <i class="ti ti-chart-candle"></i>Strategies
-    </div>
-    <div class="nav-sub-item" data-tab="ema" onclick="switchTab('ema')">
-      <span class="nav-sub-dot"></span>EMA Strategy
-    </div>
-    <div class="nav-sub-item" data-tab="grid" onclick="switchTab('grid')">
-      <span class="nav-sub-dot"></span>Grid Bot · Lighter
-    </div>
-    <div class="nav-sub-item" data-tab="grid-bybit" onclick="switchTab('grid-bybit')">
-      <span class="nav-sub-dot"></span>Grid Bot · Bybit
+    <div class="nav-group" data-nav-group="strategies">
+      <button class="nav-group-label" type="button" onclick="toggleNavGroup('strategies')">
+        <i class="ti ti-chart-candle"></i><span class="nav-group-title">Strategies</span><i class="ti ti-chevron-down nav-group-chevron"></i>
+      </button>
+      <div class="nav-group-items">
+        <div class="nav-sub-item" data-tab="ema" onclick="switchTab('ema')">
+          <span class="nav-sub-dot"></span>EMA Strategy
+        </div>
+        <div class="nav-sub-item" data-tab="grid" onclick="switchTab('grid')">
+          <span class="nav-sub-dot"></span>Grid Bot · Lighter
+        </div>
+        <div class="nav-sub-item" data-tab="grid-bybit" onclick="switchTab('grid-bybit')">
+          <span class="nav-sub-dot"></span>Grid Bot · Bybit
+        </div>
+      </div>
     </div>
     <div class="nav-item" data-tab="trade" onclick="switchTab('trade')">
       <i class="ti ti-rocket"></i>Trade
@@ -1208,42 +1226,50 @@
     </div>
 
     <div class="sidebar-section-label">Research</div>
-    <div class="nav-item" data-tab="hypertracker" onclick="switchTab('hypertracker')">
-      <i class="ti ti-whale"></i>HyperTracker
+    <div class="nav-group" data-nav-group="bitcoin">
+      <button class="nav-group-label" type="button" onclick="toggleNavGroup('bitcoin')">
+        <i class="ti ti-currency-bitcoin"></i><span class="nav-group-title">Bitcoin</span><i class="ti ti-chevron-down nav-group-chevron"></i>
+      </button>
+      <div class="nav-group-items">
+        <div class="nav-sub-item" data-tab="sea-news" onclick="switchTab('sea-news')">
+          <span class="nav-sub-dot"></span>News Driven Events
+        </div>
+        <div class="nav-sub-item" data-tab="sea-fomc" onclick="switchTab('sea-fomc')">
+          <span class="nav-sub-dot"></span>FOMC Analysis
+        </div>
+        <div class="nav-sub-item" data-tab="sea-daily" onclick="switchTab('sea-daily')">
+          <span class="nav-sub-dot"></span>Daily Performance
+        </div>
+        <div class="nav-sub-item" data-tab="sea-liq" onclick="switchTab('sea-liq')">
+          <span class="nav-sub-dot"></span>Liquidity Clusters
+        </div>
+      </div>
     </div>
-    <div class="nav-group-label">
-      <i class="ti ti-currency-bitcoin"></i>Bitcoin
-    </div>
-    <div class="nav-sub-item" data-tab="sea-news" onclick="switchTab('sea-news')">
-      <span class="nav-sub-dot"></span>News Driven Events
-    </div>
-    <div class="nav-sub-item" data-tab="sea-fomc" onclick="switchTab('sea-fomc')">
-      <span class="nav-sub-dot"></span>FOMC Analysis
-    </div>
-    <div class="nav-sub-item" data-tab="sea-daily" onclick="switchTab('sea-daily')">
-      <span class="nav-sub-dot"></span>Daily Performance
-    </div>
-    <div class="nav-sub-item" data-tab="sea-liq" onclick="switchTab('sea-liq')">
-      <span class="nav-sub-dot"></span>Liquidity Clusters
-    </div>
-    <div class="nav-group-label">
-      <i class="ti ti-chart-line"></i>Altcoins
-    </div>
-    <div class="nav-sub-item" data-tab="alt-eth" onclick="switchTab('alt-eth')">
-      <span class="nav-sub-dot"></span>ETH
-    </div>
-    <div class="nav-sub-item" data-tab="alt-sol" onclick="switchTab('alt-sol')">
-      <span class="nav-sub-dot"></span>SOL
-    </div>
-    <div class="nav-sub-item" data-tab="alt-bnb" onclick="switchTab('alt-bnb')">
-      <span class="nav-sub-dot"></span>BNB
-    </div>
-    <div class="nav-sub-item" data-tab="alt-xrp" onclick="switchTab('alt-xrp')">
-      <span class="nav-sub-dot"></span>XRP
+    <div class="nav-group" data-nav-group="altcoins">
+      <button class="nav-group-label" type="button" onclick="toggleNavGroup('altcoins')">
+        <i class="ti ti-chart-line"></i><span class="nav-group-title">Altcoins</span><i class="ti ti-chevron-down nav-group-chevron"></i>
+      </button>
+      <div class="nav-group-items">
+        <div class="nav-sub-item" data-tab="alt-eth" onclick="switchTab('alt-eth')">
+          <span class="nav-sub-dot"></span>ETH
+        </div>
+        <div class="nav-sub-item" data-tab="alt-sol" onclick="switchTab('alt-sol')">
+          <span class="nav-sub-dot"></span>SOL
+        </div>
+        <div class="nav-sub-item" data-tab="alt-bnb" onclick="switchTab('alt-bnb')">
+          <span class="nav-sub-dot"></span>BNB
+        </div>
+        <div class="nav-sub-item" data-tab="alt-xrp" onclick="switchTab('alt-xrp')">
+          <span class="nav-sub-dot"></span>XRP
+        </div>
+      </div>
     </div>
 
     <div class="nav-item" data-tab="sp500" onclick="switchTab('sp500')">
-      <i class="ti ti-chart-bar"></i>S&P 500 Watchlist
+      <i class="ti ti-chart-bar"></i>S&P500
+    </div>
+    <div class="nav-item" data-tab="hypertracker" onclick="switchTab('hypertracker')">
+      <i class="ti ti-radar"></i>HyperTracker
     </div>
 
     <div class="sidebar-footer">
@@ -3537,7 +3563,7 @@
     </div>
 
     <!-- ── S&P 500 Watchlist tab ── -->
-    <div class="tab-view" id="tab-sp500" data-title="S&amp;P 500 Watchlist">
+    <div class="tab-view" id="tab-sp500" data-title="S&amp;P500">
       <div style="max-width:1100px;">
         <div class="sp5-card">
           <div class="sp5-section-head">Valuation &amp; Cycle Context</div>
@@ -3545,7 +3571,7 @@
           <div id="sp5-valuation-body"><div class="sp5-unavail">Loading…</div></div>
         </div>
         <div class="sp5-card">
-          <div class="sp5-section-head">S&amp;P 500 Watchlist</div>
+          <div class="sp5-section-head">S&amp;P500</div>
           <span class="sp5-demo-banner" id="sp5-watchlist-banner">DEMO DATA &middot; Fixture values &middot; Not live</span>
           <div id="sp5-watchlist-body" style="overflow-x:auto;margin-top:10px;"><div class="sp5-unavail">Loading…</div></div>
         </div>
@@ -3557,7 +3583,7 @@
 
 <script src="js/ema-engine.js"></script>
 
-<script src="js/tab-nav.js"></script>
+<script src="js/tab-nav.js?v=navgroups"></script>
 
 <script type="module" src="js/lighter-signer.js"></script>
 <script src="js/lighter-executor.js"></script>
@@ -3995,8 +4021,8 @@ if(typeof SP500Render!=="undefined"){
   if(typeof SP500DataSource!=="undefined"&&!SP500DataSource.getSnapshot().isLive){
     // Hook tab switch to update pill
     var _origSwitch=window.switchTab;
-    window.switchTab=function(tab){
-      _origSwitch(tab);
+    window.switchTab=function(tab, opts){
+      _origSwitch(tab, opts);
       if(tab==="sp500")SP500Render.setPillDemo();
       else{
         var l=document.getElementById("sp5-live-label");

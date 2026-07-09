@@ -10,6 +10,7 @@ function switchTab(tabName, opts){
   document.querySelectorAll('.nav-sub-item').forEach(el => {
     el.classList.toggle('active', el.dataset.tab === tabName);
   });
+  updateNavGroups(tabName);
   let matched = false;
   document.querySelectorAll('.tab-view').forEach(el => {
     const isMatch = el.id === 'tab-' + tabName;
@@ -23,6 +24,20 @@ function switchTab(tabName, opts){
   if (matched && !(opts && opts.skipHash)) {
     history.replaceState(null, '', '#' + tabName);
   }
+}
+
+function updateNavGroups(tabName){
+  document.querySelectorAll('.nav-group').forEach(group => {
+    const hasActiveChild = !!group.querySelector(`.nav-sub-item[data-tab="${tabName}"]`);
+    group.classList.toggle('has-active', hasActiveChild);
+    group.classList.toggle('open', hasActiveChild);
+  });
+}
+
+function toggleNavGroup(groupName){
+  const group = document.querySelector(`.nav-group[data-nav-group="${groupName}"]`);
+  if (!group) return;
+  group.classList.toggle('open');
 }
 
 // Deep-link support: on load (and on back/forward navigation), open

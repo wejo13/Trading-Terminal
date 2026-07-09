@@ -672,8 +672,8 @@ const _origSwitchTab = window.switchTab;
 (function(){
   const orig = window.switchTab;
   if(typeof orig === 'function'){
-    window.switchTab = function(tab){
-      orig(tab);
+    window.switchTab = function(tab, opts){
+      orig(tab, opts);
       if(tab === 'journal') journalRender();
     };
   }

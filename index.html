@@ -1164,6 +1164,36 @@
         </div>
       </div>
 
+      <!-- most likely direction: confluence read across validated studies (impulse
+           retracement, EMA200 4H touch, liquidity clusters). Deliberately shown as
+           separate signals + a plain-language synthesis, NOT a single averaged score -
+           the underlying research doesn't support collapsing these into one number. -->
+      <div class="card">
+        <div class="section-head">
+          <div class="section-title">Most likely direction — BTC</div>
+          <div class="section-sub" id="mldPriceLabel">loading…</div>
+        </div>
+        <div id="mldSignals"><div class="loading">loading…</div></div>
+        <div id="mldSynthesis" style="margin-top:10px;font-size:12px;color:var(--text-dim);line-height:1.6;"></div>
+        <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
+          <button id="mldLogBtn" onclick="mldLogReading()" style="background:var(--teal);color:var(--bg);border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer;">Log this read</button>
+          <span id="mldLogStatus" style="font-size:11px;color:var(--text-faint);"></span>
+        </div>
+        <div style="margin-top:12px;" id="mldHistoryWrap">
+          <div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px;">Logged reads (outcome tracker)</div>
+          <table style="width:100%;border-collapse:collapse;font-size:11px;">
+            <thead><tr style="border-bottom:0.5px solid var(--border);">
+              <th style="text-align:left;padding:4px 6px;font-weight:500;color:var(--text-faint);">Logged</th>
+              <th style="text-align:right;padding:4px 6px;font-weight:500;color:var(--text-faint);">Price then</th>
+              <th style="text-align:left;padding:4px 6px;font-weight:500;color:var(--text-faint);">Lean</th>
+              <th style="text-align:right;padding:4px 6px;font-weight:500;color:var(--text-faint);">24h later</th>
+              <th style="text-align:left;padding:4px 6px;font-weight:500;color:var(--text-faint);">Outcome</th>
+            </tr></thead>
+            <tbody id="mldHistoryTbody"></tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- potential trades: ONLY excellent/excellent+ across both crypto and stocks,
            sorted excellent+ first, then by closest to 4H 200EMA. If nothing qualifies
            there's nothing worth instantly acting on - go to Strategies for the full list. -->
@@ -3390,6 +3420,8 @@
 <script src="js/daily-perf.js"></script>
 
 <script src="js/liq-clusters.js"></script>
+
+<script src="js/most-likely-direction.js"></script>
 
 <script src="js/altcoin-events.js"></script>
 

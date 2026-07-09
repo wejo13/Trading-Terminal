@@ -3091,7 +3091,63 @@
 
     <!-- ===================== OI ALERTS TAB (live forward testing — placeholder) ===================== -->
     <div class="tab-view" id="tab-oix-alerts" data-title="OI Alerts">
-      <div style="padding:0 0 40px;max-width:1200px;">
+      <div class="oiar-wrap">
+        <div class="oiar-hero">
+          <div>
+            <div class="oiar-eyebrow"><i class="ti ti-bell-ringing"></i> Manual review</div>
+            <h2>OI Alerts</h2>
+            <p>Previously sent BTC OI alerts with CET send time, BTC price at send-minute approximation, and the post-alert 1h / 2h / 4h / 12h / 24h move.</p>
+          </div>
+          <div class="oiar-status-card">
+            <span>Status</span>
+            <strong id="oiar-status">Loading...</strong>
+            <small>Snapshot: <span id="oiar-generated">--</span></small>
+          </div>
+        </div>
+
+        <div class="oiar-summary-grid">
+          <div class="oiar-summary-card"><span>Total sent alerts</span><strong id="oiar-total-alerts">--</strong></div>
+          <div class="oiar-summary-card"><span>Bullish</span><strong id="oiar-bullish-alerts">--</strong></div>
+          <div class="oiar-summary-card"><span>Bearish</span><strong id="oiar-bearish-alerts">--</strong></div>
+          <div class="oiar-summary-card"><span>Pending checkpoints</span><strong id="oiar-pending-checkpoints">--</strong></div>
+        </div>
+
+        <div class="oiar-source-note">
+          <i class="ti ti-info-circle"></i>
+          <span id="oiar-source-note">Loading OI alert outcome source details...</span>
+        </div>
+
+        <div class="oiar-table-card">
+          <div class="oiar-table-head">
+            <div>
+              <div class="oiar-title">Sent alert review</div>
+              <div class="oiar-subtitle">Moves are measured from the message send minute when Binance 1m enrichment is available.</div>
+            </div>
+            <div class="oiar-chip">BTCUSDT</div>
+          </div>
+          <div class="oiar-table-scroll">
+            <table class="oiar-table">
+              <thead>
+                <tr>
+                  <th>Bias</th>
+                  <th>Alert type</th>
+                  <th>Sent CET</th>
+                  <th>BTC price</th>
+                  <th>1h</th>
+                  <th>2h</th>
+                  <th>4h</th>
+                  <th>12h</th>
+                  <th>24h</th>
+                </tr>
+              </thead>
+              <tbody id="oiar-table-body">
+                <tr><td colspan="9" class="oiar-empty-cell">Loading sent OI alerts...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div style="display:none;padding:0 0 40px;max-width:1200px;">
         <div style="background:var(--card);border-radius:var(--radius-card);padding:32px 24px;border:0.5px solid var(--line-old);text-align:center;">
           <i class="ti ti-bell-ringing" style="font-size:28px;color:var(--text-faint);"></i>
           <div style="font-size:13px;font-weight:600;color:var(--text);margin-top:12px;">Live forward testing — coming soon</div>
@@ -3713,7 +3769,6 @@
   #tab-ema > div:first-child,
   #tab-backtest > div:first-child,
   #tab-oix > div:first-child,
-  #tab-oix-alerts > div:first-child,
   #tab-settings > div:first-child,
   #tab-sp500 > div:first-child{
     border-radius:22px;
@@ -3936,6 +3991,225 @@
     background:#01050c !important;
     border-color:rgba(20,34,54,.92) !important;
   }
+
+  .oiar-wrap{
+    padding:0 0 40px;
+    max-width:1420px;
+  }
+  .oiar-hero{
+    display:flex;
+    justify-content:space-between;
+    gap:18px;
+    align-items:stretch;
+    padding:20px;
+    border:1px solid rgba(20,34,54,.95);
+    border-radius:18px;
+    background:
+      radial-gradient(circle at 18% 0%, rgba(56,189,248,.16), transparent 34%),
+      linear-gradient(135deg, #020611 0%, #050b17 52%, #02040b 100%);
+    box-shadow:0 20px 60px rgba(0,0,0,.34);
+  }
+  .oiar-eyebrow{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:11px;
+    color:#7dd3fc;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    margin-bottom:10px;
+  }
+  .oiar-hero h2{
+    margin:0;
+    font-size:26px;
+    color:#f8fafc;
+    letter-spacing:-.03em;
+  }
+  .oiar-hero p{
+    margin:8px 0 0;
+    max-width:760px;
+    color:#94a3b8;
+    font-size:12px;
+    line-height:1.65;
+  }
+  .oiar-status-card{
+    min-width:230px;
+    padding:16px;
+    border-radius:16px;
+    background:#01050c;
+    border:1px solid rgba(56,189,248,.16);
+  }
+  .oiar-status-card span,
+  .oiar-summary-card span{
+    display:block;
+    font-size:10px;
+    color:#64748b;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+  }
+  .oiar-status-card strong,
+  .oiar-summary-card strong{
+    display:block;
+    margin-top:8px;
+    font-size:22px;
+    color:#e2e8f0;
+    letter-spacing:-.03em;
+  }
+  .oiar-status-card small{
+    display:block;
+    margin-top:8px;
+    color:#64748b;
+    font-size:11px;
+  }
+  .oiar-summary-grid{
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:12px;
+    margin-top:14px;
+  }
+  .oiar-summary-card,
+  .oiar-source-note,
+  .oiar-table-card{
+    background:#01050c;
+    border:1px solid rgba(20,34,54,.95);
+    border-radius:16px;
+  }
+  .oiar-summary-card{
+    padding:16px;
+  }
+  .oiar-source-note{
+    margin-top:14px;
+    padding:12px 14px;
+    display:flex;
+    align-items:flex-start;
+    gap:10px;
+    color:#94a3b8;
+    font-size:11px;
+    line-height:1.55;
+  }
+  .oiar-source-note i{
+    color:#38bdf8;
+    font-size:15px;
+    margin-top:1px;
+  }
+  .oiar-table-card{
+    margin-top:14px;
+    overflow:hidden;
+  }
+  .oiar-table-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:14px;
+    padding:16px;
+    border-bottom:1px solid rgba(20,34,54,.95);
+    background:linear-gradient(180deg, rgba(15,23,42,.58), rgba(1,5,12,0));
+  }
+  .oiar-title{
+    font-size:13px;
+    font-weight:700;
+    color:#f8fafc;
+  }
+  .oiar-subtitle{
+    margin-top:4px;
+    font-size:11px;
+    color:#64748b;
+  }
+  .oiar-chip{
+    padding:7px 10px;
+    border-radius:999px;
+    border:1px solid rgba(56,189,248,.22);
+    color:#7dd3fc;
+    background:rgba(56,189,248,.08);
+    font-size:11px;
+    font-weight:700;
+  }
+  .oiar-table-scroll{
+    overflow:auto;
+  }
+  .oiar-table{
+    width:100%;
+    border-collapse:collapse;
+    min-width:1060px;
+    font-size:12px;
+  }
+  .oiar-table th{
+    text-align:left;
+    padding:10px 12px;
+    color:#64748b;
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    font-weight:700;
+    border-bottom:1px solid rgba(20,34,54,.95);
+    background:#020611;
+  }
+  .oiar-table td{
+    padding:12px;
+    border-bottom:1px solid rgba(20,34,54,.72);
+    color:#cbd5e1;
+    vertical-align:middle;
+  }
+  .oiar-table tbody tr:hover{
+    background:rgba(56,189,248,.04);
+  }
+  .oiar-strong{
+    color:#e2e8f0;
+    font-weight:650;
+  }
+  .oiar-table small,
+  .oiar-alert-type small,
+  .oiar-move small{
+    display:block;
+    margin-top:4px;
+    color:#64748b;
+    font-size:10px;
+  }
+  .oiar-badge{
+    display:inline-flex;
+    align-items:center;
+    padding:5px 9px;
+    border-radius:999px;
+    font-size:10px;
+    font-weight:800;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    border:1px solid rgba(148,163,184,.18);
+    background:rgba(148,163,184,.08);
+    color:#cbd5e1;
+  }
+  .oiar-badge-bullish{
+    color:#86efac;
+    border-color:rgba(34,197,94,.26);
+    background:rgba(34,197,94,.10);
+  }
+  .oiar-badge-bearish{
+    color:#fca5a5;
+    border-color:rgba(248,113,113,.26);
+    background:rgba(248,113,113,.10);
+  }
+  .oiar-badge-neutral{
+    color:#93c5fd;
+    border-color:rgba(59,130,246,.24);
+    background:rgba(59,130,246,.10);
+  }
+  .oiar-move span{
+    font-weight:800;
+  }
+  .oiar-move-up span{color:#22c55e;}
+  .oiar-move-down span{color:#ef4444;}
+  .oiar-move-flat span{color:#cbd5e1;}
+  .oiar-move-pending span{color:#64748b;}
+  .oiar-empty-cell{
+    text-align:center;
+    color:#64748b !important;
+    padding:34px 12px !important;
+  }
+  @media (max-width: 900px){
+    .oiar-hero{flex-direction:column;}
+    .oiar-status-card{min-width:0;}
+    .oiar-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+  }
 </style>
 
 
@@ -3951,6 +4225,7 @@
 
 <script src="js/altcoin-events.js"></script>
 <script src="js/hypertracker.js"></script>
+<script src="js/oi-alert-review.js"></script>
 
 <script src="js/backtest.js"></script>
 
@@ -4012,6 +4287,9 @@
 <script>
 if(typeof OIExhaustionRender!=="undefined"){
   OIExhaustionRender.init();
+}
+if(typeof OIAlertReview!=="undefined"){
+  OIAlertReview.init();
 }
 </script>
 <script>

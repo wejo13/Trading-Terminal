@@ -17,7 +17,7 @@
   "SUIUSDT": "below",
   "LITUSDT": "below",
   "UNIUSDT": "above",
-  "LTCUSDT": "below",
+  "LTCUSDT": "touching",
   "XAUTUSDT": "below",
   "TAOUSDT": "below",
   "AVAXUSDT": "below",
@@ -32,7 +32,7 @@
   "ONDOUSDT": "below",
   "DOTUSDT": "below",
   "HBARUSDT": "below",
-  "ICPUSDT": "below",
+  "ICPUSDT": "touching",
   "WLFIUSDT": "below",
   "FILUSDT": "below",
   "INJUSDT": "touching",
@@ -48,5 +48,5 @@
   "ETCUSDT": "below",
   "SKYUSDT": "above",
   "ATOMUSDT": "below",
-  "QNTUSDT": "above"
+  "QNTUSDT": "touching"
 }

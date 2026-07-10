@@ -1,6 +1,6 @@
 param(
   [string]$RepoPath = "",
-  [string]$Branch = "agent/blue-black-ui",
+  [string]$Branch = "deploy-dashboard-latest-oi",
   [string]$PublishRef = "main",
   [string]$CommitMessage = "Update OI alert outcomes"
 )
@@ -52,11 +52,14 @@ try {
     throw "Tracked working tree changes are present. Aborting so the scheduled updater does not mix with manual edits."
   }
 
-  & git fetch origin $Branch | Tee-Object -FilePath $logPath -Append
+  & git fetch origin $Branch $PublishRef | Tee-Object -FilePath $logPath -Append
   if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
 
   & git merge --ff-only "origin/$Branch" | Tee-Object -FilePath $logPath -Append
   if ($LASTEXITCODE -ne 0) { throw "git merge --ff-only failed" }
+
+  & git merge --no-edit "origin/$PublishRef" | Tee-Object -FilePath $logPath -Append
+  if ($LASTEXITCODE -ne 0) { throw "git merge origin/$PublishRef failed" }
 
   & node "scripts\export-oi-alert-outcomes.js" | Tee-Object -FilePath $logPath -Append
   if ($LASTEXITCODE -ne 0) { throw "OI alert outcome export failed" }

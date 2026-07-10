@@ -9,6 +9,8 @@
   var chartOutcomesById = {};
   var chartInstance = null;
   var alertDotOverlayRegistered = false;
+  var refreshTimer = null;
+  var REFRESH_MS = 5 * 60 * 1000;
 
   function isFiniteNumber(value) {
     return typeof value === 'number' && isFinite(value);
@@ -117,6 +119,11 @@
       '<span>' + escapeHtml(formatPct(horizon.price_return)) + '</span>' +
       '<small>' + escapeHtml(formatMoney(horizon.price)) + '</small>' +
       '</td>';
+  }
+
+  function renderInlineMove(horizon) {
+    if (!horizon || horizon.status !== 'complete') return 'pending';
+    return formatPct(horizon.price_return) + ' after ' + horizon.label;
   }
 
   function ensureAlertDotOverlay() {
@@ -407,10 +414,44 @@
     }).join('');
   }
 
+  function renderDashboardLatest(report) {
+    var el = document.getElementById('dashLatestOiAlert');
+    if (!el) return;
+    var outcomes = Array.isArray(report && report.outcomes) ? report.outcomes.slice().sort(newestFirst) : [];
+    if (!outcomes.length) {
+      el.innerHTML = '<div class="dash-oi-empty">No OI alerts found yet.</div>';
+      return;
+    }
+    var outcome = outcomes[0];
+    var signal = outcome.signal || {};
+    var cls = classifySignal(signal);
+    var horizons = horizonMap(outcome);
+    var price = sentPrice(outcome);
+    var id = chartAlertId(outcome, 'dashboard-latest');
+    var chartDisabled = !isFiniteNumber(signal.sent_ts);
+    chartOutcomesById[id] = outcome;
+    var moveText = renderInlineMove(horizons['1h']);
+    if (moveText === 'pending') moveText = renderInlineMove(horizons['4h']);
+    var badgeClass = 'oiar-badge oiar-badge-' + escapeHtml(cls.bias);
+    el.innerHTML =
+      '<div class="dash-oi-row">' +
+        '<div class="dash-oi-left">' +
+          '<div class="dash-oi-kicker"><i class="ti ti-bell-ringing"></i><span>Latest OI alert</span><span class="' + badgeClass + '">' + escapeHtml(cls.label) + '</span></div>' +
+          '<div class="dash-oi-title">' + escapeHtml(typeLabel(cls.type)) + ' at ' + escapeHtml(formatMoney(price)) + '</div>' +
+          '<div class="dash-oi-meta">' + escapeHtml(formatCET(signal.sent_ts)) + ' - ' + escapeHtml(sentPriceSource(outcome)) + ' - ' + escapeHtml(moveText) + '</div>' +
+        '</div>' +
+        '<button type="button" class="dash-oi-view" ' + (chartDisabled ? 'disabled ' : '') + 'onclick="OIAlertReview.openChart(\'' + escapeHtml(id) + '\')">View</button>' +
+      '</div>';
+  }
+
   function renderError(message) {
     var body = document.getElementById('oiar-table-body');
     if (body) {
       body.innerHTML = '<tr><td colspan="10" class="oiar-empty-cell">Could not load OI alert outcomes: ' + escapeHtml(message) + '</td></tr>';
+    }
+    var dash = document.getElementById('dashLatestOiAlert');
+    if (dash) {
+      dash.innerHTML = '<div class="dash-oi-empty">Could not load latest OI alert: ' + escapeHtml(message) + '</div>';
     }
     setText('oiar-status', 'Load failed');
   }
@@ -418,11 +459,11 @@
   function render(report) {
     renderSummary(report);
     renderRows(report);
+    renderDashboardLatest(report);
     setText('oiar-status', 'Active - Scanning');
   }
 
-  function init() {
-    if (!document.getElementById('tab-oix-alerts')) return;
+  function loadReport() {
     setText('oiar-status', 'Loading…');
     fetch(DATA_URL + '?v=site-oi-alerts-v1', { cache: 'no-store' })
       .then(function (response) {
@@ -435,6 +476,12 @@
       });
   }
 
+  function init() {
+    if (!document.getElementById('tab-oix-alerts') && !document.getElementById('dashLatestOiAlert')) return;
+    loadReport();
+    if (!refreshTimer) refreshTimer = setInterval(loadReport, REFRESH_MS);
+  }
+
   var api = {
     init: init,
     classifySignal: classifySignal,
@@ -442,7 +489,8 @@
     formatCET: formatCET,
     summarize: summarize,
     openChart: openChart,
-    closeChart: closeChart
+    closeChart: closeChart,
+    renderDashboardLatest: renderDashboardLatest
   };
 
   root.OIAlertReview = api;

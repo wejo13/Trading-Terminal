@@ -3159,10 +3159,22 @@
 
     <!-- ===================== SEASONALITY TAB ===================== -->
     <div class="tab-view" id="tab-sea-news" data-title="News Driven Events">
-      <div style="padding:16px">
+      <div class="sea-page">
+        <div class="sea-hero">
+          <div>
+            <div class="sea-eyebrow">Bitcoin research</div>
+            <h2>News Driven Events</h2>
+            <p>BTC reaction framework: known catalysts, surprise shocks, event timing, and post-news unwind behavior.</p>
+          </div>
+          <div class="sea-stat-grid" id="seaStats">
+            <div class="sea-stat"><span>Events</span><b id="seaMetricEvents">—</b></div>
+            <div class="sea-stat"><span>Known setups</span><b id="seaMetricKnown">—</b></div>
+            <div class="sea-stat sea-stat-wide"><span>Main takeaway</span><b id="seaMetricTakeaway">Timing matters</b></div>
+          </div>
+        </div>
 
-        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center;" id="seaFilters">
-          <span style="font-size:11px;color:var(--text-faint)">Filter:</span>
+        <div class="sea-filter-row" id="seaFilters">
+          <span>Filter</span>
           <button class="sea-fb active" data-cat="all">All</button>
           <button class="sea-fb" data-cat="geo">Geopolitical</button>
           <button class="sea-fb" data-cat="macro">Macro / Fed</button>
@@ -3170,101 +3182,110 @@
           <button class="sea-fb" data-cat="pol">Political</button>
         </div>
 
-        <div style="display:flex;flex-wrap:wrap;gap:14px;font-size:11px;color:var(--text-faint);margin-bottom:10px;">
-          <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#3ddc97;margin-right:4px;vertical-align:middle;"></span>Scheduled / known beforehand</span>
-          <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#d9a93f;margin-right:4px;vertical-align:middle;"></span>Known date, outcome uncertain</span>
-          <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#e89b3c;margin-right:4px;vertical-align:middle;"></span>Building tension</span>
-          <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#9b6fd9;margin-right:4px;vertical-align:middle;"></span>Discretionary intervention</span>
-          <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#e2645f;margin-right:4px;vertical-align:middle;"></span>Surprise shock</span>
-          <span style="margin-left:auto;font-size:10px;">Scroll to zoom, drag to pan, hover dashed lines for details</span>
-        </div>
-
-        <div style="position:relative;border-radius:6px;overflow:hidden;background:#0d0f10;margin-bottom:16px;" id="seaWrap">
-          <canvas id="seaC" style="display:block;width:100%;"></canvas>
-          <div id="seaTip" style="position:absolute;display:none;background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;padding:10px 12px;font-size:12px;max-width:240px;z-index:10;pointer-events:none;line-height:1.6;"></div>
-        </div>
-
-        <div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px;">Event breakdown</div>
-        <div style="font-size:10px;color:var(--text-faint);margin-bottom:8px;">For scheduled / building / outcome-uncertain events: a fixed 7-day close-to-close window captures genuine anticipation. For surprise shocks and discretionary interventions, there's no "before" to anticipate — those use the actual price extremes of the move itself (prior close → event-day high/low, then that extreme → the next genuine reversal), not a fixed window. The 3 FOMC decisions use hourly data instead: 24h close-to-close into the exact 2pm ET announcement, then 4 hours after, since daily candles blur the announcement-hour reaction.</div>
-        <table style="width:100%;border-collapse:collapse;font-size:12px;">
-          <thead><tr style="border-bottom:0.5px solid var(--border);">
-            <th style="text-align:left;padding:5px 6px;font-weight:500;color:var(--text-faint);font-size:11px;width:96px;">Date</th>
-            <th style="text-align:left;padding:5px 6px;font-weight:500;color:var(--text-faint);font-size:11px;">Event</th>
-            <th style="text-align:left;padding:5px 6px;font-weight:500;color:var(--text-faint);font-size:11px;width:52px;">Type</th>
-            <th style="text-align:left;padding:5px 6px;font-weight:500;color:var(--text-faint);font-size:11px;width:130px;">Known beforehand?</th>
-            <th style="text-align:left;padding:5px 6px;font-weight:500;color:var(--text-faint);font-size:11px;width:56px;">Move into</th>
-            <th style="text-align:left;padding:5px 6px;font-weight:500;color:var(--text-faint);font-size:11px;width:56px;">Move after</th>
-            <th style="text-align:left;padding:5px 6px;font-weight:500;color:var(--text-faint);font-size:11px;width:170px;">Pattern</th>
-          </tr></thead>
-          <tbody id="seaTbody"></tbody>
-        </table>
-
-        <div style="margin-top:24px;padding:16px;background:var(--bg1);border-radius:8px;border:0.5px solid var(--border);">
-          <div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:12px;">Known vs. unknown — why this distinction matters</div>
-          <div style="font-size:12px;color:var(--text-dim);line-height:1.75;">
-            "Buy rumor, sell news" only makes sense as a label for events the market could actually price in <i>beforehand</i> — a scheduled FOMC date, an IPO listing, a halving block height. Events like <b>China's 2021 mining ban</b>, the <b>Terra/LUNA collapse</b>, or <b>FTX's implosion</b> were not on anyone's calendar — there was no rumor to buy, because nobody knew it was coming. Labeling those as "sell rumor, buy news" is a category error: what actually happened is a <b>shock</b>, followed by either a continuation or a recovery. The China ban specifically: BTC fell <b style="color:#e2645f">30% from the prior close to the crash-day low</b>, then bounced <b style="color:#3ddc97">+41.5% to the next day's high</b> — a fast, violent V-shape, nowhere close to the multi-month +120% rally to that cycle's later ATH that an earlier, looser version of this analysis had wrongly credited to this single event. A separate trap: the Fed's March 2020 emergency rate cut and QE isn't "building tension" — the Fed made a deliberate decision to step in and print money, a discretionary policy action. But it also isn't a standalone price shock either: BTC had already bottomed three days earlier and was recovering by the time the cut was announced, so that event is shown with no Pre/Post numbers rather than forcing a crash/bounce shape onto a move that belongs to a different date. The table below tags every event with an honest <b>Known beforehand?</b> column — Scheduled, Known date but outcome uncertain, Building tension (risk visible but timing unknown), Discretionary intervention (a decision-maker chose to act — a central bank, a military, a negotiating party), Surprise shock, or N/A for pure price levels — so the pattern label only ever claims "known bullish/bearish" when the event genuinely was foreseeable. For surprise shocks and interventions, Pre/Post are measured from the actual price extremes of the move (prior close → the event's real high/low, then that extreme → the next genuine reversal), not a fixed window — because a fast 1-day crash and bounce gets averaged into near-nothing by a 7-day window, which is exactly the mistake an earlier version of this table made.
-          </div>
-        </div>
-
-        <div style="margin-top:14px;padding:16px;background:var(--bg1);border-radius:8px;border:0.5px solid var(--border);">
-          <div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:12px;">Why the methodology differs by event type</div>
-          <div style="font-size:12px;color:var(--text-dim);line-height:1.75;">
-            For <b>scheduled, building-tension, and outcome-uncertain</b> events generally, "Move into" and "Move after" use a fixed 7-day close-to-close window — there's a genuine run-up to measure, and 7 days is long enough to capture real anticipation without bleeding into unrelated news weeks later. For <b>surprise shocks and discretionary interventions</b>, a fixed window is the wrong tool: a crash that bottoms in one day and bounces the next gets averaged into near-nothing by a 7-day window. So those events instead use the actual price extremes — prior close to the event's real high or low, then that extreme to the next genuine reversal point — exactly how a charting tool like TradingView would mark the move. The China mining ban is the clearest case this fixed: a 7-day window had shown it as -26% / +7%, when the real move was a same-day -30% crash followed by a +41.5% bounce the very next day. Multi-day shocks (Terra/LUNA, FTX) needed an extra check too — their labeled event date wasn't always the actual bottom, so the true low (sometimes 1-3 days later) is used instead — confirmed against real hourly data, not assumed from the daily candle's low/high alone. The BlackRock fake-ETF rumor caught a related bug: the original "fade" number had picked the day's low as the post-spike reference point, but hourly data showed that low actually happened <i>before</i> the spike, during normal pre-news trading — the real post-spike fade was a much smaller -4.8% over the following hour, not the -14% originally claimed. Every surprise/intervention event on this page has since been individually re-verified against real hourly candles to catch this same class of error. The three <b>FOMC decisions</b> (Mar 2022 hike, Sep 2024 cut, Dec 2024 hawkish pause) get their own hourly-precision treatment instead of the daily 7-day window: the Fed releases its statement at exactly 2pm ET, so daily candles blur the pre-announcement drift into the reaction. Pulled from real hourly data, "Move into" is the 24h close-to-close leading up to the announcement-hour open, and "Move after" is that open to the close 4 hours later, capturing the statement plus Powell's press conference. The Dec 2024 case is the clearest example of why this matters: the daily-window version of this table had shown a flat -0.9%/-0.8%, when the real hourly data shows price cratered from $104,805 to $100,000 within 4 hours of the statement — a sharp, fast drop the daily window had completely missed.
-          </div>
-        </div>
-
-        <div style="margin-top:14px;padding:16px;background:var(--bg1);border-radius:8px;border:0.5px solid var(--border);">
-          <div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:12px;">Is "buy rumor, sell news" actually true?</div>
-          <div style="font-size:12px;color:var(--text-dim);line-height:1.75;">
-            Mixing surprise shocks (Terra, FTX, SVB) in with scheduled events muddies the picture — those are crisis trades, not rumor/news trades. Isolating the <b>7 events that were known well in advance</b> (Coinbase IPO, both Fed hikes/cuts, ETF approval, halving, Trump's 2025 inauguration): <b style="color:#3ddc97">4 of 7 (57%)</b> show the strict pattern — price ran up into the date, then sold off after. The Coinbase IPO, the spot ETF approval, and the halving are the clean cases. Both Fed decisions (hourly-precision data) and the September 2024 cut specifically don't fit the pattern at all — price was essentially flat going in and modestly positive coming out, not a rumor-pump-then-dump shape. Biden's 2021 inauguration, measured on the same fixed window as the other non-Fed scheduled events, also doesn't fit the classic shape — price was already falling into and through the date, not running up and dumping. That's the value of forcing every event through a consistent rule per category: it catches cases that "felt" like sell-the-news in hindsight but weren't, once measured honestly.
-          </div>
-        </div>
-
-        <div style="margin-top:14px;padding:16px;background:var(--bg1);border-radius:8px;border:0.5px solid var(--border);">
-          <div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:12px;">What happens when expected news gets delayed?</div>
-          <div style="font-size:12px;color:var(--text-dim);line-height:1.75;">
-            Positioning happens on the <b>expectation</b>, not the event itself — so when a catalyst is delayed or falls through, the unwind hits exactly like a "sell the news" move, just triggered by absence instead of arrival. Live example: a US-Iran peace signing scheduled for Jun 19 2026 was priced in as a bullish tailwind; when it collapsed overnight after renewed airstrikes, $601M in crypto longs got liquidated in 24h — a 15:1 long-to-short ratio. Expectation alone is enough to build the leverage that later gets flushed.
-          </div>
-        </div>
-
-        <div style="margin-top:14px;padding:16px;background:var(--bg1);border-radius:8px;border:0.5px solid var(--border);">
-          <div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:12px;">Do market makers use these events to drive liquidity?</div>
-          <div style="font-size:12px;color:var(--text-dim);line-height:1.75;">
-            The evidence is mechanical, not purely about move size. Surprise shocks naturally produce the largest single moves (COVID's -48.6%, the Feb 2026 capitulation, China's ban at -30%) simply because shocks are sudden by definition — that's not a market-maker signature, it's just what a shock looks like. What scheduled events show instead is concentrated, predictable <i>timing</i>: everyone knows the date, so leverage builds toward it specifically, which is what makes the post-event reaction so often mechanical once the date arrives. It isn't "MMs reading headlines" — it's that leverage concentrates ahead of known dates as traders front-run the outcome, and once price breaks the consensus positioning, margin calls cascade. The June 2026 FOMC under new Fed Chair Kevin Warsh is a clean live case: BTC rallied <b>+12%</b> into the meeting on rate-cut hope stacked with Iran peace optimism — then the Fed came out hawkish, and <b style="color:#e2645f">$400M+ liquidated within 24h</b>, nearly half of it inside the first 4 hours, with longs taking the overwhelming majority of the damage. Once that leverage is purged, price tends to react less to the next piece of bad news — there are simply fewer stops left to run.
-          </div>
-        </div>
-
-        <div style="margin-top:24px;padding:16px;background:var(--bg1);border-radius:8px;border:0.5px solid var(--border);">
-          <div style="font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:14px;">Ask AI — Event Analysis</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px;">
-            <div>
-              <div style="font-size:11px;color:var(--text-faint);margin-bottom:5px;">Type of event</div>
-              <select id="aiEventType" style="width:100%;font-size:12px;padding:7px 10px;background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;color:var(--text);">
-                <option value="surprise_bearish">Surprise shock (bearish) — war, crash, ban</option>
-                <option value="surprise_bullish">Surprise shock (bullish) — unexpected deal</option>
-                <option value="known_bearish">Known event (bearish) — hike, tightening</option>
-                <option value="known_bullish">Known event (bullish) — cut, approval</option>
-                <option value="geopolitical">Geopolitical escalation</option>
-                <option value="geopolitical_de">Geopolitical de-escalation</option>
-                <option value="crypto_specific">Crypto-specific event</option>
-              </select>
+        <div class="sea-main-grid">
+          <section class="sea-card sea-chart-card">
+            <div class="sea-card-head">
+              <div>
+                <div class="sea-card-title">BTC event timeline</div>
+                <div class="sea-card-sub">Scroll to zoom · drag to pan · hover dashed event lines</div>
+              </div>
+              <div class="sea-legend">
+                <span><i style="background:#3ddc97"></i>Scheduled</span>
+                <span><i style="background:#d9a93f"></i>Outcome uncertain</span>
+                <span><i style="background:#e89b3c"></i>Building tension</span>
+                <span><i style="background:#9b6fd9"></i>Intervention</span>
+                <span><i style="background:#e2645f"></i>Surprise</span>
+              </div>
             </div>
-            <div>
-              <div style="font-size:11px;color:var(--text-faint);margin-bottom:5px;">Current price reaction</div>
-              <input id="aiPriceReaction" type="text" autocomplete="off" placeholder="e.g. -8% in 24h, price at $62K" style="width:100%;font-size:12px;padding:7px 10px;background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;color:var(--text);box-sizing:border-box;">
+            <div id="seaWrap" class="sea-chart-wrap">
+              <canvas id="seaC"></canvas>
+              <div id="seaTip" class="sea-tip"></div>
             </div>
+          </section>
+
+          <aside class="sea-card sea-reads-card">
+            <div class="sea-card-title">Key reads</div>
+            <div class="sea-read">
+              <span class="sea-read-dot sea-read-green"></span>
+              <div><b>Known bullish catalysts often fade</b><small>Strict scheduled set: 4 of 7 matched run-up then sell-off.</small></div>
+            </div>
+            <div class="sea-read">
+              <span class="sea-read-dot sea-read-red"></span>
+              <div><b>Surprise shocks are not rumor/news trades</b><small>They use extreme-to-reversal measurement, not a 7-day window.</small></div>
+            </div>
+            <div class="sea-read">
+              <span class="sea-read-dot sea-read-amber"></span>
+              <div><b>Fed events need hourly precision</b><small>Daily candles blur the 2pm ET statement and Powell reaction.</small></div>
+            </div>
+          </aside>
+        </div>
+
+        <section class="sea-card sea-table-card">
+          <div class="sea-card-head">
             <div>
-              <div style="font-size:11px;color:var(--text-faint);margin-bottom:5px;">Event description</div>
-              <input id="aiEventDesc" type="text" autocomplete="off" placeholder="e.g. US sanctions on Iran" style="width:100%;font-size:12px;padding:7px 10px;background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;color:var(--text);box-sizing:border-box;">
+              <div class="sea-card-title">Event breakdown</div>
+              <div class="sea-card-sub">Open any event row to see what happened and why it was classified that way.</div>
             </div>
           </div>
-          <button onclick="aiAskOpinion()" style="font-size:12px;padding:8px 18px;background:var(--teal);color:#000;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Ask AI for opinion</button>
-          <div id="aiResult" style="margin-top:14px;display:none;">
-            <div style="font-size:11px;color:var(--text-faint);margin-bottom:6px;">AI OPINION</div>
-            <div id="aiResultText" style="font-size:13px;color:var(--text);line-height:1.7;white-space:pre-wrap;background:var(--bg2);padding:12px 14px;border-radius:6px;border:0.5px solid var(--border);"></div>
+          <div class="sea-table-scroll">
+            <table class="sea-event-table">
+              <thead><tr>
+                <th>Date</th>
+                <th>Event</th>
+                <th>Type</th>
+                <th>Known?</th>
+                <th>Move into</th>
+                <th>Move after</th>
+                <th>Pattern</th>
+              </tr></thead>
+              <tbody id="seaTbody"></tbody>
+            </table>
           </div>
-        </div>
+        </section>
 
+        <div class="sea-context-grid">
+          <details class="sea-details-card">
+            <summary>Known vs. unknown — why this distinction matters</summary>
+            <p>"Buy rumor, sell news" only makes sense for events the market could price beforehand: scheduled FOMC dates, public deadlines, listings, halvings. Surprise shocks like Terra, FTX, or China's mining ban are different trades: there was no rumor to buy because the timing was not knowable.</p>
+            <p>The table uses an honest <b>Known beforehand?</b> column so the pattern label only claims "known bullish/bearish" when the event was actually foreseeable.</p>
+          </details>
+          <details class="sea-details-card">
+            <summary>Measurement rules</summary>
+            <p>Scheduled, building-tension, and outcome-uncertain events use a fixed 7-day close-to-close window for anticipation and reaction. Surprise shocks and discretionary interventions use actual move extremes: prior close to event high/low, then that extreme to the next genuine reversal.</p>
+            <p>FOMC decisions use hourly precision around the 2pm ET announcement because daily candles blur the statement and Powell press conference reaction.</p>
+          </details>
+          <details class="sea-details-card">
+            <summary>Does buy rumor, sell news actually work?</summary>
+            <p>Isolating the 7 events that were known well in advance, 4 of 7 show the strict pattern: price ran up into the date, then sold off after. Surprise shocks are excluded from that statistic because they are crisis trades, not rumor/news trades.</p>
+          </details>
+          <details class="sea-details-card">
+            <summary>Ask AI — Event Analysis</summary>
+            <div class="sea-ai-grid">
+              <label>Type of event
+                <select id="aiEventType">
+                  <option value="surprise_bearish">Surprise shock (bearish) — war, crash, ban</option>
+                  <option value="surprise_bullish">Surprise shock (bullish) — unexpected deal</option>
+                  <option value="known_bearish">Known event (bearish) — hike, tightening</option>
+                  <option value="known_bullish">Known event (bullish) — cut, approval</option>
+                  <option value="geopolitical">Geopolitical escalation</option>
+                  <option value="geopolitical_de">Geopolitical de-escalation</option>
+                  <option value="crypto_specific">Crypto-specific event</option>
+                </select>
+              </label>
+              <label>Current price reaction
+                <input id="aiPriceReaction" type="text" autocomplete="off" placeholder="e.g. -8% in 24h, price at $62K">
+              </label>
+              <label>Event description
+                <input id="aiEventDesc" type="text" autocomplete="off" placeholder="e.g. US sanctions on Iran">
+              </label>
+            </div>
+            <button class="sea-ai-btn" onclick="aiAskOpinion()">Ask AI for opinion</button>
+            <div id="aiResult" class="sea-ai-result" style="display:none;">
+              <div>AI OPINION</div>
+              <pre id="aiResultText"></pre>
+            </div>
+          </details>
+        </div>
       </div>
     </div>
 
@@ -3991,6 +4012,86 @@
     border-color:rgba(20,34,54,.92) !important;
   }
 
+  /* ── News Driven Events Tab ─────────────────────────────────────────── */
+  .sea-page{padding:16px 16px 44px;max-width:1480px;}
+  .sea-hero{display:flex;justify-content:space-between;gap:18px;align-items:stretch;
+    padding:18px 20px;margin-bottom:14px;background:linear-gradient(135deg,#081422,#020611);
+    border:1px solid rgba(20,34,54,.92);border-radius:18px;box-shadow:0 18px 44px rgba(0,0,0,.28);}
+  .sea-eyebrow{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--teal);margin-bottom:7px;}
+  .sea-hero h2{margin:0 0 6px;font-size:24px;line-height:1.1;color:var(--text);}
+  .sea-hero p{margin:0;color:var(--text-dim);font-size:12px;line-height:1.55;max-width:760px;}
+  .sea-stat-grid{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:10px;min-width:500px;}
+  .sea-stat{background:#01050c;border:1px solid rgba(20,34,54,.92);border-radius:12px;padding:12px 14px;}
+  .sea-stat span{display:block;font-size:10px;color:var(--text-faint);font-weight:800;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px;}
+  .sea-stat b{display:block;font-size:20px;color:var(--text);}
+  .sea-stat-wide b{font-size:14px;line-height:1.35;color:var(--teal);}
+  .sea-filter-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 14px;}
+  .sea-filter-row>span{font-size:10px;color:var(--text-faint);font-weight:800;letter-spacing:.08em;text-transform:uppercase;margin-right:2px;}
+  .sea-main-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(300px,.86fr);gap:14px;margin-bottom:14px;}
+  .sea-card{background:linear-gradient(135deg,#06101c,#01040a);border:1px solid rgba(20,34,54,.92);
+    border-radius:16px;padding:16px;box-shadow:0 14px 30px rgba(0,0,0,.18);}
+  .sea-card-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:12px;}
+  .sea-card-title{font-size:15px;font-weight:800;color:var(--text);margin-bottom:4px;}
+  .sea-card-sub{font-size:11px;color:var(--text-faint);line-height:1.45;}
+  .sea-legend{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px 12px;max-width:520px;font-size:10px;color:var(--text-faint);}
+  .sea-legend span{white-space:nowrap;}
+  .sea-legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:-1px;}
+  .sea-chart-wrap{position:relative;overflow:hidden;background:#020712;border:1px solid rgba(20,34,54,.92);border-radius:12px;}
+  #seaC{display:block;width:100%;height:auto;min-height:340px;}
+  .sea-tip{position:absolute;display:none;background:#01050c;border:1px solid rgba(20,34,54,.92);
+    border-radius:10px;padding:10px 12px;font-size:12px;max-width:260px;z-index:10;pointer-events:none;line-height:1.55;
+    box-shadow:0 16px 38px rgba(0,0,0,.42);}
+  .sea-reads-card{display:flex;flex-direction:column;gap:12px;}
+  .sea-read{display:flex;gap:12px;align-items:flex-start;padding:12px;background:#01050c;border:1px solid rgba(20,34,54,.92);border-radius:12px;}
+  .sea-read-dot{width:9px;height:9px;border-radius:50%;margin-top:4px;flex:0 0 auto;}
+  .sea-read-green{background:#3ddc97;box-shadow:0 0 12px rgba(61,220,151,.35);}
+  .sea-read-red{background:#e2645f;box-shadow:0 0 12px rgba(226,100,95,.35);}
+  .sea-read-amber{background:#d9a93f;box-shadow:0 0 12px rgba(217,169,63,.35);}
+  .sea-read b{display:block;color:var(--text);font-size:12px;line-height:1.35;margin-bottom:4px;}
+  .sea-read small{display:block;color:var(--text-faint);font-size:11px;line-height:1.45;}
+  .sea-table-card{margin-bottom:14px;}
+  .sea-table-scroll{overflow-x:auto;}
+  .sea-event-table{width:100%;border-collapse:collapse;font-size:11px;min-width:0;table-layout:fixed;}
+  .sea-event-table th{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);
+    padding:8px 10px;text-align:left;border-bottom:1px solid rgba(20,34,54,.92);white-space:nowrap;}
+  .sea-event-table td{padding:9px 10px;border-bottom:1px solid rgba(20,34,54,.62);vertical-align:top;color:var(--text-dim);}
+  .sea-event-table th:nth-child(1),.sea-event-table td:nth-child(1){width:86px;}
+  .sea-event-table th:nth-child(2),.sea-event-table td:nth-child(2){width:32%;}
+  .sea-event-table th:nth-child(3),.sea-event-table td:nth-child(3){width:66px;}
+  .sea-event-table th:nth-child(4),.sea-event-table td:nth-child(4){width:126px;}
+  .sea-event-table th:nth-child(5),.sea-event-table td:nth-child(5),
+  .sea-event-table th:nth-child(6),.sea-event-table td:nth-child(6){width:74px;}
+  .sea-event-table th:nth-child(7),.sea-event-table td:nth-child(7){width:auto;white-space:normal !important;}
+  .sea-event-table tr:hover td{background:rgba(56,189,248,.035);}
+  .sea-event-details summary{cursor:pointer;list-style:none;color:var(--text);font-weight:800;display:flex;gap:7px;align-items:center;}
+  .sea-event-details summary::-webkit-details-marker{display:none;}
+  .sea-event-details summary:before{content:'+';display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;
+    border-radius:50%;border:1px solid rgba(56,189,248,.28);color:var(--teal);font-size:11px;flex:0 0 auto;}
+  .sea-event-details[open] summary:before{content:'−';}
+  .sea-event-note{margin:8px 0 0 23px;color:var(--text-faint);font-size:11px;line-height:1.55;max-width:720px;overflow-wrap:anywhere;}
+  .sea-known-pill{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:800;
+    border:1px solid rgba(255,255,255,.1);white-space:nowrap;}
+  .sea-context-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+  .sea-details-card{background:#01050c;border:1px solid rgba(20,34,54,.92);border-radius:14px;padding:13px 15px;}
+  .sea-details-card summary{cursor:pointer;color:var(--text);font-size:12px;font-weight:800;letter-spacing:.02em;}
+  .sea-details-card p{color:var(--text-dim);font-size:12px;line-height:1.65;margin:11px 0 0;}
+  .sea-ai-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px;}
+  .sea-ai-grid label{display:flex;flex-direction:column;gap:6px;color:var(--text-faint);font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;}
+  .sea-ai-btn{margin-top:12px;font-size:12px;padding:8px 18px;background:linear-gradient(135deg,var(--teal),#2563eb);
+    color:#02111f;border:none;border-radius:10px;cursor:pointer;font-weight:800;}
+  .sea-ai-result{margin-top:14px;}
+  .sea-ai-result>div{font-size:10px;color:var(--text-faint);font-weight:800;letter-spacing:.08em;margin-bottom:6px;}
+  .sea-ai-result pre{white-space:pre-wrap;margin:0;background:#01050c;border:1px solid rgba(20,34,54,.92);
+    border-radius:10px;padding:12px 14px;color:var(--text);font-size:12px;line-height:1.65;font-family:var(--font);}
+  @media (max-width:1100px){
+    .sea-hero{flex-direction:column;}
+    .sea-stat-grid{min-width:0;}
+    .sea-main-grid,.sea-context-grid{grid-template-columns:1fr;}
+    .sea-card-head{flex-direction:column;}
+    .sea-legend{justify-content:flex-start;}
+    .sea-ai-grid{grid-template-columns:1fr;}
+  }
+
   .oiar-wrap{
     padding:0 0 40px;
     max-width:1420px;
@@ -4212,7 +4313,7 @@
 </style>
 
 
-<script src="js/sea-data.js"></script>
+<script src="js/sea-data.js?v=sea-news-redesign"></script>
 
 <script src="js/daily-perf-data.js"></script>
 
@@ -4220,7 +4321,7 @@
 
 <script src="js/liq-clusters.js"></script>
 
-<script src="js/most-likely-direction.js?v=impulse-chart-view"></script>
+<script src="js/most-likely-direction.js?v=no-password-save-fields"></script>
 
 <script src="js/altcoin-events.js"></script>
 <script src="js/hypertracker.js"></script>

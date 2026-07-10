@@ -185,6 +185,47 @@ function seaTable(){
 }
 
 // ── PAN / ZOOM ────────────────────────────────────────────────────────────
+function seaEscape(value){
+  return String(value===undefined||value===null?'':value)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function seaUpdateStats(evts){
+  var eventsEl=document.getElementById('seaMetricEvents');
+  var knownEl=document.getElementById('seaMetricKnown');
+  var takeawayEl=document.getElementById('seaMetricTakeaway');
+  if(eventsEl) eventsEl.textContent=evts.length;
+  if(knownEl) knownEl.textContent='4 / 7';
+  if(takeawayEl){
+    takeawayEl.textContent=seaAF==='all'
+      ? 'Timing matters more than label'
+      : 'Filtered view: '+(seaAF==='geo'?'geopolitical':seaAF==='macro'?'macro / Fed':seaAF==='crypto'?'crypto':'political');
+  }
+}
+function seaTable(){
+  var tbody=document.getElementById('seaTbody');
+  if(!tbody)return;
+  var evts=seaFE().slice().sort(function(a,b){return a.date.localeCompare(b.date);});
+  seaUpdateStats(evts);
+  tbody.innerHTML=evts.map(function(e){
+    var k=SEA_KNOWN[e.known]||{l:'?',c:'#888'};
+    var lbl=SEA_PREPOST_LABEL[e.known]||{pre:'Move into',post:'Move after'};
+    var catLabel=e.cat==='geo'?'Geo':e.cat==='macro'?'Macro':e.cat==='crypto'?'Crypto':'Pol';
+    var preText=e.pre==null?'—':(e.pre>0?'+':'')+e.pre+'%';
+    var postText=e.post==null?'—':(e.post>0?'+':'')+e.post+'%';
+    return '<tr>'
+      +'<td style="color:var(--text-faint);white-space:nowrap;">'+seaEscape(e.date)+'</td>'
+      +'<td><details class="sea-event-details"><summary>'+seaEscape(e.label)+'</summary>'
+        +'<div class="sea-event-note">What happened: '+seaEscape(e.note)+'<br><br><span style="color:var(--text-dim);">Measurement:</span> '+seaEscape(lbl.pre)+' = '+preText+'; '+seaEscape(lbl.post)+' = '+postText+'.</div>'
+        +'</details></td>'
+      +'<td><span class="'+SEA_CB[e.cat]+'">'+catLabel+'</span></td>'
+      +'<td><span class="sea-known-pill" style="color:'+k.c+';border-color:'+k.c+'55;background:'+k.c+'12;">'+seaEscape(k.l)+'</span></td>'
+      +'<td>'+seaFmtPct(e.pre)+'</td>'
+      +'<td>'+seaFmtPct(e.post)+'</td>'
+      +'<td style="font-size:10px;color:var(--text-dim);white-space:nowrap;">'+seaEscape(e.pat)+'</td>'
+      +'</tr>';
+  }).join('');
+}
 function seaChartWheel(e){
   e.preventDefault();
   var cs=seaChartState;

@@ -15,7 +15,7 @@
   "AAVEUSDT": "above",
   "LITUSDT": "below",
   "SUIUSDT": "below",
-  "PEPEUSDT": "above",
+  "PEPEUSDT": "touching",
   "UNIUSDT": "above",
   "XAUTUSDT": "below",
   "LTCUSDT": "touching",
@@ -37,8 +37,8 @@
   "INJUSDT": "above",
   "FILUSDT": "below",
   "ASTERUSDT": "below",
-  "APTUSDT": "below",
   "JSTUSDT": "above",
+  "APTUSDT": "below",
   "SHIBUSDT": "below",
   "MORPHOUSDT": "above",
   "POLUSDT": "above",
@@ -47,6 +47,5 @@
   "ALGOUSDT": "below",
   "ETCUSDT": "below",
   "ATOMUSDT": "below",
-  "SKYUSDT": "above",
-  "QNTUSDT": "below"
+  "SKYUSDT": "above"
 }

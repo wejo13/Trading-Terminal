@@ -1,8 +1,8 @@
 {
   "tag": "direct-feed-signal-outcomes",
   "outcome_version": "DIRECT_SIGNAL_OUTCOMES_V2",
-  "generated_ts": 1783733270186,
-  "generated_iso": "2026-07-11T01:27:50.186Z",
+  "generated_ts": 1783734170247,
+  "generated_iso": "2026-07-11T01:42:50.247Z",
   "state_path": "oi-radar/direct-feed/observations/telegram-sent.json",
   "signal_count": 11,
   "complete_horizons": 52,
@@ -57,8 +57,8 @@
         "total_oi_usd": 8218606906.056076,
         "input_fingerprint": "c61f3eb9cabf0c4f70ad9d4ea0a50ec5549f5e7fe1fd886eca2c82eece942190"
       },
-      "latest_aggregate_ts": 1783731600000,
-      "latest_aggregate_iso": "2026-07-11T01:00:00.000Z",
+      "latest_aggregate_ts": 1783732500000,
+      "latest_aggregate_iso": "2026-07-11T01:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -215,8 +215,8 @@
         "total_oi_usd": 8132768680.6439,
         "input_fingerprint": "23deb38cd7416200a9ce5c8dceb7dcac6650294fafda2be5e4278c86ede337e9"
       },
-      "latest_aggregate_ts": 1783731600000,
-      "latest_aggregate_iso": "2026-07-11T01:00:00.000Z",
+      "latest_aggregate_ts": 1783732500000,
+      "latest_aggregate_iso": "2026-07-11T01:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -373,8 +373,8 @@
         "total_oi_usd": 8173937381.981745,
         "input_fingerprint": "5601e379cf5eff1adb7022877db5525f79855087ef57b03625c64bc0d5ba83f7"
       },
-      "latest_aggregate_ts": 1783731600000,
-      "latest_aggregate_iso": "2026-07-11T01:00:00.000Z",
+      "latest_aggregate_ts": 1783732500000,
+      "latest_aggregate_iso": "2026-07-11T01:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -531,8 +531,8 @@
         "total_oi_usd": 8313994632.722041,
         "input_fingerprint": "d5e32db31c0ad86ad8ba4b0a7ad7a7fb029a9609cf4f14d8eed5dfe8d18a6dcd"
       },
-      "latest_aggregate_ts": 1783731600000,
-      "latest_aggregate_iso": "2026-07-11T01:00:00.000Z",
+      "latest_aggregate_ts": 1783732500000,
+      "latest_aggregate_iso": "2026-07-11T01:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -689,8 +689,8 @@
         "total_oi_usd": 8469725465.586305,
         "input_fingerprint": "63bc6d9b683c5e359aa34267cd920da991755500de43d6dabc99f94a03bd4740"
       },
-      "latest_aggregate_ts": 1783731600000,
-      "latest_aggregate_iso": "2026-07-11T01:00:00.000Z",
+      "latest_aggregate_ts": 1783732500000,
+      "latest_aggregate_iso": "2026-07-11T01:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -847,8 +847,8 @@
         "total_oi_usd": 8099807001.238525,
         "input_fingerprint": "9371ccf3265ef4cf8f645452cb837b1fbae73ed65dbbfe5a63334f12432921fa"
       },
-      "latest_aggregate_ts": 1783731600000,
-      "latest_aggregate_iso": "2026-07-11T01:00:00.000Z",
+      "latest_aggregate_ts": 1783732500000,
+      "latest_aggregate_iso": "2026-07-11T01:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -1005,8 +1005,8 @@
         "total_oi_usd": 8089162179.728844,
         "input_fingerprint": "98796e4c674bf3fe44ccb52e41837110ad1e6078d540d6eda0db622db547d6f5"
       },
-      "latest_aggregate_ts": 1783731600000,
-      "latest_aggregate_iso": "2026-07-11T01:00:00.000Z",
+      "latest_aggregate_ts": 1783732500000,
+      "latest_aggregate_iso": "2026-07-11T01:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -1163,8 +1163,8 @@
         "total_oi_usd": 8083001669.1192,
         "input_fingerprint": "6dbc0784a3089391a32820f42078744820fc34a5dbac0c10cd0cba8b45e8066c"
       },
-      "latest_aggregate_ts": 1783731600000,
-      "latest_aggregate_iso": "2026-07-11T01:00:00.000Z",
+      "latest_aggregate_ts": 1783732500000,
+      "latest_aggregate_iso": "2026-07-11T01:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -1321,8 +1321,8 @@
         "total_oi_usd": 8178576032.8539,
         "input_fingerprint": "f7a05b2800aed6f15a1b0ff77ab3c7b0d3b863b856165d8d6b5b067fd66bdd9a"
       },
-      "latest_aggregate_ts": 1783731600000,
-      "latest_aggregate_iso": "2026-07-11T01:00:00.000Z",
+      "latest_aggregate_ts": 1783732500000,
+      "latest_aggregate_iso": "2026-07-11T01:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -1469,8 +1469,8 @@
         "total_oi_usd": 8426361432.422329,
         "input_fingerprint": "d868c873ac06851e8afa6058f6a31f2ed2120f03d75e878d3e518e4e447b1cae"
       },
-      "latest_aggregate_ts": 1783731600000,
-      "latest_aggregate_iso": "2026-07-11T01:00:00.000Z",
+      "latest_aggregate_ts": 1783732500000,
+      "latest_aggregate_iso": "2026-07-11T01:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -1617,8 +1617,8 @@
         "total_oi_usd": 8472854969.854385,
         "input_fingerprint": "0a92e3cfecad5c869c6f856e2444ee10d0ba454db8ff440dadae0ab53f1cdbf9"
       },
-      "latest_aggregate_ts": 1783731600000,
-      "latest_aggregate_iso": "2026-07-11T01:00:00.000Z",
+      "latest_aggregate_ts": 1783732500000,
+      "latest_aggregate_iso": "2026-07-11T01:15:00.000Z",
       "horizons": [
         {
           "label": "1h",

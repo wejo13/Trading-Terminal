@@ -46,7 +46,7 @@
   "CAKEUSDT": "above",
   "ALGOUSDT": "below",
   "SKYUSDT": "above",
-  "ETCUSDT": "below",
   "ATOMUSDT": "below",
+  "ETCUSDT": "below",
   "NIGHTUSDT": "below"
 }

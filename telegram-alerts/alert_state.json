@@ -38,8 +38,8 @@
   "INJUSDT": "below",
   "WLFIUSDT": "below",
   "APTUSDT": "below",
-  "MORPHOUSDT": "below",
   "POLUSDT": "above",
+  "MORPHOUSDT": "touching",
   "ASTERUSDT": "below",
   "SHIBUSDT": "below",
   "RENDERUSDT": "below",
@@ -47,5 +47,6 @@
   "SKYUSDT": "above",
   "ETCUSDT": "below",
   "ATOMUSDT": "below",
-  "NIGHTUSDT": "below"
+  "NIGHTUSDT": "below",
+  "QNTUSDT": "below"
 }

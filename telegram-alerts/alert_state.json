@@ -13,12 +13,12 @@
   "NEARUSDT": "above",
   "AAVEUSDT": "above",
   "PEPEUSDT": "touching",
-  "SUIUSDT": "below",
+  "SUIUSDT": "touching",
   "ADAUSDT": "below",
   "LITUSDT": "below",
   "UNIUSDT": "above",
   "TAOUSDT": "below",
-  "XLMUSDT": "above",
+  "XLMUSDT": "touching",
   "LTCUSDT": "above",
   "XAUTUSDT": "below",
   "LINKUSDT": "above",
@@ -26,8 +26,8 @@
   "ENAUSDT": "above",
   "ARBUSDT": "above",
   "AVAXUSDT": "below",
-  "XMRUSDT": "below",
   "PAXGUSDT": "below",
+  "XMRUSDT": "below",
   "PUMPUSDT": "above",
   "BCHUSDT": "below",
   "HBARUSDT": "below",
@@ -48,5 +48,6 @@
   "ALGOUSDT": "below",
   "ATOMUSDT": "below",
   "SKYUSDT": "above",
-  "NIGHTUSDT": "below"
+  "NIGHTUSDT": "below",
+  "QNTUSDT": "below"
 }

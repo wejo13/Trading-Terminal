@@ -1671,7 +1671,9 @@ function scheduleAutoRefresh(){
   _autoRefreshTimer = setInterval(async () => {
     console.log('[AutoRefresh] hourly refresh triggered');
     await loadAll();
-    sendExcellentPlusTelegramAlerts();
+    // Automatic EXCELLENT+ Telegram alerts disabled per owner request 2026-07-18.
+    // The function and the Settings test button still work; restore the
+    // sendExcellentPlusTelegramAlerts() call here to re-enable hourly sends.
     _nextRefreshAt = Date.now() + 60 * 60 * 1000;
     updateNextRefreshDisplay();
   }, 60 * 60 * 1000);

@@ -1,10 +1,13 @@
 name: EMA Touch Alerts
 
 on:
-  schedule:
-    # Runs every hour, on the hour, matching the same check frequency as the
-    # browser-based alert system in index.html. Cron is in UTC.
-    - cron: '0 * * * *'
+  # TEMPORARILY DISABLED 2026-07-18 (owner request): the hourly Telegram EMA-touch
+  # alerts are paused. To re-enable, uncomment the `schedule:` block below and push
+  # this file to the default branch (main) — scheduled workflows run only from main.
+  # schedule:
+  #   # Runs every hour, on the hour, matching the same check frequency as the
+  #   # browser-based alert system in index.html. Cron is in UTC.
+  #   - cron: '0 * * * *'
   workflow_dispatch: {} # allows manually triggering a run from the GitHub Actions tab, for testing
 
 jobs:

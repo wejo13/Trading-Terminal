@@ -1,11 +1,11 @@
 {
   "tag": "direct-feed-signal-outcomes",
   "outcome_version": "DIRECT_SIGNAL_OUTCOMES_V2",
-  "generated_ts": 1783776470278,
-  "generated_iso": "2026-07-11T13:27:50.278Z",
+  "generated_ts": 1784389152395,
+  "generated_iso": "2026-07-18T15:39:12.395Z",
   "state_path": "oi-radar/direct-feed/observations/telegram-sent.json",
-  "signal_count": 11,
-  "complete_horizons": 55,
+  "signal_count": 26,
+  "complete_horizons": 130,
   "pending_horizons": 0,
   "horizons": [
     {
@@ -57,8 +57,8 @@
         "total_oi_usd": 8218606906.056076,
         "input_fingerprint": "c61f3eb9cabf0c4f70ad9d4ea0a50ec5549f5e7fe1fd886eca2c82eece942190"
       },
-      "latest_aggregate_ts": 1783774800000,
-      "latest_aggregate_iso": "2026-07-11T13:00:00.000Z",
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -215,8 +215,8 @@
         "total_oi_usd": 8132768680.6439,
         "input_fingerprint": "23deb38cd7416200a9ce5c8dceb7dcac6650294fafda2be5e4278c86ede337e9"
       },
-      "latest_aggregate_ts": 1783774800000,
-      "latest_aggregate_iso": "2026-07-11T13:00:00.000Z",
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -373,8 +373,8 @@
         "total_oi_usd": 8173937381.981745,
         "input_fingerprint": "5601e379cf5eff1adb7022877db5525f79855087ef57b03625c64bc0d5ba83f7"
       },
-      "latest_aggregate_ts": 1783774800000,
-      "latest_aggregate_iso": "2026-07-11T13:00:00.000Z",
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -531,8 +531,8 @@
         "total_oi_usd": 8313994632.722041,
         "input_fingerprint": "d5e32db31c0ad86ad8ba4b0a7ad7a7fb029a9609cf4f14d8eed5dfe8d18a6dcd"
       },
-      "latest_aggregate_ts": 1783774800000,
-      "latest_aggregate_iso": "2026-07-11T13:00:00.000Z",
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -689,8 +689,8 @@
         "total_oi_usd": 8469725465.586305,
         "input_fingerprint": "63bc6d9b683c5e359aa34267cd920da991755500de43d6dabc99f94a03bd4740"
       },
-      "latest_aggregate_ts": 1783774800000,
-      "latest_aggregate_iso": "2026-07-11T13:00:00.000Z",
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -847,8 +847,8 @@
         "total_oi_usd": 8099807001.238525,
         "input_fingerprint": "9371ccf3265ef4cf8f645452cb837b1fbae73ed65dbbfe5a63334f12432921fa"
       },
-      "latest_aggregate_ts": 1783774800000,
-      "latest_aggregate_iso": "2026-07-11T13:00:00.000Z",
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -1005,8 +1005,8 @@
         "total_oi_usd": 8089162179.728844,
         "input_fingerprint": "98796e4c674bf3fe44ccb52e41837110ad1e6078d540d6eda0db622db547d6f5"
       },
-      "latest_aggregate_ts": 1783774800000,
-      "latest_aggregate_iso": "2026-07-11T13:00:00.000Z",
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -1163,8 +1163,8 @@
         "total_oi_usd": 8083001669.1192,
         "input_fingerprint": "6dbc0784a3089391a32820f42078744820fc34a5dbac0c10cd0cba8b45e8066c"
       },
-      "latest_aggregate_ts": 1783774800000,
-      "latest_aggregate_iso": "2026-07-11T13:00:00.000Z",
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -1321,8 +1321,8 @@
         "total_oi_usd": 8178576032.8539,
         "input_fingerprint": "f7a05b2800aed6f15a1b0ff77ab3c7b0d3b863b856165d8d6b5b067fd66bdd9a"
       },
-      "latest_aggregate_ts": 1783774800000,
-      "latest_aggregate_iso": "2026-07-11T13:00:00.000Z",
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -1479,8 +1479,8 @@
         "total_oi_usd": 8426361432.422329,
         "input_fingerprint": "d868c873ac06851e8afa6058f6a31f2ed2120f03d75e878d3e518e4e447b1cae"
       },
-      "latest_aggregate_ts": 1783774800000,
-      "latest_aggregate_iso": "2026-07-11T13:00:00.000Z",
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -1637,8 +1637,8 @@
         "total_oi_usd": 8472854969.854385,
         "input_fingerprint": "0a92e3cfecad5c869c6f856e2444ee10d0ba454db8ff440dadae0ab53f1cdbf9"
       },
-      "latest_aggregate_ts": 1783774800000,
-      "latest_aggregate_iso": "2026-07-11T13:00:00.000Z",
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -1767,6 +1767,2376 @@
           "price_source": "binance_futures_1m"
         }
       ]
+    },
+    {
+      "id": "1783940400000|4|oi_expansion_with_price_down|8ede45b5ed7a943bf754c4064956d7c3003ae1b63b6598c71bd32e88ab99dd72",
+      "signal": {
+        "id": "1783940400000|4|oi_expansion_with_price_down|8ede45b5ed7a943bf754c4064956d7c3003ae1b63b6598c71bd32e88ab99dd72",
+        "bucket_ts": 1783940400000,
+        "bucket_iso": "2026-07-13T11:00:00.000Z",
+        "horizon_buckets": 4,
+        "type": "oi_expansion_with_price_down",
+        "input_fingerprint": "8ede45b5ed7a943bf754c4064956d7c3003ae1b63b6598c71bd32e88ab99dd72",
+        "sent_ts": 1783941416966,
+        "sent_iso": "2026-07-13T11:16:56.966Z",
+        "direction": "down",
+        "alert_bias": "bearish",
+        "direction_source": "signal_type",
+        "detection_price_return": null,
+        "previous_bucket_ts": null,
+        "previous_bucket_iso": null
+      },
+      "base_available": true,
+      "source_fingerprint_matches": true,
+      "base": {
+        "bucket_ts": 1783940400000,
+        "bucket_iso": "2026-07-13T11:00:00.000Z",
+        "price_close": 63055,
+        "total_oi_usd": 8292503748.0595,
+        "input_fingerprint": "8ede45b5ed7a943bf754c4064956d7c3003ae1b63b6598c71bd32e88ab99dd72"
+      },
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
+      "horizons": [
+        {
+          "label": "1h",
+          "buckets": 4,
+          "target_ts": 1783944000000,
+          "target_iso": "2026-07-13T12:00:00.000Z",
+          "status": "complete",
+          "price_close": 62820.2,
+          "total_oi_usd": 8288844304.9210005,
+          "price_delta": -234.8000000000029,
+          "price_return": -0.0037237332487511363,
+          "total_oi_delta_usd": -3659443.13849926,
+          "total_oi_return": -0.0004412953252334186
+        },
+        {
+          "label": "2h",
+          "buckets": 8,
+          "target_ts": 1783947600000,
+          "target_iso": "2026-07-13T13:00:00.000Z",
+          "status": "complete",
+          "price_close": 62488.9,
+          "total_oi_usd": 8331683426.1678,
+          "price_delta": -566.0999999999985,
+          "price_return": -0.008977876457061273,
+          "total_oi_delta_usd": 39179678.10830021,
+          "total_oi_return": 0.004724710328586648
+        },
+        {
+          "label": "4h",
+          "buckets": 16,
+          "target_ts": 1783954800000,
+          "target_iso": "2026-07-13T15:00:00.000Z",
+          "status": "complete",
+          "price_close": 62772.1,
+          "total_oi_usd": 8606040200.831919,
+          "price_delta": -282.90000000000146,
+          "price_return": -0.004486559352945864,
+          "total_oi_delta_usd": 313536452.772419,
+          "total_oi_return": 0.037809624487150646
+        },
+        {
+          "label": "12h",
+          "buckets": 48,
+          "target_ts": 1783983600000,
+          "target_iso": "2026-07-13T23:00:00.000Z",
+          "status": "complete",
+          "price_close": 62027.9,
+          "total_oi_usd": 8507463392.1195,
+          "price_delta": -1027.0999999999985,
+          "price_return": -0.01628895408770119,
+          "total_oi_delta_usd": 214959644.06000042,
+          "total_oi_return": 0.025922164233004103
+        },
+        {
+          "label": "24h",
+          "buckets": 96,
+          "target_ts": 1784026800000,
+          "target_iso": "2026-07-14T11:00:00.000Z",
+          "status": "complete",
+          "price_close": 62766,
+          "total_oi_usd": 8454184554.243086,
+          "price_delta": -289,
+          "price_return": -0.004583300293394655,
+          "total_oi_delta_usd": 161680806.18358612,
+          "total_oi_return": 0.019497224372243483
+        }
+      ],
+      "send_price_reference": {
+        "source": "binance_futures_1m",
+        "symbol": "BTCUSDT",
+        "interval": "1m",
+        "minute_ts": 1783941360000,
+        "minute_iso": "2026-07-13T11:16:00.000Z",
+        "field": "open",
+        "price": 63055
+      },
+      "send_horizons": [
+        {
+          "label": "1h",
+          "target_ts": 1783944960000,
+          "target_iso": "2026-07-13T12:16:00.000Z",
+          "status": "complete",
+          "price": 62857.7,
+          "price_delta": -197.3000000000029,
+          "price_return": -0.003129014352549408,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "2h",
+          "target_ts": 1783948560000,
+          "target_iso": "2026-07-13T13:16:00.000Z",
+          "status": "complete",
+          "price": 62495.6,
+          "price_delta": -559.4000000000015,
+          "price_return": -0.008871620014273277,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "4h",
+          "target_ts": 1783955760000,
+          "target_iso": "2026-07-13T15:16:00.000Z",
+          "status": "complete",
+          "price": 62774.8,
+          "price_delta": -280.1999999999971,
+          "price_return": -0.00444373959241927,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "12h",
+          "target_ts": 1783984560000,
+          "target_iso": "2026-07-13T23:16:00.000Z",
+          "status": "complete",
+          "price": 62046.4,
+          "price_delta": -1008.5999999999985,
+          "price_return": -0.01599555943224167,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "24h",
+          "target_ts": 1784027760000,
+          "target_iso": "2026-07-14T11:16:00.000Z",
+          "status": "complete",
+          "price": 62795.9,
+          "price_delta": -259.09999999999854,
+          "price_return": -0.0041091110934897875,
+          "price_source": "binance_futures_1m"
+        }
+      ]
+    },
+    {
+      "id": "1783951200000|4|oi_expansion_with_price_down|87181cb87d97c73339146c854981bb83f11cbb4e11174d6aa63712f270ead91e",
+      "signal": {
+        "id": "1783951200000|4|oi_expansion_with_price_down|87181cb87d97c73339146c854981bb83f11cbb4e11174d6aa63712f270ead91e",
+        "bucket_ts": 1783951200000,
+        "bucket_iso": "2026-07-13T14:00:00.000Z",
+        "horizon_buckets": 4,
+        "type": "oi_expansion_with_price_down",
+        "input_fingerprint": "87181cb87d97c73339146c854981bb83f11cbb4e11174d6aa63712f270ead91e",
+        "sent_ts": 1783952217149,
+        "sent_iso": "2026-07-13T14:16:57.149Z",
+        "direction": "down",
+        "alert_bias": "bearish",
+        "direction_source": "signal_type",
+        "detection_price_return": null,
+        "previous_bucket_ts": null,
+        "previous_bucket_iso": null
+      },
+      "base_available": true,
+      "source_fingerprint_matches": true,
+      "base": {
+        "bucket_ts": 1783951200000,
+        "bucket_iso": "2026-07-13T14:00:00.000Z",
+        "price_close": 62393.7,
+        "total_oi_usd": 8469145133.359859,
+        "input_fingerprint": "87181cb87d97c73339146c854981bb83f11cbb4e11174d6aa63712f270ead91e"
+      },
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
+      "horizons": [
+        {
+          "label": "1h",
+          "buckets": 4,
+          "target_ts": 1783954800000,
+          "target_iso": "2026-07-13T15:00:00.000Z",
+          "status": "complete",
+          "price_close": 62772.1,
+          "total_oi_usd": 8606040200.831919,
+          "price_delta": 378.40000000000146,
+          "price_return": 0.006064714867045895,
+          "total_oi_delta_usd": 136895067.47205925,
+          "total_oi_return": 0.016163977038583417
+        },
+        {
+          "label": "2h",
+          "buckets": 8,
+          "target_ts": 1783958400000,
+          "target_iso": "2026-07-13T16:00:00.000Z",
+          "status": "complete",
+          "price_close": 62520,
+          "total_oi_usd": 8565163933.559357,
+          "price_delta": 126.30000000000291,
+          "price_return": 0.002024242832209068,
+          "total_oi_delta_usd": 96018800.19949722,
+          "total_oi_return": 0.011337484325458108
+        },
+        {
+          "label": "4h",
+          "buckets": 16,
+          "target_ts": 1783965600000,
+          "target_iso": "2026-07-13T18:00:00.000Z",
+          "status": "complete",
+          "price_close": 61903.8,
+          "total_oi_usd": 8504582155.456484,
+          "price_delta": -489.8999999999942,
+          "price_return": -0.007851754263651525,
+          "total_oi_delta_usd": 35437022.096624374,
+          "total_oi_return": 0.004184250185657863
+        },
+        {
+          "label": "12h",
+          "buckets": 48,
+          "target_ts": 1783994400000,
+          "target_iso": "2026-07-14T02:00:00.000Z",
+          "status": "complete",
+          "price_close": 62472.9,
+          "total_oi_usd": 8544641850.651587,
+          "price_delta": 79.20000000000437,
+          "price_return": 0.001269358925660834,
+          "total_oi_delta_usd": 75496717.29172707,
+          "total_oi_return": 0.00891432560227908
+        },
+        {
+          "label": "24h",
+          "buckets": 96,
+          "target_ts": 1784037600000,
+          "target_iso": "2026-07-14T14:00:00.000Z",
+          "status": "complete",
+          "price_close": 63846.6,
+          "total_oi_usd": 8328882052.121697,
+          "price_delta": 1452.9000000000015,
+          "price_return": 0.02328600483702684,
+          "total_oi_delta_usd": -140263081.23816204,
+          "total_oi_return": -0.01656165752617315
+        }
+      ],
+      "send_price_reference": {
+        "source": "binance_futures_1m",
+        "symbol": "BTCUSDT",
+        "interval": "1m",
+        "minute_ts": 1783952160000,
+        "minute_iso": "2026-07-13T14:16:00.000Z",
+        "field": "open",
+        "price": 62380.2
+      },
+      "send_horizons": [
+        {
+          "label": "1h",
+          "target_ts": 1783955760000,
+          "target_iso": "2026-07-13T15:16:00.000Z",
+          "status": "complete",
+          "price": 62774.8,
+          "price_delta": 394.6000000000058,
+          "price_return": 0.006325725149967551,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "2h",
+          "target_ts": 1783959360000,
+          "target_iso": "2026-07-13T16:16:00.000Z",
+          "status": "complete",
+          "price": 62472.1,
+          "price_delta": 91.90000000000146,
+          "price_return": 0.001473223875524629,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "4h",
+          "target_ts": 1783966560000,
+          "target_iso": "2026-07-13T18:16:00.000Z",
+          "status": "complete",
+          "price": 61913.6,
+          "price_delta": -466.59999999999854,
+          "price_return": -0.007479937544284863,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "12h",
+          "target_ts": 1783995360000,
+          "target_iso": "2026-07-14T02:16:00.000Z",
+          "status": "complete",
+          "price": 62458.9,
+          "price_delta": 78.70000000000437,
+          "price_return": 0.0012616182698998138,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "24h",
+          "target_ts": 1784038560000,
+          "target_iso": "2026-07-14T14:16:00.000Z",
+          "status": "complete",
+          "price": 63810,
+          "price_delta": 1429.800000000003,
+          "price_return": 0.0229207344638203,
+          "price_source": "binance_futures_1m"
+        }
+      ]
+    },
+    {
+      "id": "1783952100000|4|oi_expansion_with_price_up|c53ded5b82da9746a71347278fc4d181d288773cfa654169ebea07dc9c3dbbe3",
+      "signal": {
+        "id": "1783952100000|4|oi_expansion_with_price_up|c53ded5b82da9746a71347278fc4d181d288773cfa654169ebea07dc9c3dbbe3",
+        "bucket_ts": 1783952100000,
+        "bucket_iso": "2026-07-13T14:15:00.000Z",
+        "horizon_buckets": 4,
+        "type": "oi_expansion_with_price_up",
+        "input_fingerprint": "c53ded5b82da9746a71347278fc4d181d288773cfa654169ebea07dc9c3dbbe3",
+        "sent_ts": 1783953118601,
+        "sent_iso": "2026-07-13T14:31:58.601Z",
+        "direction": "up",
+        "alert_bias": "bullish",
+        "direction_source": "signal_type",
+        "detection_price_return": null,
+        "previous_bucket_ts": null,
+        "previous_bucket_iso": null
+      },
+      "base_available": true,
+      "source_fingerprint_matches": true,
+      "base": {
+        "bucket_ts": 1783952100000,
+        "bucket_iso": "2026-07-13T14:15:00.000Z",
+        "price_close": 62529,
+        "total_oi_usd": 8499948890.5446,
+        "input_fingerprint": "c53ded5b82da9746a71347278fc4d181d288773cfa654169ebea07dc9c3dbbe3"
+      },
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
+      "horizons": [
+        {
+          "label": "1h",
+          "buckets": 4,
+          "target_ts": 1783955700000,
+          "target_iso": "2026-07-13T15:15:00.000Z",
+          "status": "complete",
+          "price_close": 62790,
+          "total_oi_usd": 8604296898.576,
+          "price_delta": 261,
+          "price_return": 0.004174063234659118,
+          "total_oi_delta_usd": 104348008.03140068,
+          "total_oi_return": 0.01227631005493199
+        },
+        {
+          "label": "2h",
+          "buckets": 8,
+          "target_ts": 1783959300000,
+          "target_iso": "2026-07-13T16:15:00.000Z",
+          "status": "complete",
+          "price_close": 62322.7,
+          "total_oi_usd": 8560027144.9615,
+          "price_delta": -206.3000000000029,
+          "price_return": -0.003299269139119495,
+          "total_oi_delta_usd": 60078254.416900635,
+          "total_oi_return": 0.007068072430850977
+        },
+        {
+          "label": "4h",
+          "buckets": 16,
+          "target_ts": 1783966500000,
+          "target_iso": "2026-07-13T18:15:00.000Z",
+          "status": "complete",
+          "price_close": 61924.8,
+          "total_oi_usd": 8527093897.9254,
+          "price_delta": -604.1999999999971,
+          "price_return": -0.009662716499544165,
+          "total_oi_delta_usd": 27145007.380800247,
+          "total_oi_return": 0.003193549482514717
+        },
+        {
+          "label": "12h",
+          "buckets": 48,
+          "target_ts": 1783995300000,
+          "target_iso": "2026-07-14T02:15:00.000Z",
+          "status": "complete",
+          "price_close": 62341.3,
+          "total_oi_usd": 8539152492.890521,
+          "price_delta": -187.6999999999971,
+          "price_return": -0.003001807161477028,
+          "total_oi_delta_usd": 39203602.34592152,
+          "total_oi_return": 0.004612216243974346
+        },
+        {
+          "label": "24h",
+          "buckets": 96,
+          "target_ts": 1784038500000,
+          "target_iso": "2026-07-14T14:15:00.000Z",
+          "status": "complete",
+          "price_close": 63887.3,
+          "total_oi_usd": 8333720823.6377,
+          "price_delta": 1358.300000000003,
+          "price_return": 0.021722720657614915,
+          "total_oi_delta_usd": -166228066.90689945,
+          "total_oi_return": -0.019556360755511443
+        }
+      ],
+      "send_price_reference": {
+        "source": "binance_futures_1m",
+        "symbol": "BTCUSDT",
+        "interval": "1m",
+        "minute_ts": 1783953060000,
+        "minute_iso": "2026-07-13T14:31:00.000Z",
+        "field": "open",
+        "price": 62552.4
+      },
+      "send_horizons": [
+        {
+          "label": "1h",
+          "target_ts": 1783956660000,
+          "target_iso": "2026-07-13T15:31:00.000Z",
+          "status": "complete",
+          "price": 62804.6,
+          "price_delta": 252.1999999999971,
+          "price_return": 0.004031819722344739,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "2h",
+          "target_ts": 1783960260000,
+          "target_iso": "2026-07-13T16:31:00.000Z",
+          "status": "complete",
+          "price": 62240.5,
+          "price_delta": -311.90000000000146,
+          "price_return": -0.004986219553526346,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "4h",
+          "target_ts": 1783967460000,
+          "target_iso": "2026-07-13T18:31:00.000Z",
+          "status": "complete",
+          "price": 61890.3,
+          "price_delta": -662.0999999999985,
+          "price_return": -0.01058472576591783,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "12h",
+          "target_ts": 1783996260000,
+          "target_iso": "2026-07-14T02:31:00.000Z",
+          "status": "complete",
+          "price": 62390.2,
+          "price_delta": -162.20000000000437,
+          "price_return": -0.0025930260069958046,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "24h",
+          "target_ts": 1784039460000,
+          "target_iso": "2026-07-14T14:31:00.000Z",
+          "status": "complete",
+          "price": 63849.6,
+          "price_delta": 1297.199999999997,
+          "price_return": 0.020737813417230945,
+          "price_source": "binance_futures_1m"
+        }
+      ]
+    },
+    {
+      "id": "1783953000000|4|oi_expansion_with_price_up|1c5ad5ba8864e59308bc1c732d30d26240ad5125538628410c8fa017cea6c74d",
+      "signal": {
+        "id": "1783953000000|4|oi_expansion_with_price_up|1c5ad5ba8864e59308bc1c732d30d26240ad5125538628410c8fa017cea6c74d",
+        "bucket_ts": 1783953000000,
+        "bucket_iso": "2026-07-13T14:30:00.000Z",
+        "horizon_buckets": 4,
+        "type": "oi_expansion_with_price_up",
+        "input_fingerprint": "1c5ad5ba8864e59308bc1c732d30d26240ad5125538628410c8fa017cea6c74d",
+        "sent_ts": 1783954018193,
+        "sent_iso": "2026-07-13T14:46:58.193Z",
+        "direction": "up",
+        "alert_bias": "bullish",
+        "direction_source": "signal_type",
+        "detection_price_return": null,
+        "previous_bucket_ts": null,
+        "previous_bucket_iso": null
+      },
+      "base_available": true,
+      "source_fingerprint_matches": true,
+      "base": {
+        "bucket_ts": 1783953000000,
+        "bucket_iso": "2026-07-13T14:30:00.000Z",
+        "price_close": 62596.2,
+        "total_oi_usd": 8526368635.251729,
+        "input_fingerprint": "1c5ad5ba8864e59308bc1c732d30d26240ad5125538628410c8fa017cea6c74d"
+      },
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
+      "horizons": [
+        {
+          "label": "1h",
+          "buckets": 4,
+          "target_ts": 1783956600000,
+          "target_iso": "2026-07-13T15:30:00.000Z",
+          "status": "complete",
+          "price_close": 62631.2,
+          "total_oi_usd": 8568543528.631369,
+          "price_delta": 35,
+          "price_return": 0.0005591393726775747,
+          "total_oi_delta_usd": 42174893.379639626,
+          "total_oi_return": 0.004946407454783295
+        },
+        {
+          "label": "2h",
+          "buckets": 8,
+          "target_ts": 1783960200000,
+          "target_iso": "2026-07-13T16:30:00.000Z",
+          "status": "complete",
+          "price_close": 62344.9,
+          "total_oi_usd": 8504233126.24895,
+          "price_delta": -251.29999999999563,
+          "price_return": -0.004014620695824917,
+          "total_oi_delta_usd": -22135509.002779007,
+          "total_oi_return": -0.002596123854094362
+        },
+        {
+          "label": "4h",
+          "buckets": 16,
+          "target_ts": 1783967400000,
+          "target_iso": "2026-07-13T18:30:00.000Z",
+          "status": "complete",
+          "price_close": 61978.7,
+          "total_oi_usd": 8529786631.758699,
+          "price_delta": -617.5,
+          "price_return": -0.009864816075097212,
+          "total_oi_delta_usd": 3417996.5069704056,
+          "total_oi_return": 0.0004008736489340745
+        },
+        {
+          "label": "12h",
+          "buckets": 48,
+          "target_ts": 1783996200000,
+          "target_iso": "2026-07-14T02:30:00.000Z",
+          "status": "complete",
+          "price_close": 62557.1,
+          "total_oi_usd": 8524015017.708042,
+          "price_delta": -39.099999999998545,
+          "price_return": -0.0006246385563340673,
+          "total_oi_delta_usd": -2353617.5436868668,
+          "total_oi_return": -0.0002760398528813292
+        },
+        {
+          "label": "24h",
+          "buckets": 96,
+          "target_ts": 1784039400000,
+          "target_iso": "2026-07-14T14:30:00.000Z",
+          "status": "complete",
+          "price_close": 64005.4,
+          "total_oi_usd": 8357920627.2234,
+          "price_delta": 1409.2000000000044,
+          "price_return": 0.02251254868506402,
+          "total_oi_delta_usd": -168448008.0283289,
+          "total_oi_return": -0.019756125407467292
+        }
+      ],
+      "send_price_reference": {
+        "source": "binance_futures_1m",
+        "symbol": "BTCUSDT",
+        "interval": "1m",
+        "minute_ts": 1783953960000,
+        "minute_iso": "2026-07-13T14:46:00.000Z",
+        "field": "open",
+        "price": 62628.9
+      },
+      "send_horizons": [
+        {
+          "label": "1h",
+          "target_ts": 1783957560000,
+          "target_iso": "2026-07-13T15:46:00.000Z",
+          "status": "complete",
+          "price": 62598.2,
+          "price_delta": -30.700000000004366,
+          "price_return": -0.0004901890341360676,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "2h",
+          "target_ts": 1783961160000,
+          "target_iso": "2026-07-13T16:46:00.000Z",
+          "status": "complete",
+          "price": 62370,
+          "price_delta": -258.90000000000146,
+          "price_return": -0.0041338742976485526,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "4h",
+          "target_ts": 1783968360000,
+          "target_iso": "2026-07-13T18:46:00.000Z",
+          "status": "complete",
+          "price": 61962.4,
+          "price_delta": -666.5,
+          "price_return": -0.010642051832301063,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "12h",
+          "target_ts": 1783997160000,
+          "target_iso": "2026-07-14T02:46:00.000Z",
+          "status": "complete",
+          "price": 62569.9,
+          "price_delta": -59,
+          "price_return": -0.0009420571014340025,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "24h",
+          "target_ts": 1784040360000,
+          "target_iso": "2026-07-14T14:46:00.000Z",
+          "status": "complete",
+          "price": 63988,
+          "price_delta": 1359.0999999999985,
+          "price_return": 0.021700844178965277,
+          "price_source": "binance_futures_1m"
+        }
+      ]
+    },
+    {
+      "id": "1783953900000|4|oi_expansion_with_price_up|ccde41ec2789098d80efe6300cf1858ad8c5246acddf2b195c0331908d380ebb",
+      "signal": {
+        "id": "1783953900000|4|oi_expansion_with_price_up|ccde41ec2789098d80efe6300cf1858ad8c5246acddf2b195c0331908d380ebb",
+        "bucket_ts": 1783953900000,
+        "bucket_iso": "2026-07-13T14:45:00.000Z",
+        "horizon_buckets": 4,
+        "type": "oi_expansion_with_price_up",
+        "input_fingerprint": "ccde41ec2789098d80efe6300cf1858ad8c5246acddf2b195c0331908d380ebb",
+        "sent_ts": 1783954919050,
+        "sent_iso": "2026-07-13T15:01:59.050Z",
+        "direction": "up",
+        "alert_bias": "bullish",
+        "direction_source": "signal_type",
+        "detection_price_return": null,
+        "previous_bucket_ts": null,
+        "previous_bucket_iso": null
+      },
+      "base_available": true,
+      "source_fingerprint_matches": true,
+      "base": {
+        "bucket_ts": 1783953900000,
+        "bucket_iso": "2026-07-13T14:45:00.000Z",
+        "price_close": 62770.3,
+        "total_oi_usd": 8570806866.228029,
+        "input_fingerprint": "ccde41ec2789098d80efe6300cf1858ad8c5246acddf2b195c0331908d380ebb"
+      },
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
+      "horizons": [
+        {
+          "label": "1h",
+          "buckets": 4,
+          "target_ts": 1783957500000,
+          "target_iso": "2026-07-13T15:45:00.000Z",
+          "status": "complete",
+          "price_close": 62596.6,
+          "total_oi_usd": 8546377192.7212,
+          "price_delta": -173.70000000000437,
+          "price_return": -0.002767232273862071,
+          "total_oi_delta_usd": -24429673.50682926,
+          "total_oi_return": -0.002850335317097239
+        },
+        {
+          "label": "2h",
+          "buckets": 8,
+          "target_ts": 1783961100000,
+          "target_iso": "2026-07-13T16:45:00.000Z",
+          "status": "complete",
+          "price_close": 62258,
+          "total_oi_usd": 8510822926.727126,
+          "price_delta": -512.3000000000029,
+          "price_return": -0.008161503131257982,
+          "total_oi_delta_usd": -59983939.50090313,
+          "total_oi_return": -0.006998633901932943
+        },
+        {
+          "label": "4h",
+          "buckets": 16,
+          "target_ts": 1783968300000,
+          "target_iso": "2026-07-13T18:45:00.000Z",
+          "status": "complete",
+          "price_close": 61997.3,
+          "total_oi_usd": 8538385467.586,
+          "price_delta": -773,
+          "price_return": -0.012314741207226984,
+          "total_oi_delta_usd": -32421398.64202881,
+          "total_oi_return": -0.003782770881208447
+        },
+        {
+          "label": "12h",
+          "buckets": 48,
+          "target_ts": 1783997100000,
+          "target_iso": "2026-07-14T02:45:00.000Z",
+          "status": "complete",
+          "price_close": 62516.8,
+          "total_oi_usd": 8538282043.142262,
+          "price_delta": -253.5,
+          "price_return": -0.00403853414751881,
+          "total_oi_delta_usd": -32524823.085766792,
+          "total_oi_return": -0.003794837941562532
+        },
+        {
+          "label": "24h",
+          "buckets": 96,
+          "target_ts": 1784040300000,
+          "target_iso": "2026-07-14T14:45:00.000Z",
+          "status": "complete",
+          "price_close": 64277.3,
+          "total_oi_usd": 8406340360.27,
+          "price_delta": 1507,
+          "price_return": 0.024008169468681843,
+          "total_oi_delta_usd": -164466505.9580288,
+          "total_oi_return": -0.019189150861173204
+        }
+      ],
+      "send_price_reference": {
+        "source": "binance_futures_1m",
+        "symbol": "BTCUSDT",
+        "interval": "1m",
+        "minute_ts": 1783954860000,
+        "minute_iso": "2026-07-13T15:01:00.000Z",
+        "field": "open",
+        "price": 62788.3
+      },
+      "send_horizons": [
+        {
+          "label": "1h",
+          "target_ts": 1783958460000,
+          "target_iso": "2026-07-13T16:01:00.000Z",
+          "status": "complete",
+          "price": 62556.7,
+          "price_delta": -231.60000000000582,
+          "price_return": -0.0036885852937570502,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "2h",
+          "target_ts": 1783962060000,
+          "target_iso": "2026-07-13T17:01:00.000Z",
+          "status": "complete",
+          "price": 62272.8,
+          "price_delta": -515.5,
+          "price_return": -0.008210128320085112,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "4h",
+          "target_ts": 1783969260000,
+          "target_iso": "2026-07-13T19:01:00.000Z",
+          "status": "complete",
+          "price": 61991.5,
+          "price_delta": -796.8000000000029,
+          "price_return": -0.012690262357796005,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "12h",
+          "target_ts": 1783998060000,
+          "target_iso": "2026-07-14T03:01:00.000Z",
+          "status": "complete",
+          "price": 62523.1,
+          "price_delta": -265.20000000000437,
+          "price_return": -0.00422371683896529,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "24h",
+          "target_ts": 1784041260000,
+          "target_iso": "2026-07-14T15:01:00.000Z",
+          "status": "complete",
+          "price": 64227.7,
+          "price_delta": 1439.3999999999942,
+          "price_return": 0.022924653159903902,
+          "price_source": "binance_futures_1m"
+        }
+      ]
+    },
+    {
+      "id": "1783954800000|4|oi_expansion_with_price_up|30229f264081edb6dec76169597ed0d9a6030e2cab84db7035b206e0eb2fc828",
+      "signal": {
+        "id": "1783954800000|4|oi_expansion_with_price_up|30229f264081edb6dec76169597ed0d9a6030e2cab84db7035b206e0eb2fc828",
+        "bucket_ts": 1783954800000,
+        "bucket_iso": "2026-07-13T15:00:00.000Z",
+        "horizon_buckets": 4,
+        "type": "oi_expansion_with_price_up",
+        "input_fingerprint": "30229f264081edb6dec76169597ed0d9a6030e2cab84db7035b206e0eb2fc828",
+        "sent_ts": 1783955817393,
+        "sent_iso": "2026-07-13T15:16:57.393Z",
+        "direction": "up",
+        "alert_bias": "bullish",
+        "direction_source": "signal_type",
+        "detection_price_return": null,
+        "previous_bucket_ts": null,
+        "previous_bucket_iso": null
+      },
+      "base_available": true,
+      "source_fingerprint_matches": true,
+      "base": {
+        "bucket_ts": 1783954800000,
+        "bucket_iso": "2026-07-13T15:00:00.000Z",
+        "price_close": 62772.1,
+        "total_oi_usd": 8606040200.831919,
+        "input_fingerprint": "30229f264081edb6dec76169597ed0d9a6030e2cab84db7035b206e0eb2fc828"
+      },
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
+      "horizons": [
+        {
+          "label": "1h",
+          "buckets": 4,
+          "target_ts": 1783958400000,
+          "target_iso": "2026-07-13T16:00:00.000Z",
+          "status": "complete",
+          "price_close": 62520,
+          "total_oi_usd": 8565163933.559357,
+          "price_delta": -252.09999999999854,
+          "price_return": -0.0040161154398211715,
+          "total_oi_delta_usd": -40876267.27256203,
+          "total_oi_return": -0.004749718374382058
+        },
+        {
+          "label": "2h",
+          "buckets": 8,
+          "target_ts": 1783962000000,
+          "target_iso": "2026-07-13T17:00:00.000Z",
+          "status": "complete",
+          "price_close": 62296.8,
+          "total_oi_usd": 8518147418.597596,
+          "price_delta": -475.29999999999563,
+          "price_return": -0.007571835258020612,
+          "total_oi_delta_usd": -87892782.23432255,
+          "total_oi_return": -0.01021291792546196
+        },
+        {
+          "label": "4h",
+          "buckets": 16,
+          "target_ts": 1783969200000,
+          "target_iso": "2026-07-13T19:00:00.000Z",
+          "status": "complete",
+          "price_close": 62052.1,
+          "total_oi_usd": 8538961554.651999,
+          "price_delta": -720,
+          "price_return": -0.011470063929675764,
+          "total_oi_delta_usd": -67078646.17991924,
+          "total_oi_return": -0.007794368212855311
+        },
+        {
+          "label": "12h",
+          "buckets": 48,
+          "target_ts": 1783998000000,
+          "target_iso": "2026-07-14T03:00:00.000Z",
+          "status": "complete",
+          "price_close": 62364.3,
+          "total_oi_usd": 8526601280.5635,
+          "price_delta": -407.79999999999563,
+          "price_return": -0.006496516764613509,
+          "total_oi_delta_usd": -79438920.26841831,
+          "total_oi_return": -0.009230600649615743
+        },
+        {
+          "label": "24h",
+          "buckets": 96,
+          "target_ts": 1784041200000,
+          "target_iso": "2026-07-14T15:00:00.000Z",
+          "status": "complete",
+          "price_close": 64184.9,
+          "total_oi_usd": 8468576974.110649,
+          "price_delta": 1412.800000000003,
+          "price_return": 0.02250681433311938,
+          "total_oi_delta_usd": -137463226.7212696,
+          "total_oi_return": -0.015972877596828035
+        }
+      ],
+      "send_price_reference": {
+        "source": "binance_futures_1m",
+        "symbol": "BTCUSDT",
+        "interval": "1m",
+        "minute_ts": 1783955760000,
+        "minute_iso": "2026-07-13T15:16:00.000Z",
+        "field": "open",
+        "price": 62774.8
+      },
+      "send_horizons": [
+        {
+          "label": "1h",
+          "target_ts": 1783959360000,
+          "target_iso": "2026-07-13T16:16:00.000Z",
+          "status": "complete",
+          "price": 62472.1,
+          "price_delta": -302.70000000000437,
+          "price_return": -0.004821998636395566,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "2h",
+          "target_ts": 1783962960000,
+          "target_iso": "2026-07-13T17:16:00.000Z",
+          "status": "complete",
+          "price": 62260,
+          "price_delta": -514.8000000000029,
+          "price_return": -0.008200742973295063,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "4h",
+          "target_ts": 1783970160000,
+          "target_iso": "2026-07-13T19:16:00.000Z",
+          "status": "complete",
+          "price": 62050,
+          "price_delta": -724.8000000000029,
+          "price_return": -0.011546034395967854,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "12h",
+          "target_ts": 1783998960000,
+          "target_iso": "2026-07-14T03:16:00.000Z",
+          "status": "complete",
+          "price": 62389.6,
+          "price_delta": -385.20000000000437,
+          "price_return": -0.006136220266731305,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "24h",
+          "target_ts": 1784042160000,
+          "target_iso": "2026-07-14T15:16:00.000Z",
+          "status": "complete",
+          "price": 64187.6,
+          "price_delta": 1412.7999999999956,
+          "price_return": 0.02250584629501003,
+          "price_source": "binance_futures_1m"
+        }
+      ]
+    },
+    {
+      "id": "1784041200000|4|oi_expansion_with_price_up|44f1e4acbe7248d850b0fb7978c99a6270267e7115ef5850625f60de27131059",
+      "signal": {
+        "id": "1784041200000|4|oi_expansion_with_price_up|44f1e4acbe7248d850b0fb7978c99a6270267e7115ef5850625f60de27131059",
+        "bucket_ts": 1784041200000,
+        "bucket_iso": "2026-07-14T15:00:00.000Z",
+        "horizon_buckets": 4,
+        "type": "oi_expansion_with_price_up",
+        "input_fingerprint": "44f1e4acbe7248d850b0fb7978c99a6270267e7115ef5850625f60de27131059",
+        "sent_ts": 1784042221937,
+        "sent_iso": "2026-07-14T15:17:01.937Z",
+        "direction": "up",
+        "alert_bias": "bullish",
+        "direction_source": "signal_type",
+        "detection_price_return": null,
+        "previous_bucket_ts": null,
+        "previous_bucket_iso": null
+      },
+      "base_available": true,
+      "source_fingerprint_matches": true,
+      "base": {
+        "bucket_ts": 1784041200000,
+        "bucket_iso": "2026-07-14T15:00:00.000Z",
+        "price_close": 64184.9,
+        "total_oi_usd": 8468576974.110649,
+        "input_fingerprint": "44f1e4acbe7248d850b0fb7978c99a6270267e7115ef5850625f60de27131059"
+      },
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
+      "horizons": [
+        {
+          "label": "1h",
+          "buckets": 4,
+          "target_ts": 1784044800000,
+          "target_iso": "2026-07-14T16:00:00.000Z",
+          "status": "complete",
+          "price_close": 64710,
+          "total_oi_usd": 8646484672.4946,
+          "price_delta": 525.0999999999985,
+          "price_return": 0.008181051929659445,
+          "total_oi_delta_usd": 177907698.3839512,
+          "total_oi_return": 0.021007980316862462
+        },
+        {
+          "label": "2h",
+          "buckets": 8,
+          "target_ts": 1784048400000,
+          "target_iso": "2026-07-14T17:00:00.000Z",
+          "status": "complete",
+          "price_close": 64568.5,
+          "total_oi_usd": 8643783885.11241,
+          "price_delta": 383.59999999999854,
+          "price_return": 0.005976483565449171,
+          "total_oi_delta_usd": 175206911.00176048,
+          "total_oi_return": 0.020689061637791904
+        },
+        {
+          "label": "4h",
+          "buckets": 16,
+          "target_ts": 1784055600000,
+          "target_iso": "2026-07-14T19:00:00.000Z",
+          "status": "complete",
+          "price_close": 64591.2,
+          "total_oi_usd": 8508162667.4064,
+          "price_delta": 406.29999999999563,
+          "price_return": 0.006330149303029149,
+          "total_oi_delta_usd": 39585693.29575062,
+          "total_oi_return": 0.004674420911183584
+        },
+        {
+          "label": "12h",
+          "buckets": 48,
+          "target_ts": 1784084400000,
+          "target_iso": "2026-07-15T03:00:00.000Z",
+          "status": "complete",
+          "price_close": 64608,
+          "total_oi_usd": 8668363905.594,
+          "price_delta": 423.09999999999854,
+          "price_return": 0.006591893108815291,
+          "total_oi_delta_usd": 199786931.48335075,
+          "total_oi_return": 0.02359155878184976
+        },
+        {
+          "label": "24h",
+          "buckets": 96,
+          "target_ts": 1784127600000,
+          "target_iso": "2026-07-15T15:00:00.000Z",
+          "status": "complete",
+          "price_close": 65369.8,
+          "total_oi_usd": 8793380703.663853,
+          "price_delta": 1184.9000000000015,
+          "price_return": 0.01846072830213962,
+          "total_oi_delta_usd": 324803729.5532036,
+          "total_oi_return": 0.038353991532008684
+        }
+      ],
+      "send_price_reference": {
+        "source": "binance_futures_1m",
+        "symbol": "BTCUSDT",
+        "interval": "1m",
+        "minute_ts": 1784042220000,
+        "minute_iso": "2026-07-14T15:17:00.000Z",
+        "field": "open",
+        "price": 64192.6
+      },
+      "send_horizons": [
+        {
+          "label": "1h",
+          "target_ts": 1784045820000,
+          "target_iso": "2026-07-14T16:17:00.000Z",
+          "status": "complete",
+          "price": 64710.1,
+          "price_delta": 517.5,
+          "price_return": 0.008061676891105828,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "2h",
+          "target_ts": 1784049420000,
+          "target_iso": "2026-07-14T17:17:00.000Z",
+          "status": "complete",
+          "price": 64564.7,
+          "price_delta": 372.09999999999854,
+          "price_return": 0.005796618301798004,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "4h",
+          "target_ts": 1784056620000,
+          "target_iso": "2026-07-14T19:17:00.000Z",
+          "status": "complete",
+          "price": 64557.4,
+          "price_delta": 364.8000000000029,
+          "price_return": 0.005682898028744792,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "12h",
+          "target_ts": 1784085420000,
+          "target_iso": "2026-07-15T03:17:00.000Z",
+          "status": "complete",
+          "price": 64588,
+          "price_delta": 395.40000000000146,
+          "price_return": 0.006159588488392766,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "24h",
+          "target_ts": 1784128620000,
+          "target_iso": "2026-07-15T15:17:00.000Z",
+          "status": "complete",
+          "price": 65293.1,
+          "price_delta": 1100.5,
+          "price_return": 0.01714372061577191,
+          "price_source": "binance_futures_1m"
+        }
+      ]
+    },
+    {
+      "id": "1784042100000|4|oi_expansion_with_price_up|712284b3c1fe6f649277a241afc5e50525e8b220327fe334e3a448763643bcb9",
+      "signal": {
+        "id": "1784042100000|4|oi_expansion_with_price_up|712284b3c1fe6f649277a241afc5e50525e8b220327fe334e3a448763643bcb9",
+        "bucket_ts": 1784042100000,
+        "bucket_iso": "2026-07-14T15:15:00.000Z",
+        "horizon_buckets": 4,
+        "type": "oi_expansion_with_price_up",
+        "input_fingerprint": "712284b3c1fe6f649277a241afc5e50525e8b220327fe334e3a448763643bcb9",
+        "sent_ts": 1784043118892,
+        "sent_iso": "2026-07-14T15:31:58.892Z",
+        "direction": "up",
+        "alert_bias": "bullish",
+        "direction_source": "signal_type",
+        "detection_price_return": null,
+        "previous_bucket_ts": null,
+        "previous_bucket_iso": null
+      },
+      "base_available": true,
+      "source_fingerprint_matches": true,
+      "base": {
+        "bucket_ts": 1784042100000,
+        "bucket_iso": "2026-07-14T15:15:00.000Z",
+        "price_close": 64469.7,
+        "total_oi_usd": 8480647570.383301,
+        "input_fingerprint": "712284b3c1fe6f649277a241afc5e50525e8b220327fe334e3a448763643bcb9"
+      },
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
+      "horizons": [
+        {
+          "label": "1h",
+          "buckets": 4,
+          "target_ts": 1784045700000,
+          "target_iso": "2026-07-14T16:15:00.000Z",
+          "status": "complete",
+          "price_close": 64797.6,
+          "total_oi_usd": 8627810425.030144,
+          "price_delta": 327.90000000000146,
+          "price_return": 0.005086110219219284,
+          "total_oi_delta_usd": 147162854.64684296,
+          "total_oi_return": 0.017352785082211785
+        },
+        {
+          "label": "2h",
+          "buckets": 8,
+          "target_ts": 1784049300000,
+          "target_iso": "2026-07-14T17:15:00.000Z",
+          "status": "complete",
+          "price_close": 64492.7,
+          "total_oi_usd": 8494728494.943075,
+          "price_delta": 23,
+          "price_return": 0.0003567567399879323,
+          "total_oi_delta_usd": 14080924.559774399,
+          "total_oi_return": 0.0016603595943485224
+        },
+        {
+          "label": "4h",
+          "buckets": 16,
+          "target_ts": 1784056500000,
+          "target_iso": "2026-07-14T19:15:00.000Z",
+          "status": "complete",
+          "price_close": 64530.1,
+          "total_oi_usd": 8509699629.743273,
+          "price_delta": 60.400000000001455,
+          "price_return": 0.0009368742215335492,
+          "total_oi_delta_usd": 29052059.359972,
+          "total_oi_return": 0.0034256887954440644
+        },
+        {
+          "label": "12h",
+          "buckets": 48,
+          "target_ts": 1784085300000,
+          "target_iso": "2026-07-15T03:15:00.000Z",
+          "status": "complete",
+          "price_close": 64593.2,
+          "total_oi_usd": 8683139227.001999,
+          "price_delta": 123.5,
+          "price_return": 0.001915628582109115,
+          "total_oi_delta_usd": 202491656.61869812,
+          "total_oi_return": 0.023876909745177168
+        },
+        {
+          "label": "24h",
+          "buckets": 96,
+          "target_ts": 1784128500000,
+          "target_iso": "2026-07-15T15:15:00.000Z",
+          "status": "complete",
+          "price_close": 65373.1,
+          "total_oi_usd": 8784164372.2619,
+          "price_delta": 903.4000000000015,
+          "price_return": 0.014012784300221678,
+          "total_oi_delta_usd": 303516801.87859917,
+          "total_oi_return": 0.03578934266040737
+        }
+      ],
+      "send_price_reference": {
+        "source": "binance_futures_1m",
+        "symbol": "BTCUSDT",
+        "interval": "1m",
+        "minute_ts": 1784043060000,
+        "minute_iso": "2026-07-14T15:31:00.000Z",
+        "field": "open",
+        "price": 64493.9
+      },
+      "send_horizons": [
+        {
+          "label": "1h",
+          "target_ts": 1784046660000,
+          "target_iso": "2026-07-14T16:31:00.000Z",
+          "status": "complete",
+          "price": 64812.3,
+          "price_delta": 318.40000000000146,
+          "price_return": 0.004936901009242757,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "2h",
+          "target_ts": 1784050260000,
+          "target_iso": "2026-07-14T17:31:00.000Z",
+          "status": "complete",
+          "price": 64469.3,
+          "price_delta": -24.599999999998545,
+          "price_return": -0.0003814314221964952,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "4h",
+          "target_ts": 1784057460000,
+          "target_iso": "2026-07-14T19:31:00.000Z",
+          "status": "complete",
+          "price": 64504.8,
+          "price_delta": 10.900000000001455,
+          "price_return": 0.0001690082317862845,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "12h",
+          "target_ts": 1784086260000,
+          "target_iso": "2026-07-15T03:31:00.000Z",
+          "status": "complete",
+          "price": 64643.7,
+          "price_delta": 149.79999999999563,
+          "price_return": 0.0023227002863836057,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "24h",
+          "target_ts": 1784129460000,
+          "target_iso": "2026-07-15T15:31:00.000Z",
+          "status": "complete",
+          "price": 65324.2,
+          "price_delta": 830.2999999999956,
+          "price_return": 0.012874085766250693,
+          "price_source": "binance_futures_1m"
+        }
+      ]
+    },
+    {
+      "id": "1784043000000|4|oi_expansion_with_price_up|239af46043c48750b29e61968b12f9eb7c9429d45ed813032d6511172ec5fa5f",
+      "signal": {
+        "id": "1784043000000|4|oi_expansion_with_price_up|239af46043c48750b29e61968b12f9eb7c9429d45ed813032d6511172ec5fa5f",
+        "bucket_ts": 1784043000000,
+        "bucket_iso": "2026-07-14T15:30:00.000Z",
+        "horizon_buckets": 4,
+        "type": "oi_expansion_with_price_up",
+        "input_fingerprint": "239af46043c48750b29e61968b12f9eb7c9429d45ed813032d6511172ec5fa5f",
+        "sent_ts": 1784044018621,
+        "sent_iso": "2026-07-14T15:46:58.621Z",
+        "direction": "up",
+        "alert_bias": "bullish",
+        "direction_source": "signal_type",
+        "detection_price_return": null,
+        "previous_bucket_ts": null,
+        "previous_bucket_iso": null
+      },
+      "base_available": true,
+      "source_fingerprint_matches": true,
+      "base": {
+        "bucket_ts": 1784043000000,
+        "bucket_iso": "2026-07-14T15:30:00.000Z",
+        "price_close": 64757.7,
+        "total_oi_usd": 8595398648.203236,
+        "input_fingerprint": "239af46043c48750b29e61968b12f9eb7c9429d45ed813032d6511172ec5fa5f"
+      },
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
+      "horizons": [
+        {
+          "label": "1h",
+          "buckets": 4,
+          "target_ts": 1784046600000,
+          "target_iso": "2026-07-14T16:30:00.000Z",
+          "status": "complete",
+          "price_close": 64752.8,
+          "total_oi_usd": 8649367766.117939,
+          "price_delta": -4.899999999994179,
+          "price_return": -0.00007566667747610214,
+          "total_oi_delta_usd": 53969117.91470337,
+          "total_oi_return": 0.006278838262607513
+        },
+        {
+          "label": "2h",
+          "buckets": 8,
+          "target_ts": 1784050200000,
+          "target_iso": "2026-07-14T17:30:00.000Z",
+          "status": "complete",
+          "price_close": 64493.4,
+          "total_oi_usd": 8490867555.301901,
+          "price_delta": -264.29999999999563,
+          "price_return": -0.0040813679299912696,
+          "total_oi_delta_usd": -104531092.90133476,
+          "total_oi_return": -0.01216128502930876
+        },
+        {
+          "label": "4h",
+          "buckets": 16,
+          "target_ts": 1784057400000,
+          "target_iso": "2026-07-14T19:30:00.000Z",
+          "status": "complete",
+          "price_close": 64516.8,
+          "total_oi_usd": 8503706576.344793,
+          "price_delta": -240.89999999999418,
+          "price_return": -0.0037200209395947385,
+          "total_oi_delta_usd": -91692071.8584423,
+          "total_oi_return": -0.010667576410503012
+        },
+        {
+          "label": "12h",
+          "buckets": 48,
+          "target_ts": 1784086200000,
+          "target_iso": "2026-07-15T03:30:00.000Z",
+          "status": "complete",
+          "price_close": 64674.5,
+          "total_oi_usd": 8686842605.88487,
+          "price_delta": -83.19999999999709,
+          "price_return": -0.001284789299187542,
+          "total_oi_delta_usd": 91443957.6816349,
+          "total_oi_return": 0.010638710480374305
+        },
+        {
+          "label": "24h",
+          "buckets": 96,
+          "target_ts": 1784129400000,
+          "target_iso": "2026-07-15T15:30:00.000Z",
+          "status": "complete",
+          "price_close": 65451.9,
+          "total_oi_usd": 8793140967.560291,
+          "price_delta": 694.2000000000044,
+          "price_return": 0.010719960715096497,
+          "total_oi_delta_usd": 197742319.35705566,
+          "total_oi_return": 0.023005601886585132
+        }
+      ],
+      "send_price_reference": {
+        "source": "binance_futures_1m",
+        "symbol": "BTCUSDT",
+        "interval": "1m",
+        "minute_ts": 1784043960000,
+        "minute_iso": "2026-07-14T15:46:00.000Z",
+        "field": "open",
+        "price": 64790.1
+      },
+      "send_horizons": [
+        {
+          "label": "1h",
+          "target_ts": 1784047560000,
+          "target_iso": "2026-07-14T16:46:00.000Z",
+          "status": "complete",
+          "price": 64763.3,
+          "price_delta": -26.799999999995634,
+          "price_return": -0.00041364344243944115,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "2h",
+          "target_ts": 1784051160000,
+          "target_iso": "2026-07-14T17:46:00.000Z",
+          "status": "complete",
+          "price": 64507.4,
+          "price_delta": -282.6999999999971,
+          "price_return": -0.004363320939464472,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "4h",
+          "target_ts": 1784058360000,
+          "target_iso": "2026-07-14T19:46:00.000Z",
+          "status": "complete",
+          "price": 64544.7,
+          "price_delta": -245.40000000000146,
+          "price_return": -0.0037876157005468656,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "12h",
+          "target_ts": 1784087160000,
+          "target_iso": "2026-07-15T03:46:00.000Z",
+          "status": "complete",
+          "price": 64651.7,
+          "price_delta": -138.40000000000146,
+          "price_return": -0.00213612882215032,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "24h",
+          "target_ts": 1784130360000,
+          "target_iso": "2026-07-15T15:46:00.000Z",
+          "status": "complete",
+          "price": 65416.4,
+          "price_delta": 626.3000000000029,
+          "price_return": 0.009666600298502439,
+          "price_source": "binance_futures_1m"
+        }
+      ]
+    },
+    {
+      "id": "1784043900000|4|oi_expansion_with_price_up|61cba0e299c44293dc0eb036f5622ca967ea7782555d8ebd8426f8faab00c490",
+      "signal": {
+        "id": "1784043900000|4|oi_expansion_with_price_up|61cba0e299c44293dc0eb036f5622ca967ea7782555d8ebd8426f8faab00c490",
+        "bucket_ts": 1784043900000,
+        "bucket_iso": "2026-07-14T15:45:00.000Z",
+        "horizon_buckets": 4,
+        "type": "oi_expansion_with_price_up",
+        "input_fingerprint": "61cba0e299c44293dc0eb036f5622ca967ea7782555d8ebd8426f8faab00c490",
+        "sent_ts": 1784044918050,
+        "sent_iso": "2026-07-14T16:01:58.050Z",
+        "direction": "up",
+        "alert_bias": "bullish",
+        "direction_source": "signal_type",
+        "detection_price_return": null,
+        "previous_bucket_ts": null,
+        "previous_bucket_iso": null
+      },
+      "base_available": true,
+      "source_fingerprint_matches": true,
+      "base": {
+        "bucket_ts": 1784043900000,
+        "bucket_iso": "2026-07-14T15:45:00.000Z",
+        "price_close": 64727.5,
+        "total_oi_usd": 8645286203.8972,
+        "input_fingerprint": "61cba0e299c44293dc0eb036f5622ca967ea7782555d8ebd8426f8faab00c490"
+      },
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
+      "horizons": [
+        {
+          "label": "1h",
+          "buckets": 4,
+          "target_ts": 1784047500000,
+          "target_iso": "2026-07-14T16:45:00.000Z",
+          "status": "complete",
+          "price_close": 64703.9,
+          "total_oi_usd": 8651255467.054615,
+          "price_delta": -23.599999999998545,
+          "price_return": -0.0003646054613572059,
+          "total_oi_delta_usd": 5969263.15741539,
+          "total_oi_return": 0.0006904644932083928
+        },
+        {
+          "label": "2h",
+          "buckets": 8,
+          "target_ts": 1784051100000,
+          "target_iso": "2026-07-14T17:45:00.000Z",
+          "status": "complete",
+          "price_close": 64597.5,
+          "total_oi_usd": 8495357754.578678,
+          "price_delta": -130,
+          "price_return": -0.0020084199142559192,
+          "total_oi_delta_usd": -149928449.3185215,
+          "total_oi_return": -0.01734221930685596
+        },
+        {
+          "label": "4h",
+          "buckets": 16,
+          "target_ts": 1784058300000,
+          "target_iso": "2026-07-14T19:45:00.000Z",
+          "status": "complete",
+          "price_close": 64543,
+          "total_oi_usd": 8507041004.4152,
+          "price_delta": -184.5,
+          "price_return": -0.0028504113398478237,
+          "total_oi_delta_usd": -138245199.4819994,
+          "total_oi_return": -0.0159908181431495
+        },
+        {
+          "label": "12h",
+          "buckets": 48,
+          "target_ts": 1784087100000,
+          "target_iso": "2026-07-15T03:45:00.000Z",
+          "status": "complete",
+          "price_close": 64760.8,
+          "total_oi_usd": 8689950897.0974,
+          "price_delta": 33.30000000000291,
+          "price_return": 0.0005144644857286765,
+          "total_oi_delta_usd": 44664693.200201035,
+          "total_oi_return": 0.005166363743986484
+        },
+        {
+          "label": "24h",
+          "buckets": 96,
+          "target_ts": 1784130300000,
+          "target_iso": "2026-07-15T15:45:00.000Z",
+          "status": "complete",
+          "price_close": 65391.6,
+          "total_oi_usd": 8780410124.1066,
+          "price_delta": 664.0999999999985,
+          "price_return": 0.01025993588505656,
+          "total_oi_delta_usd": 135123920.20940018,
+          "total_oi_return": 0.015629779861826645
+        }
+      ],
+      "send_price_reference": {
+        "source": "binance_futures_1m",
+        "symbol": "BTCUSDT",
+        "interval": "1m",
+        "minute_ts": 1784044860000,
+        "minute_iso": "2026-07-14T16:01:00.000Z",
+        "field": "open",
+        "price": 64760.7
+      },
+      "send_horizons": [
+        {
+          "label": "1h",
+          "target_ts": 1784048460000,
+          "target_iso": "2026-07-14T17:01:00.000Z",
+          "status": "complete",
+          "price": 64678.5,
+          "price_delta": -82.19999999999709,
+          "price_return": -0.0012692883183782308,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "2h",
+          "target_ts": 1784052060000,
+          "target_iso": "2026-07-14T18:01:00.000Z",
+          "status": "complete",
+          "price": 64580,
+          "price_delta": -180.6999999999971,
+          "price_return": -0.0027902724955103497,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "4h",
+          "target_ts": 1784059260000,
+          "target_iso": "2026-07-14T20:01:00.000Z",
+          "status": "complete",
+          "price": 64530.5,
+          "price_delta": -230.1999999999971,
+          "price_return": -0.0035546249500082163,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "12h",
+          "target_ts": 1784088060000,
+          "target_iso": "2026-07-15T04:01:00.000Z",
+          "status": "complete",
+          "price": 64760.9,
+          "price_delta": 0.20000000000436557,
+          "price_return": 0.0000030882927455133375,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "24h",
+          "target_ts": 1784131260000,
+          "target_iso": "2026-07-15T16:01:00.000Z",
+          "status": "complete",
+          "price": 65362.8,
+          "price_delta": 602.1000000000058,
+          "price_return": 0.009297305310165052,
+          "price_source": "binance_futures_1m"
+        }
+      ]
+    },
+    {
+      "id": "1784044800000|4|oi_expansion_with_price_up|64c37ceb95f2d4f103f87779f1d5508a91a47e98158214bb8308c58886a17a04",
+      "signal": {
+        "id": "1784044800000|4|oi_expansion_with_price_up|64c37ceb95f2d4f103f87779f1d5508a91a47e98158214bb8308c58886a17a04",
+        "bucket_ts": 1784044800000,
+        "bucket_iso": "2026-07-14T16:00:00.000Z",
+        "horizon_buckets": 4,
+        "type": "oi_expansion_with_price_up",
+        "input_fingerprint": "64c37ceb95f2d4f103f87779f1d5508a91a47e98158214bb8308c58886a17a04",
+        "sent_ts": 1784045819604,
+        "sent_iso": "2026-07-14T16:16:59.604Z",
+        "direction": "up",
+        "alert_bias": "bullish",
+        "direction_source": "signal_type",
+        "detection_price_return": null,
+        "previous_bucket_ts": null,
+        "previous_bucket_iso": null
+      },
+      "base_available": true,
+      "source_fingerprint_matches": true,
+      "base": {
+        "bucket_ts": 1784044800000,
+        "bucket_iso": "2026-07-14T16:00:00.000Z",
+        "price_close": 64710,
+        "total_oi_usd": 8646484672.4946,
+        "input_fingerprint": "64c37ceb95f2d4f103f87779f1d5508a91a47e98158214bb8308c58886a17a04"
+      },
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
+      "horizons": [
+        {
+          "label": "1h",
+          "buckets": 4,
+          "target_ts": 1784048400000,
+          "target_iso": "2026-07-14T17:00:00.000Z",
+          "status": "complete",
+          "price_close": 64568.5,
+          "total_oi_usd": 8643783885.11241,
+          "price_delta": -141.5,
+          "price_return": -0.0021866790295163034,
+          "total_oi_delta_usd": -2700787.3821907043,
+          "total_oi_return": -0.0003123566957543104
+        },
+        {
+          "label": "2h",
+          "buckets": 8,
+          "target_ts": 1784052000000,
+          "target_iso": "2026-07-14T18:00:00.000Z",
+          "status": "complete",
+          "price_close": 64457.4,
+          "total_oi_usd": 8511009067.501838,
+          "price_delta": -252.59999999999854,
+          "price_return": -0.0039035697728326156,
+          "total_oi_delta_usd": -135475604.99276257,
+          "total_oi_return": -0.015668287185395133
+        },
+        {
+          "label": "4h",
+          "buckets": 16,
+          "target_ts": 1784059200000,
+          "target_iso": "2026-07-14T20:00:00.000Z",
+          "status": "complete",
+          "price_close": 64429.7,
+          "total_oi_usd": 8514224407.8239,
+          "price_delta": -280.3000000000029,
+          "price_return": -0.004331633441508312,
+          "total_oi_delta_usd": -132260264.67070007,
+          "total_oi_return": -0.015296420415967918
+        },
+        {
+          "label": "12h",
+          "buckets": 48,
+          "target_ts": 1784088000000,
+          "target_iso": "2026-07-15T04:00:00.000Z",
+          "status": "complete",
+          "price_close": 64793.7,
+          "total_oi_usd": 8706110996.429314,
+          "price_delta": 83.69999999999709,
+          "price_return": 0.0012934631432544752,
+          "total_oi_delta_usd": 59626323.93471336,
+          "total_oi_return": 0.006896019156130714
+        },
+        {
+          "label": "24h",
+          "buckets": 96,
+          "target_ts": 1784131200000,
+          "target_iso": "2026-07-15T16:00:00.000Z",
+          "status": "complete",
+          "price_close": 65064.6,
+          "total_oi_usd": 8774169013.159056,
+          "price_delta": 354.59999999999854,
+          "price_return": 0.00547983310152988,
+          "total_oi_delta_usd": 127684340.66445541,
+          "total_oi_return": 0.014767196785837494
+        }
+      ],
+      "send_price_reference": {
+        "source": "binance_futures_1m",
+        "symbol": "BTCUSDT",
+        "interval": "1m",
+        "minute_ts": 1784045760000,
+        "minute_iso": "2026-07-14T16:16:00.000Z",
+        "field": "open",
+        "price": 64699.7
+      },
+      "send_horizons": [
+        {
+          "label": "1h",
+          "target_ts": 1784049360000,
+          "target_iso": "2026-07-14T17:16:00.000Z",
+          "status": "complete",
+          "price": 64600.2,
+          "price_delta": -99.5,
+          "price_return": -0.0015378742096176644,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "2h",
+          "target_ts": 1784052960000,
+          "target_iso": "2026-07-14T18:16:00.000Z",
+          "status": "complete",
+          "price": 64495.9,
+          "price_delta": -203.79999999999563,
+          "price_return": -0.0031499373258298824,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "4h",
+          "target_ts": 1784060160000,
+          "target_iso": "2026-07-14T20:16:00.000Z",
+          "status": "complete",
+          "price": 64437.7,
+          "price_delta": -262,
+          "price_return": -0.0040494778182897295,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "12h",
+          "target_ts": 1784088960000,
+          "target_iso": "2026-07-15T04:16:00.000Z",
+          "status": "complete",
+          "price": 64784.5,
+          "price_delta": 84.80000000000291,
+          "price_return": 0.0013106706831716825,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "24h",
+          "target_ts": 1784132160000,
+          "target_iso": "2026-07-15T16:16:00.000Z",
+          "status": "complete",
+          "price": 65135,
+          "price_delta": 435.3000000000029,
+          "price_return": 0.006728006466799737,
+          "price_source": "binance_futures_1m"
+        }
+      ]
+    },
+    {
+      "id": "1784045700000|4|oi_expansion_with_price_up|af297e29e9f5e05174d3d211eb0a43fc392d0c4ced9c0e264593d7dae4d809a8",
+      "signal": {
+        "id": "1784045700000|4|oi_expansion_with_price_up|af297e29e9f5e05174d3d211eb0a43fc392d0c4ced9c0e264593d7dae4d809a8",
+        "bucket_ts": 1784045700000,
+        "bucket_iso": "2026-07-14T16:15:00.000Z",
+        "horizon_buckets": 4,
+        "type": "oi_expansion_with_price_up",
+        "input_fingerprint": "af297e29e9f5e05174d3d211eb0a43fc392d0c4ced9c0e264593d7dae4d809a8",
+        "sent_ts": 1784046719239,
+        "sent_iso": "2026-07-14T16:31:59.239Z",
+        "direction": "up",
+        "alert_bias": "bullish",
+        "direction_source": "signal_type",
+        "detection_price_return": null,
+        "previous_bucket_ts": null,
+        "previous_bucket_iso": null
+      },
+      "base_available": true,
+      "source_fingerprint_matches": true,
+      "base": {
+        "bucket_ts": 1784045700000,
+        "bucket_iso": "2026-07-14T16:15:00.000Z",
+        "price_close": 64797.6,
+        "total_oi_usd": 8627810425.030144,
+        "input_fingerprint": "af297e29e9f5e05174d3d211eb0a43fc392d0c4ced9c0e264593d7dae4d809a8"
+      },
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
+      "horizons": [
+        {
+          "label": "1h",
+          "buckets": 4,
+          "target_ts": 1784049300000,
+          "target_iso": "2026-07-14T17:15:00.000Z",
+          "status": "complete",
+          "price_close": 64492.7,
+          "total_oi_usd": 8494728494.943075,
+          "price_delta": -304.90000000000146,
+          "price_return": -0.004705421188439101,
+          "total_oi_delta_usd": -133081930.08706856,
+          "total_oi_return": -0.015424762892446561
+        },
+        {
+          "label": "2h",
+          "buckets": 8,
+          "target_ts": 1784052900000,
+          "target_iso": "2026-07-14T18:15:00.000Z",
+          "status": "complete",
+          "price_close": 64491.2,
+          "total_oi_usd": 8498276305.820499,
+          "price_delta": -306.40000000000146,
+          "price_return": -0.004728570193957823,
+          "total_oi_delta_usd": -129534119.20964432,
+          "total_oi_return": -0.01501355649097862
+        },
+        {
+          "label": "4h",
+          "buckets": 16,
+          "target_ts": 1784060100000,
+          "target_iso": "2026-07-14T20:15:00.000Z",
+          "status": "complete",
+          "price_close": 64417.5,
+          "total_oi_usd": 8505568285.89971,
+          "price_delta": -380.09999999999854,
+          "price_return": -0.005865957998444364,
+          "total_oi_delta_usd": -122242139.13043404,
+          "total_oi_return": -0.014168384921369775
+        },
+        {
+          "label": "12h",
+          "buckets": 48,
+          "target_ts": 1784088900000,
+          "target_iso": "2026-07-15T04:15:00.000Z",
+          "status": "complete",
+          "price_close": 64733.4,
+          "total_oi_usd": 8710759777.236593,
+          "price_delta": -64.19999999999709,
+          "price_return": -0.000990777436201296,
+          "total_oi_delta_usd": 82949352.20644951,
+          "total_oi_return": 0.009614183450972116
+        },
+        {
+          "label": "24h",
+          "buckets": 96,
+          "target_ts": 1784132100000,
+          "target_iso": "2026-07-15T16:15:00.000Z",
+          "status": "complete",
+          "price_close": 65137.1,
+          "total_oi_usd": 8730746118.3897,
+          "price_delta": 339.5,
+          "price_return": 0.005239391582404287,
+          "total_oi_delta_usd": 102935693.3595562,
+          "total_oi_return": 0.0119306855724286
+        }
+      ],
+      "send_price_reference": {
+        "source": "binance_futures_1m",
+        "symbol": "BTCUSDT",
+        "interval": "1m",
+        "minute_ts": 1784046660000,
+        "minute_iso": "2026-07-14T16:31:00.000Z",
+        "field": "open",
+        "price": 64812.3
+      },
+      "send_horizons": [
+        {
+          "label": "1h",
+          "target_ts": 1784050260000,
+          "target_iso": "2026-07-14T17:31:00.000Z",
+          "status": "complete",
+          "price": 64469.3,
+          "price_delta": -343,
+          "price_return": -0.005292205337567097,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "2h",
+          "target_ts": 1784053860000,
+          "target_iso": "2026-07-14T18:31:00.000Z",
+          "status": "complete",
+          "price": 64459.6,
+          "price_delta": -352.70000000000437,
+          "price_return": -0.005441868287346759,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "4h",
+          "target_ts": 1784061060000,
+          "target_iso": "2026-07-14T20:31:00.000Z",
+          "status": "complete",
+          "price": 64419.5,
+          "price_delta": -392.8000000000029,
+          "price_return": -0.006060578007569596,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "12h",
+          "target_ts": 1784089860000,
+          "target_iso": "2026-07-15T04:31:00.000Z",
+          "status": "complete",
+          "price": 64699.1,
+          "price_delta": -113.20000000000437,
+          "price_return": -0.0017465820530980132,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "24h",
+          "target_ts": 1784133060000,
+          "target_iso": "2026-07-15T16:31:00.000Z",
+          "status": "complete",
+          "price": 65134.5,
+          "price_delta": 322.1999999999971,
+          "price_return": 0.004971278599895345,
+          "price_source": "binance_futures_1m"
+        }
+      ]
+    },
+    {
+      "id": "1784069100000|4|oi_expansion_with_price_up|103fd46a8a4476b14e560aa56a2d715088547e4c8b8af33efdc65baa406e37f0",
+      "signal": {
+        "id": "1784069100000|4|oi_expansion_with_price_up|103fd46a8a4476b14e560aa56a2d715088547e4c8b8af33efdc65baa406e37f0",
+        "bucket_ts": 1784069100000,
+        "bucket_iso": "2026-07-14T22:45:00.000Z",
+        "horizon_buckets": 4,
+        "type": "oi_expansion_with_price_up",
+        "input_fingerprint": "103fd46a8a4476b14e560aa56a2d715088547e4c8b8af33efdc65baa406e37f0",
+        "sent_ts": 1784070117599,
+        "sent_iso": "2026-07-14T23:01:57.599Z",
+        "direction": "up",
+        "alert_bias": "bullish",
+        "direction_source": "signal_type",
+        "detection_price_return": null,
+        "previous_bucket_ts": null,
+        "previous_bucket_iso": null
+      },
+      "base_available": true,
+      "source_fingerprint_matches": true,
+      "base": {
+        "bucket_ts": 1784069100000,
+        "bucket_iso": "2026-07-14T22:45:00.000Z",
+        "price_close": 64837.1,
+        "total_oi_usd": 8661616160.8314,
+        "input_fingerprint": "103fd46a8a4476b14e560aa56a2d715088547e4c8b8af33efdc65baa406e37f0"
+      },
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
+      "horizons": [
+        {
+          "label": "1h",
+          "buckets": 4,
+          "target_ts": 1784072700000,
+          "target_iso": "2026-07-14T23:45:00.000Z",
+          "status": "complete",
+          "price_close": 65014.7,
+          "total_oi_usd": 8682153481.185852,
+          "price_delta": 177.59999999999854,
+          "price_return": 0.0027391724799535845,
+          "total_oi_delta_usd": 20537320.354452133,
+          "total_oi_return": 0.0023710725542565284
+        },
+        {
+          "label": "2h",
+          "buckets": 8,
+          "target_ts": 1784076300000,
+          "target_iso": "2026-07-15T00:45:00.000Z",
+          "status": "complete",
+          "price_close": 64798.1,
+          "total_oi_usd": 8668411177.5063,
+          "price_delta": -39,
+          "price_return": -0.0006015074702600825,
+          "total_oi_delta_usd": 6795016.674900055,
+          "total_oi_return": 0.0007844975520420456
+        },
+        {
+          "label": "4h",
+          "buckets": 16,
+          "target_ts": 1784083500000,
+          "target_iso": "2026-07-15T02:45:00.000Z",
+          "status": "complete",
+          "price_close": 64473,
+          "total_oi_usd": 8668697721.447235,
+          "price_delta": -364.09999999999854,
+          "price_return": -0.005615612049274236,
+          "total_oi_delta_usd": 7081560.61583519,
+          "total_oi_return": 0.0008175795930393035
+        },
+        {
+          "label": "12h",
+          "buckets": 48,
+          "target_ts": 1784112300000,
+          "target_iso": "2026-07-15T10:45:00.000Z",
+          "status": "complete",
+          "price_close": 64633,
+          "total_oi_usd": 8662487869.033,
+          "price_delta": -204.09999999999854,
+          "price_return": -0.0031478890943610763,
+          "total_oi_delta_usd": 871708.2016010284,
+          "total_oi_return": 0.00010064036380912036
+        },
+        {
+          "label": "24h",
+          "buckets": 96,
+          "target_ts": 1784155500000,
+          "target_iso": "2026-07-15T22:45:00.000Z",
+          "status": "complete",
+          "price_close": 64831.5,
+          "total_oi_usd": 8478370144.955832,
+          "price_delta": -5.599999999998545,
+          "price_return": -0.00008637030342193813,
+          "total_oi_delta_usd": -183246015.8755684,
+          "total_oi_return": -0.02115609979396492
+        }
+      ],
+      "send_price_reference": {
+        "source": "binance_futures_1m",
+        "symbol": "BTCUSDT",
+        "interval": "1m",
+        "minute_ts": 1784070060000,
+        "minute_iso": "2026-07-14T23:01:00.000Z",
+        "field": "open",
+        "price": 64852.8
+      },
+      "send_horizons": [
+        {
+          "label": "1h",
+          "target_ts": 1784073660000,
+          "target_iso": "2026-07-15T00:01:00.000Z",
+          "status": "complete",
+          "price": 65011.4,
+          "price_delta": 158.59999999999854,
+          "price_return": 0.0024455382034391506,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "2h",
+          "target_ts": 1784077260000,
+          "target_iso": "2026-07-15T01:01:00.000Z",
+          "status": "complete",
+          "price": 64756.6,
+          "price_delta": -96.20000000000437,
+          "price_return": -0.0014833592381516968,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "4h",
+          "target_ts": 1784084460000,
+          "target_iso": "2026-07-15T03:01:00.000Z",
+          "status": "complete",
+          "price": 64507.7,
+          "price_delta": -345.1000000000058,
+          "price_return": -0.0053212814250118085,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "12h",
+          "target_ts": 1784113260000,
+          "target_iso": "2026-07-15T11:01:00.000Z",
+          "status": "complete",
+          "price": 64640,
+          "price_delta": -212.8000000000029,
+          "price_return": -0.00328127698418577,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "24h",
+          "target_ts": 1784156460000,
+          "target_iso": "2026-07-15T23:01:00.000Z",
+          "status": "complete",
+          "price": 64846.9,
+          "price_delta": -5.900000000001455,
+          "price_return": -0.00009097525473073568,
+          "price_source": "binance_futures_1m"
+        }
+      ]
+    },
+    {
+      "id": "1784070000000|4|oi_expansion_with_price_up|33c1b2a491c565a54e30900854594b725b9cf70b264bbc946dabcd482a24ebe2",
+      "signal": {
+        "id": "1784070000000|4|oi_expansion_with_price_up|33c1b2a491c565a54e30900854594b725b9cf70b264bbc946dabcd482a24ebe2",
+        "bucket_ts": 1784070000000,
+        "bucket_iso": "2026-07-14T23:00:00.000Z",
+        "horizon_buckets": 4,
+        "type": "oi_expansion_with_price_up",
+        "input_fingerprint": "33c1b2a491c565a54e30900854594b725b9cf70b264bbc946dabcd482a24ebe2",
+        "sent_ts": 1784071017301,
+        "sent_iso": "2026-07-14T23:16:57.301Z",
+        "direction": "up",
+        "alert_bias": "bullish",
+        "direction_source": "signal_type",
+        "detection_price_return": null,
+        "previous_bucket_ts": null,
+        "previous_bucket_iso": null
+      },
+      "base_available": true,
+      "source_fingerprint_matches": true,
+      "base": {
+        "bucket_ts": 1784070000000,
+        "bucket_iso": "2026-07-14T23:00:00.000Z",
+        "price_close": 64994,
+        "total_oi_usd": 8663345541.519794,
+        "input_fingerprint": "33c1b2a491c565a54e30900854594b725b9cf70b264bbc946dabcd482a24ebe2"
+      },
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
+      "horizons": [
+        {
+          "label": "1h",
+          "buckets": 4,
+          "target_ts": 1784073600000,
+          "target_iso": "2026-07-15T00:00:00.000Z",
+          "status": "complete",
+          "price_close": 64891.4,
+          "total_oi_usd": 8683858727.5878,
+          "price_delta": -102.59999999999854,
+          "price_return": -0.0015786072560543827,
+          "total_oi_delta_usd": 20513186.06800461,
+          "total_oi_return": 0.0023678134468599317
+        },
+        {
+          "label": "2h",
+          "buckets": 8,
+          "target_ts": 1784077200000,
+          "target_iso": "2026-07-15T01:00:00.000Z",
+          "status": "complete",
+          "price_close": 64717.5,
+          "total_oi_usd": 8683258010.751284,
+          "price_delta": -276.5,
+          "price_return": -0.004254238852817183,
+          "total_oi_delta_usd": 19912469.23148918,
+          "total_oi_return": 0.00229847339414745
+        },
+        {
+          "label": "4h",
+          "buckets": 16,
+          "target_ts": 1784084400000,
+          "target_iso": "2026-07-15T03:00:00.000Z",
+          "status": "complete",
+          "price_close": 64608,
+          "total_oi_usd": 8668363905.594,
+          "price_delta": -386,
+          "price_return": -0.005939009754746592,
+          "total_oi_delta_usd": 5018364.074205399,
+          "total_oi_return": 0.0005792639864304704
+        },
+        {
+          "label": "12h",
+          "buckets": 48,
+          "target_ts": 1784113200000,
+          "target_iso": "2026-07-15T11:00:00.000Z",
+          "status": "complete",
+          "price_close": 64698,
+          "total_oi_usd": 8661069430.949434,
+          "price_delta": -296,
+          "price_return": -0.004554266547681324,
+          "total_oi_delta_usd": -2276110.5703601837,
+          "total_oi_return": -0.00026272882219135053
+        },
+        {
+          "label": "24h",
+          "buckets": 96,
+          "target_ts": 1784156400000,
+          "target_iso": "2026-07-15T23:00:00.000Z",
+          "status": "complete",
+          "price_close": 64880.6,
+          "total_oi_usd": 8482236111.808729,
+          "price_delta": -113.40000000000146,
+          "price_return": -0.0017447764409022595,
+          "total_oi_delta_usd": -181109429.7110653,
+          "total_oi_return": -0.020905252923721383
+        }
+      ],
+      "send_price_reference": {
+        "source": "binance_futures_1m",
+        "symbol": "BTCUSDT",
+        "interval": "1m",
+        "minute_ts": 1784070960000,
+        "minute_iso": "2026-07-14T23:16:00.000Z",
+        "field": "open",
+        "price": 64944.1
+      },
+      "send_horizons": [
+        {
+          "label": "1h",
+          "target_ts": 1784074560000,
+          "target_iso": "2026-07-15T00:16:00.000Z",
+          "status": "complete",
+          "price": 64910.1,
+          "price_delta": -34,
+          "price_return": -0.0005235271564314541,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "2h",
+          "target_ts": 1784078160000,
+          "target_iso": "2026-07-15T01:16:00.000Z",
+          "status": "complete",
+          "price": 64738.8,
+          "price_delta": -205.29999999999563,
+          "price_return": -0.0031611801533933895,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "4h",
+          "target_ts": 1784085360000,
+          "target_iso": "2026-07-15T03:16:00.000Z",
+          "status": "complete",
+          "price": 64603.2,
+          "price_delta": -340.90000000000146,
+          "price_return": -0.005249129636102455,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "12h",
+          "target_ts": 1784114160000,
+          "target_iso": "2026-07-15T11:16:00.000Z",
+          "status": "complete",
+          "price": 64709.5,
+          "price_delta": -234.59999999999854,
+          "price_return": -0.0036123373793770113,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "24h",
+          "target_ts": 1784157360000,
+          "target_iso": "2026-07-15T23:16:00.000Z",
+          "status": "complete",
+          "price": 64886.1,
+          "price_delta": -58,
+          "price_return": -0.0008930757374418924,
+          "price_source": "binance_futures_1m"
+        }
+      ]
+    },
+    {
+      "id": "1784070900000|4|oi_expansion_with_price_down|1b289f22f3d5e7737ecb4d53fb03056fff1ca2e672cafc77e8dba2e48300321f",
+      "signal": {
+        "id": "1784070900000|4|oi_expansion_with_price_down|1b289f22f3d5e7737ecb4d53fb03056fff1ca2e672cafc77e8dba2e48300321f",
+        "bucket_ts": 1784070900000,
+        "bucket_iso": "2026-07-14T23:15:00.000Z",
+        "horizon_buckets": 4,
+        "type": "oi_expansion_with_price_down",
+        "input_fingerprint": "1b289f22f3d5e7737ecb4d53fb03056fff1ca2e672cafc77e8dba2e48300321f",
+        "sent_ts": 1784071918894,
+        "sent_iso": "2026-07-14T23:31:58.894Z",
+        "direction": "down",
+        "alert_bias": "bearish",
+        "direction_source": "signal_type",
+        "detection_price_return": null,
+        "previous_bucket_ts": null,
+        "previous_bucket_iso": null
+      },
+      "base_available": true,
+      "source_fingerprint_matches": true,
+      "base": {
+        "bucket_ts": 1784070900000,
+        "bucket_iso": "2026-07-14T23:15:00.000Z",
+        "price_close": 64889.8,
+        "total_oi_usd": 8686165061.508646,
+        "input_fingerprint": "1b289f22f3d5e7737ecb4d53fb03056fff1ca2e672cafc77e8dba2e48300321f"
+      },
+      "latest_aggregate_ts": 1784387700000,
+      "latest_aggregate_iso": "2026-07-18T15:15:00.000Z",
+      "horizons": [
+        {
+          "label": "1h",
+          "buckets": 4,
+          "target_ts": 1784074500000,
+          "target_iso": "2026-07-15T00:15:00.000Z",
+          "status": "complete",
+          "price_close": 64861.2,
+          "total_oi_usd": 8685370177.429916,
+          "price_delta": -28.60000000000582,
+          "price_return": -0.00044074723608341867,
+          "total_oi_delta_usd": -794884.0787296295,
+          "total_oi_return": -0.00009151150975152792
+        },
+        {
+          "label": "2h",
+          "buckets": 8,
+          "target_ts": 1784078100000,
+          "target_iso": "2026-07-15T01:15:00.000Z",
+          "status": "complete",
+          "price_close": 64809.9,
+          "total_oi_usd": 8676639891.067928,
+          "price_delta": -79.90000000000146,
+          "price_return": -0.0012313183273796721,
+          "total_oi_delta_usd": -9525170.440717697,
+          "total_oi_return": -0.001096591001122805
+        },
+        {
+          "label": "4h",
+          "buckets": 16,
+          "target_ts": 1784085300000,
+          "target_iso": "2026-07-15T03:15:00.000Z",
+          "status": "complete",
+          "price_close": 64593.2,
+          "total_oi_usd": 8683139227.001999,
+          "price_delta": -296.6000000000058,
+          "price_return": -0.004570826231549578,
+          "total_oi_delta_usd": -3025834.50664711,
+          "total_oi_return": -0.0003483510254779307
+        },
+        {
+          "label": "12h",
+          "buckets": 48,
+          "target_ts": 1784114100000,
+          "target_iso": "2026-07-15T11:15:00.000Z",
+          "status": "complete",
+          "price_close": 64609.6,
+          "total_oi_usd": 8667271751.223873,
+          "price_delta": -280.20000000000437,
+          "price_return": -0.00431809005421506,
+          "total_oi_delta_usd": -18893310.284772873,
+          "total_oi_return": -0.002175103759942988
+        },
+        {
+          "label": "24h",
+          "buckets": 96,
+          "target_ts": 1784157300000,
+          "target_iso": "2026-07-15T23:15:00.000Z",
+          "status": "complete",
+          "price_close": 64819.2,
+          "total_oi_usd": 8485470888.7952,
+          "price_delta": -70.60000000000582,
+          "price_return": -0.0010879984219400556,
+          "total_oi_delta_usd": -200694172.71344566,
+          "total_oi_return": -0.023105037872557806
+        }
+      ],
+      "send_price_reference": {
+        "source": "binance_futures_1m",
+        "symbol": "BTCUSDT",
+        "interval": "1m",
+        "minute_ts": 1784071860000,
+        "minute_iso": "2026-07-14T23:31:00.000Z",
+        "field": "open",
+        "price": 64895.8
+      },
+      "send_horizons": [
+        {
+          "label": "1h",
+          "target_ts": 1784075460000,
+          "target_iso": "2026-07-15T00:31:00.000Z",
+          "status": "complete",
+          "price": 64822.4,
+          "price_delta": -73.40000000000146,
+          "price_return": -0.0011310439196373487,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "2h",
+          "target_ts": 1784079060000,
+          "target_iso": "2026-07-15T01:31:00.000Z",
+          "status": "complete",
+          "price": 64788,
+          "price_delta": -107.80000000000291,
+          "price_return": -0.0016611244487317039,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "4h",
+          "target_ts": 1784086260000,
+          "target_iso": "2026-07-15T03:31:00.000Z",
+          "status": "complete",
+          "price": 64643.7,
+          "price_delta": -252.10000000000582,
+          "price_return": -0.0038846889937408247,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "12h",
+          "target_ts": 1784115060000,
+          "target_iso": "2026-07-15T11:31:00.000Z",
+          "status": "complete",
+          "price": 64625.3,
+          "price_delta": -270.5,
+          "price_return": -0.004168220439535378,
+          "price_source": "binance_futures_1m"
+        },
+        {
+          "label": "24h",
+          "target_ts": 1784158260000,
+          "target_iso": "2026-07-15T23:31:00.000Z",
+          "status": "complete",
+          "price": 64815.7,
+          "price_delta": -80.10000000000582,
+          "price_return": -0.001234286348269161,
+          "price_source": "binance_futures_1m"
+        }
+      ]
     }
   ],
   "send_price_enrichment": {
@@ -1776,7 +4146,7 @@
     "interval": "1m",
     "price_field": "open",
     "note": "Sent price is approximated by the open of the 1-minute candle containing sent_ts; exact message-send tick is not stored.",
-    "complete_horizons": 55,
+    "complete_horizons": 130,
     "pending_horizons": 0
   },
   "exported_for_site": true,

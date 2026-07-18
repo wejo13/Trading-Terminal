@@ -2,3 +2,14 @@ ema-watch/
 discord bot/node_modules/
 discord bot/data/
 discord bot/logs/
+
+# Secrets — never commit private keys / API keys. Keep these local only.
+.env
+.env.*
+*.env
+secrets.json
+lighter-key.txt
+
+# headless gridbot runtime artifacts
+lighter-node/state.json
+lighter-node/bot.log

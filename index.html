@@ -364,6 +364,14 @@
   .gl-status-filled{color:var(--amber);}
   .gl-status-idle{color:var(--text-faint);}
   .gl-status-sl{color:var(--red);}
+  /* ---- ASYM grid box preview ---- */
+  .ag-box-readout{margin-top:12px;padding:11px 12px;background:rgba(255,255,255,0.03);border:1px solid var(--line-old);border-radius:8px;}
+  .ag-box-hint{font-size:11px;color:var(--text-faint);}
+  .ag-box-warn{font-size:11px;color:var(--red);font-weight:600;}
+  .ag-box-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;}
+  .ag-box-grid > div{display:flex;flex-direction:column;gap:2px;}
+  .ag-box-k{font-size:9.5px;color:var(--text-faint);letter-spacing:0.2px;text-transform:uppercase;}
+  .ag-box-v{font-size:12px;font-weight:600;color:var(--text);}
   /* ---- grid bot docs accordion ---- */
   .grid-docs{
     margin-top:18px;
@@ -1268,6 +1276,9 @@
         <div class="nav-sub-item" data-tab="grid" onclick="switchTab('grid')">
           <span class="nav-sub-dot"></span>Grid Bot · Lighter
         </div>
+        <div class="nav-sub-item" data-tab="grid-asym" onclick="switchTab('grid-asym')">
+          <span class="nav-sub-dot"></span>Grid Bot · ASYM
+        </div>
         <div class="nav-sub-item" data-tab="grid-bybit" onclick="switchTab('grid-bybit')">
           <span class="nav-sub-dot"></span>Grid Bot · Bybit
         </div>
@@ -1848,6 +1859,175 @@
       <div class="grid-toast" id="gridToast"></div>
 
     </div><!-- /tab-grid -->
+
+    <!-- ===================== GRID BOT ASYM TAB ===================== -->
+    <!-- New ASYM gridbot per "Gridbot Redesign - WEJO Seed 2026-07-18".
+         Two-sided MM grid inside an owner-drawn box; 0% wick = disaster brake
+         (flatten + OFF, manual re-arm), 61.8% cap = pause + hold. Logic: js/grid-asym.js -->
+    <div class="tab-view" id="tab-grid-asym" data-title="Grid Bot · ASYM">
+
+      <div class="grid-bot-layout">
+
+        <!-- LEFT: Config + Status -->
+        <div class="grid-left-col">
+
+          <div class="grid-card" id="ag-config-card">
+            <div class="grid-card-header">
+              <span class="grid-card-title"><i class="ti ti-settings-2"></i> ASYM Configuration</span>
+              <span class="grid-status-badge" id="ag-status-badge">IDLE</span>
+            </div>
+
+            <div class="grid-field-row">
+              <label class="grid-label">Market</label>
+              <div class="grid-market-pill"><i class="ti ti-currency-bitcoin"></i> BTC-USDC · ASYM Grid</div>
+            </div>
+
+            <div class="grid-inputs">
+              <div class="grid-field">
+                <label class="grid-label">0% wick — disaster brake <span class="grid-label-hint">$</span></label>
+                <input type="number" id="ag-wick" class="grid-input" autocomplete="off" placeholder="e.g. 57800" step="10">
+              </div>
+              <div class="grid-field">
+                <label class="grid-label">61.8% cap — top / hold <span class="grid-label-hint">$</span></label>
+                <input type="number" id="ag-cap" class="grid-input" autocomplete="off" placeholder="e.g. 69975" step="10">
+              </div>
+              <div class="grid-field">
+                <label class="grid-label">Bankroll <span class="grid-label-hint">$</span></label>
+                <input type="number" id="ag-bankroll" class="grid-input" autocomplete="off" placeholder="500" value="500" step="10">
+              </div>
+              <div class="grid-field">
+                <label class="grid-label">Side cap <span class="grid-label-hint">× bankroll</span></label>
+                <input type="number" id="ag-sidecap" class="grid-input" autocomplete="off" placeholder="3" value="3" step="0.5" min="1">
+              </div>
+              <div class="grid-field">
+                <label class="grid-label">Step <span class="grid-label-hint">% per level</span></label>
+                <input type="number" id="ag-step" class="grid-input" autocomplete="off" placeholder="1.0" value="1.0" step="0.1" min="0.1">
+              </div>
+              <div class="grid-field" style="grid-column:1/-1;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                  <label class="grid-label">Leverage</label>
+                  <span style="font-size:12px;font-weight:700;color:var(--teal);" id="ag-leverage-display">10×</span>
+                </div>
+                <input type="range" id="ag-leverage" class="grid-leverage-slider" min="1" max="50" step="1" value="10">
+                <div class="grid-leverage-ticks"><span>1×</span><span>10×</span><span>20×</span><span>30×</span><span>40×</span><span>50×</span></div>
+                <div class="grid-leverage-info">IMR = <strong id="ag-imr-display">10.0%</strong> · BTC max 50×</div>
+              </div>
+            </div>
+
+            <!-- Live box preview (level count, unit, exposure, profit/RT) -->
+            <div class="ag-box-readout" id="ag-box-readout">
+              <span class="ag-box-hint">Enter the box (0% wick, 61.8% cap) and sizing to preview the ladder.</span>
+            </div>
+
+            <div class="grid-capital-check" id="ag-capital-check" style="display:none;"></div>
+
+            <div class="grid-controls">
+              <button class="grid-btn grid-btn-start" id="ag-arm-btn" onclick="agArm()">
+                <i class="ti ti-bolt"></i> Arm Grid
+              </button>
+              <button class="grid-btn grid-btn-pause" id="ag-pause-btn" onclick="agTogglePause()" style="display:none;">
+                <i class="ti ti-player-pause"></i> Pause
+              </button>
+              <button class="grid-btn grid-btn-stop" id="ag-disarm-btn" onclick="agDisarm()" style="display:none;">
+                <i class="ti ti-player-stop"></i> Disarm &amp; Close
+              </button>
+            </div>
+
+          </div><!-- /ag-config-card -->
+
+          <div class="grid-card" id="ag-stats-card">
+            <div class="grid-card-header">
+              <span class="grid-card-title"><i class="ti ti-chart-bar"></i> Live Stats</span>
+              <span class="grid-live-dot" id="ag-live-dot"></span>
+            </div>
+            <div class="grid-stats-grid">
+              <div class="grid-stat"><div class="grid-stat-label">Current Price</div><div class="grid-stat-val" id="agstat-price">—</div></div>
+              <div class="grid-stat"><div class="grid-stat-label">Realized P&amp;L</div><div class="grid-stat-val" id="agstat-pnl">—</div></div>
+              <div class="grid-stat"><div class="grid-stat-label">Fills (session)</div><div class="grid-stat-val" id="agstat-fills">0</div></div>
+              <div class="grid-stat"><div class="grid-stat-label">Active Orders</div><div class="grid-stat-val" id="agstat-orders">0</div></div>
+              <div class="grid-stat"><div class="grid-stat-label">Long inventory</div><div class="grid-stat-val" id="agstat-long">$0</div></div>
+              <div class="grid-stat"><div class="grid-stat-label">Short inventory</div><div class="grid-stat-val" id="agstat-short">$0</div></div>
+              <div class="grid-stat"><div class="grid-stat-label">→ 0% wick</div><div class="grid-stat-val" id="agstat-towick">—</div></div>
+              <div class="grid-stat"><div class="grid-stat-label">→ 61.8% cap</div><div class="grid-stat-val" id="agstat-tocap">—</div></div>
+              <div class="grid-stat"><div class="grid-stat-label">Uptime</div><div class="grid-stat-val" id="agstat-uptime">—</div></div>
+              <div class="grid-stat"><div class="grid-stat-label">Bot State</div><div class="grid-stat-val" id="agstat-state">—</div></div>
+            </div>
+          </div>
+
+        </div><!-- /grid-left-col -->
+
+        <!-- RIGHT: Visualization -->
+        <div class="grid-right-col">
+          <div class="grid-card grid-viz-card">
+            <div class="grid-card-header">
+              <span class="grid-card-title"><i class="ti ti-ladder"></i> Box Ladder</span>
+              <span class="grid-viz-legend"><span class="legend-buy">▶ BUY</span> <span class="legend-sell">◀ SELL</span> <span class="legend-price">● PRICE</span></span>
+            </div>
+            <div class="grid-viz-wrap" id="ag-viz-wrap">
+              <div class="grid-viz-empty" id="ag-viz-empty">Arm the grid to see the box ladder.</div>
+              <canvas id="ag-viz-canvas" style="display:none;width:100%;"></canvas>
+            </div>
+          </div>
+
+          <div class="grid-card" style="margin-top:12px;">
+            <div class="grid-card-header">
+              <span class="grid-card-title"><i class="ti ti-list-details"></i> Level Status</span>
+            </div>
+            <div class="grid-level-table-wrap">
+              <table class="grid-level-table" id="ag-level-table">
+                <thead><tr><th>#</th><th>Price</th><th>Side</th><th>Unit</th><th>Status</th></tr></thead>
+                <tbody id="ag-level-tbody"><tr><td colspan="5" class="grid-table-empty">No grid armed</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div><!-- /grid-right-col -->
+
+      </div><!-- /grid-bot-layout -->
+
+      <!-- ASYM docs accordion -->
+      <div class="grid-docs" id="ag-docs-accordion">
+        <div class="grid-docs-trigger" onclick="document.getElementById('ag-docs-accordion').classList.toggle('open')">
+          <div class="grid-docs-trigger-left">
+            <i class="ti ti-info-circle"></i>
+            <span class="grid-docs-title">How does the ASYM grid work?</span>
+          </div>
+          <i class="ti ti-chevron-down grid-docs-chevron"></i>
+        </div>
+        <div class="grid-docs-body">
+
+          <h3>The idea (WEJO Seed, 2026-07-18)</h3>
+          <p>After a capitulation, price very likely chops sideways for weeks–months (the accumulation/corrective regime). This bot harvests that chop with a two-sided market-maker grid inside a box <strong>you draw</strong>: 0% = the impulse-wick low, 61.8% = the fib cap. It is a <em>temporary</em> tool you arm after your bullish 3D close, not a set-and-forget bot.</p>
+
+          <h3>Why it's asymmetric</h3>
+          <table class="grid-docs-table">
+            <tr><th>Boundary</th><th>What happens</th></tr>
+            <tr><td><strong style="color:var(--red)">0% wick (bottom)</strong></td><td>DISASTER BRAKE. Touch → flatten everything + turn OFF. A reduce-only stop also rests on Lighter so it fires even if this tab is closed. Re-arm is <strong>manual only</strong> — press Arm again after your next bullish 3D close, with price back inside the box.</td></tr>
+            <tr><td><strong style="color:var(--amber)">61.8% cap (top)</strong></td><td>PAUSE + HOLD. Touch → stop adding exposure and ride the inventory; harvesting resumes automatically when price re-enters below the cap. The top is <strong>never</strong> a stop.</td></tr>
+          </table>
+          <p>In the backtest this asymmetry was the whole story: it was the first config positive on both of the owner's boxes (2026 and 2022).</p>
+
+          <h3>Sizing</h3>
+          <div class="grid-docs-formula">levels = geometric ladder wick→cap (step %) · unit$ = (side cap × bankroll) ÷ N steps</div>
+          <p>Full long deployment lands right at the wick with total notional ≈ side cap. Default side cap is 3× the $500 bankroll ($1,500 per side). Each side is capped independently.</p>
+
+          <h3>Controls</h3>
+          <table class="grid-docs-table">
+            <tr><th>Button</th><th>What it does</th></tr>
+            <tr><td>Arm Grid</td><td>Validates the box (price must be inside it), places the resting disaster stop, then seeds the ladder. Owner-triggered only — nothing auto-arms.</td></tr>
+            <tr><td>Pause / Resume</td><td>Manually stop / restart placing new counter-orders. Existing Lighter orders stay put.</td></tr>
+            <tr><td>Disarm &amp; Close</td><td>Cancels all orders and market-closes inventory on Lighter, back to Idle.</td></tr>
+          </table>
+
+          <div class="grid-docs-note">
+            ⚠️ <strong>Not yet validated live.</strong> Funding on Lighter is not modeled and must be measured before real size. A browser bot only runs while this tab is open — the resting Lighter stop is the backstop, but a 24/7 headless version is the intended next step before meaningful capital. Backtest numbers assume zero fees and ignore slippage/funding, so they are optimistic. Paper/tiny size first.
+          </div>
+
+        </div>
+      </div>
+
+      <div class="grid-toast" id="agToast"></div>
+
+    </div><!-- /tab-grid-asym -->
 
     <!-- ===================== GRID BOT BYBIT TAB ===================== -->
     <div class="tab-view" id="tab-grid-bybit" data-title="Grid Bot · Bybit">
@@ -3727,6 +3907,7 @@
 <script type="module" src="js/lighter-signer.js"></script>
 <script src="js/lighter-executor.js"></script>
 <script src="js/grid-lighter.js"></script>
+<script src="js/grid-asym.js"></script>
 <script src="js/grid-bybit.js"></script>
 <script src="js/grid-bybit-pnl.js"></script>
 

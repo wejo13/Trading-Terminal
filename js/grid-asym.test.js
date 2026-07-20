@@ -1,4 +1,4 @@
-// Tests for the ASYM gridbot (js/grid-asym.js) — UI wiring + the pure sizing
+// Tests for the MM gridbot (js/grid-asym.js) — UI wiring + the pure sizing
 // math ported from the frozen reference engine regime-research-fable/
 // gridbot-mm-true.js. Run: node --test js/grid-asym.test.js
 const test = require('node:test');
@@ -8,15 +8,15 @@ const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-const { agBuildLevels, agUnitUsd, agMaxInventoryBase, agProfitPerStep } = require('./grid-asym.js');
+const { agBuildLevels, agUnitUsd, agMaxInventoryBase, agProfitPerStep, agBoundaryStateActive } = require('./grid-asym.js');
 
-test('ASYM grid is a bookmarkable Strategies tab, wired to its script', () => {
+test('MM grid is a bookmarkable Strategies tab, wired to its script', () => {
   assert.match(html, /data-tab="grid-asym"/);
-  assert.match(html, /id="tab-grid-asym" data-title="Grid Bot · ASYM"/);
+  assert.match(html, /id="tab-grid-asym" data-title="Grid Bot · MM"/);
   assert.match(html, /src="js\/grid-asym\.js"/);
 });
 
-test('the tab exposes the ASYM box inputs and owner-only arm controls', () => {
+test('the tab exposes the MM box inputs and owner-only arm controls', () => {
   ['ag-wick', 'ag-cap', 'ag-bankroll', 'ag-sidecap', 'ag-step', 'ag-leverage']
     .forEach(id => assert.match(html, new RegExp(`id="${id}"`), `missing input ${id}`));
   assert.match(html, /onclick="agArm\(\)"/);
@@ -31,6 +31,13 @@ test('the browser bot does NOT auto-arm on load', () => {
   // bootstrap may start the read-only price feed + restore, but must never arm
   assert.doesNotMatch(src, /\n\s*agArm\(\)\s*;/); // no bare agArm() call in bootstrap
   assert.match(src, /agStartPriceWs\(\);/);        // price feed is fine
+});
+
+test('boundary processing is inert after an arm failure', () => {
+  assert.equal(agBoundaryStateActive('armed'), true);
+  assert.equal(agBoundaryStateActive('paused'), true);
+  ['arm_failed', 'idle', 'stopped', undefined, null]
+    .forEach(state => assert.equal(agBoundaryStateActive(state), false, `unexpected active state: ${state}`));
 });
 
 test('geometric ladder is faithful to the reference (inclusive wick, last level <= cap)', () => {

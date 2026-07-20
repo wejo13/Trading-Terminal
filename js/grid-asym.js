@@ -1,4 +1,4 @@
-// ===================== ASYM GRID BOT (Lighter) =====================
+// ===================== MM GRID BOT (Lighter) =====================
 // A NEW gridbot, separate from the older symmetric neutral grid in
 // grid-lighter.js. Implements the frozen "Gridbot Redesign — WEJO Seed
 // 2026-07-18" ASYM spec (vault: 04 Resources/Strategy Research). Reference
@@ -64,8 +64,15 @@ function agProfitPerStep(unitUsd, stepPct){
   return unitUsd * (stepPct / 100);
 }
 
+// Only these states are allowed to react to price boundaries. In particular,
+// arm_failed must remain inert while the always-on read-only price feed keeps
+// updating in the background.
+function agBoundaryStateActive(state){
+  return state === 'armed' || state === 'paused';
+}
+
 if(typeof module !== 'undefined' && module.exports){
-  module.exports = { agBuildLevels, agUnitUsd, agMaxInventoryBase, agProfitPerStep };
+  module.exports = { agBuildLevels, agUnitUsd, agMaxInventoryBase, agProfitPerStep, agBoundaryStateActive };
 }
 
 /* ------------------------------------------------------------------ *
@@ -284,12 +291,12 @@ async function agFetchPriceFallback(){
 
 // ---- Boundary state machine (the heart of ASYM) ----
 function agCheckBoundaries(){
-  if(!ag || ag.state === 'idle' || ag.state === 'stopped') return;
+  if(!ag || !agBoundaryStateActive(ag.state)) return;
   if(agPrice === null) return;
 
   // BOTTOM 0% — disaster brake: flatten everything + OFF, manual re-arm only.
   if(agPrice <= ag.wick){
-    console.warn('[ASYM] 0% disaster brake hit at', agPrice, '(wick', ag.wick, ')');
+    console.warn('[MM] 0% disaster brake hit at', agPrice, '(wick', ag.wick, ')');
     agToast('⛔ 0% disaster brake — flattening everything and turning OFF. Re-arm manually after your next bullish 3D close.', 7000);
     agDisasterStop();
     return;
@@ -396,7 +403,7 @@ async function agPlace(price, isAsk, notionalUsd, clientOrderIndex){
     const signer = await window.__getLighterSigner();
     const SC = signer.constructor;
     const market = await agResolveBtcMarket();
-    if(!market){ console.error('[ASYM] BTC market not found'); return null; }
+    if(!market){ console.error('[MM] BTC market not found'); return null; }
     const base = toLighterInt(notionalUsd / price, market.sizeDecimals);
     const px = toLighterInt(price, market.priceDecimals);
     const [tx, hash, error] = await signer.createOrderOptimized({
@@ -411,10 +418,10 @@ async function agPlace(price, isAsk, notionalUsd, clientOrderIndex){
       triggerPrice: 0,
       orderExpiry: Date.now() + 28 * 24 * 60 * 60 * 1000
     });
-    if(error){ console.error('[ASYM] order error @', price, error); return null; }
+    if(error){ console.error('[MM] order error @', price, error); return null; }
     ag.openState[clientOrderIndex] = 'open';
     return { clientOrderIndex };
-  }catch(e){ console.error('[ASYM] place exception', e.message || e); return null; }
+  }catch(e){ console.error('[MM] place exception', e.message || e); return null; }
 }
 
 // Resting reduce-only STOP_LOSS at the wick — the disaster brake that survives a
@@ -424,7 +431,7 @@ async function agPlaceDisasterStop(){
     const signer = await window.__getLighterSigner();
     const SC = signer.constructor;
     const market = await agResolveBtcMarket();
-    if(!market){ console.error('[ASYM] no market for disaster stop'); return false; }
+    if(!market){ console.error('[MM] no market for disaster stop'); return false; }
     const maxBase = agMaxInventoryBase(ag.levels, ag.unit);
     const size = toLighterInt(maxBase, market.sizeDecimals);
     const px = toLighterInt(ag.wick, market.priceDecimals);
@@ -437,24 +444,27 @@ async function agPlaceDisasterStop(){
       isAsk: 1,                 // sell to close longs at the wick
       orderType: SC.ORDER_TYPE_STOP_LOSS,
       timeInForce: SC.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL,
-      reduceOnly: 0,
+      // reduceOnly MUST be 1: without it an oversized stop can trade through
+      // zero and OPEN a short (Codex review 2026-07-18 — comment above said
+      // reduce-only but the flag was 0).
+      reduceOnly: 1,
       triggerPrice: px,
       orderExpiry: Date.now() + 28 * 24 * 60 * 60 * 1000,
       integratorAccountIndex: 0, integratorTakerFee: 0, integratorMakerFee: 0,
       skipNonce: 0, nonce: nonce.nonce,
       apiKeyIndex: signer.config.apiKeyIndex, accountIndex: signer.config.accountIndex
     });
-    if(resp.error){ console.warn('[ASYM] disaster stop sign error', resp.error); return false; }
+    if(resp.error){ console.warn('[MM] disaster stop sign error', resp.error); return false; }
     const txh = await signer.transactionApi.sendTxWithIndices(
       resp.txType || SC.TX_TYPE_CREATE_ORDER, resp.txInfo,
       signer.config.accountIndex, signer.config.apiKeyIndex, false
     );
-    if(txh.code && txh.code !== 200){ console.warn('[ASYM] disaster stop send error', txh.message); return false; }
+    if(txh.code && txh.code !== 200){ console.warn('[MM] disaster stop send error', txh.message); return false; }
     ag.disasterMarketIndex = market.marketIndex;
     agSave();
-    console.log('[ASYM] disaster stop resting at wick', ag.wick);
+    console.log('[MM] disaster stop resting at wick', ag.wick);
     return true;
-  }catch(e){ console.warn('[ASYM] disaster stop exception', e.message || e); return false; }
+  }catch(e){ console.warn('[MM] disaster stop exception', e.message || e); return false; }
 }
 
 async function agCancelAll(){
@@ -469,10 +479,10 @@ async function agCancelAll(){
     }
     if(ag.disasterMarketIndex !== undefined){
       const [,, e] = await signer.cancelOrder({ marketIndex: market.marketIndex, orderIndex: AG_DISASTER_CI });
-      if(e) console.warn('[ASYM] cancel disaster stop error', e);
+      if(e) console.warn('[MM] cancel disaster stop error', e);
     }
     agSave();
-  }catch(e){ console.warn('[ASYM] cancelAll error', e.message || e); }
+  }catch(e){ console.warn('[MM] cancelAll error', e.message || e); }
 }
 
 // Market-close the net inventory (reduce-only), sized from tracked base.
@@ -493,8 +503,8 @@ async function agMarketCloseNet(){
       timeInForce: SC.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL,
       reduceOnly: true, triggerPrice: 0, orderExpiry: 0
     });
-    console.log('[ASYM] net market close sent, base', netBase);
-  }catch(e){ console.warn('[ASYM] market close failed (maybe flat)', e.message || e); }
+    console.log('[MM] net market close sent, base', netBase);
+  }catch(e){ console.warn('[MM] market close failed (maybe flat)', e.message || e); }
 }
 
 // ---- Arm (manual) ----
@@ -529,7 +539,26 @@ async function agArm(){
   agStartVizLoop();
 
   // Place the resting disaster stop FIRST (safety before exposure).
-  await agPlaceDisasterStop();
+  // FAIL-CLOSED (Codex review 2026-07-18): if the stop cannot be placed we
+  // must NOT seed the grid — abort the arm instead of continuing unprotected.
+  const stopOk = await agPlaceDisasterStop();
+  if(!stopOk){
+    // Armed-runtime teardown (Codex review round 2): without this the bot
+    // stayed administratively 'armed' — localStorage said armed, order-ws and
+    // uptime/viz loops kept running, the UI suggested protection that did not
+    // exist, and the arm button refused a retry ("Already armed"). The global
+    // read-only price feed intentionally remains active; arm_failed is inert
+    // in agCheckBoundaries().
+    console.error('[MM] disaster stop FAILED — arm aborted, no grid orders placed.');
+    ag.state = 'arm_failed'; agSave();
+    agStopOrderWs();
+    clearInterval(agUptimeTimer); agUptimeTimer = null;
+    if(agVizRaf){ cancelAnimationFrame(agVizRaf); agVizRaf = null; }
+    agSetBadge('idle'); agSetLiveDot('off'); agShowControls(false, false);
+    agStat('agstat-state', '❌ Arm aborted: disaster stop failed — fix and retry');
+    agToast('Arm aborted: disaster stop could not be placed. Nothing was opened.');
+    return;
+  }
 
   // Seed the grid: buys below price, sells above; skip the level nearest price.
   const N = levels.length - 1;
@@ -549,7 +578,7 @@ async function agArm(){
   agStat('agstat-state', 'Running');
   agRenderLevels();
   agToast(`✓ Armed — ${placed} orders across ${levels.length} levels, disaster stop resting at $${c.wick.toLocaleString()}.`);
-  console.log('[ASYM] armed:', placed, '/', levels.length);
+  console.log('[MM] armed:', placed, '/', levels.length);
 }
 
 function agNearestLevelIdx(price){

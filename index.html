@@ -364,7 +364,7 @@
   .gl-status-filled{color:var(--amber);}
   .gl-status-idle{color:var(--text-faint);}
   .gl-status-sl{color:var(--red);}
-  /* ---- ASYM grid box preview ---- */
+  /* ---- MM grid box preview ---- */
   .ag-box-readout{margin-top:12px;padding:11px 12px;background:rgba(255,255,255,0.03);border:1px solid var(--line-old);border-radius:8px;}
   .ag-box-hint{font-size:11px;color:var(--text-faint);}
   .ag-box-warn{font-size:11px;color:var(--red);font-weight:600;}
@@ -1277,7 +1277,7 @@
           <span class="nav-sub-dot"></span>Grid Bot · Lighter
         </div>
         <div class="nav-sub-item" data-tab="grid-asym" onclick="switchTab('grid-asym')">
-          <span class="nav-sub-dot"></span>Grid Bot · ASYM
+          <span class="nav-sub-dot"></span>Grid Bot · MM
         </div>
         <div class="nav-sub-item" data-tab="grid-bybit" onclick="switchTab('grid-bybit')">
           <span class="nav-sub-dot"></span>Grid Bot · Bybit
@@ -1860,11 +1860,11 @@
 
     </div><!-- /tab-grid -->
 
-    <!-- ===================== GRID BOT ASYM TAB ===================== -->
-    <!-- New ASYM gridbot per "Gridbot Redesign - WEJO Seed 2026-07-18".
+    <!-- ===================== GRID BOT MM TAB ===================== -->
+    <!-- New MM gridbot per "Gridbot Redesign - WEJO Seed 2026-07-18".
          Two-sided MM grid inside an owner-drawn box; 0% wick = disaster brake
          (flatten + OFF, manual re-arm), 61.8% cap = pause + hold. Logic: js/grid-asym.js -->
-    <div class="tab-view" id="tab-grid-asym" data-title="Grid Bot · ASYM">
+    <div class="tab-view" id="tab-grid-asym" data-title="Grid Bot · MM">
 
       <div class="grid-bot-layout">
 
@@ -1873,13 +1873,13 @@
 
           <div class="grid-card" id="ag-config-card">
             <div class="grid-card-header">
-              <span class="grid-card-title"><i class="ti ti-settings-2"></i> ASYM Configuration</span>
+              <span class="grid-card-title"><i class="ti ti-settings-2"></i> MM Configuration</span>
               <span class="grid-status-badge" id="ag-status-badge">IDLE</span>
             </div>
 
             <div class="grid-field-row">
               <label class="grid-label">Market</label>
-              <div class="grid-market-pill"><i class="ti ti-currency-bitcoin"></i> BTC-USDC · ASYM Grid</div>
+              <div class="grid-market-pill"><i class="ti ti-currency-bitcoin"></i> BTC-USDC · MM Grid</div>
             </div>
 
             <div class="grid-inputs">
@@ -1984,12 +1984,12 @@
 
       </div><!-- /grid-bot-layout -->
 
-      <!-- ASYM docs accordion -->
+      <!-- MM docs accordion -->
       <div class="grid-docs" id="ag-docs-accordion">
         <div class="grid-docs-trigger" onclick="document.getElementById('ag-docs-accordion').classList.toggle('open')">
           <div class="grid-docs-trigger-left">
             <i class="ti ti-info-circle"></i>
-            <span class="grid-docs-title">How does the ASYM grid work?</span>
+            <span class="grid-docs-title">How does the MM grid work?</span>
           </div>
           <i class="ti ti-chevron-down grid-docs-chevron"></i>
         </div>

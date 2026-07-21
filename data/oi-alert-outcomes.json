@@ -1,8 +1,8 @@
 {
   "tag": "direct-feed-signal-outcomes",
   "outcome_version": "DIRECT_SIGNAL_OUTCOMES_V2",
-  "generated_ts": 1784611670937,
-  "generated_iso": "2026-07-21T05:27:50.937Z",
+  "generated_ts": 1784612570922,
+  "generated_iso": "2026-07-21T05:42:50.922Z",
   "state_path": "oi-radar/direct-feed/observations/telegram-sent.json",
   "signal_count": 33,
   "complete_horizons": 158,
@@ -57,8 +57,8 @@
         "total_oi_usd": 8218606906.056076,
         "input_fingerprint": "c61f3eb9cabf0c4f70ad9d4ea0a50ec5549f5e7fe1fd886eca2c82eece942190"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -215,8 +215,8 @@
         "total_oi_usd": 8132768680.6439,
         "input_fingerprint": "23deb38cd7416200a9ce5c8dceb7dcac6650294fafda2be5e4278c86ede337e9"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -373,8 +373,8 @@
         "total_oi_usd": 8173937381.981745,
         "input_fingerprint": "5601e379cf5eff1adb7022877db5525f79855087ef57b03625c64bc0d5ba83f7"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -531,8 +531,8 @@
         "total_oi_usd": 8313994632.722041,
         "input_fingerprint": "d5e32db31c0ad86ad8ba4b0a7ad7a7fb029a9609cf4f14d8eed5dfe8d18a6dcd"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -689,8 +689,8 @@
         "total_oi_usd": 8469725465.586305,
         "input_fingerprint": "63bc6d9b683c5e359aa34267cd920da991755500de43d6dabc99f94a03bd4740"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -847,8 +847,8 @@
         "total_oi_usd": 8099807001.238525,
         "input_fingerprint": "9371ccf3265ef4cf8f645452cb837b1fbae73ed65dbbfe5a63334f12432921fa"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -945,36 +945,6 @@
           "price_delta": -179.60000000000582,
           "price_return": -0.002834537801465655,
           "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1783635360000,
-          "target_iso": "2026-07-09T22:16:00.000Z",
-          "status": "complete",
-          "price": 63228.2,
-          "price_delta": -133.10000000000582,
-          "price_return": -0.0021006513439592593,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1783664160000,
-          "target_iso": "2026-07-10T06:16:00.000Z",
-          "status": "complete",
-          "price": 64004.8,
-          "price_delta": 643.5,
-          "price_return": 0.010156041621620768,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1783707360000,
-          "target_iso": "2026-07-10T18:16:00.000Z",
-          "status": "complete",
-          "price": 63850,
-          "price_delta": 488.6999999999971,
-          "price_return": 0.007712909930825237,
-          "price_source": "binance_futures_1m"
         }
       ]
     },
@@ -1005,8 +975,8 @@
         "total_oi_usd": 8089162179.728844,
         "input_fingerprint": "98796e4c674bf3fe44ccb52e41837110ad1e6078d540d6eda0db622db547d6f5"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -1073,67 +1043,6 @@
           "total_oi_delta_usd": 369686904.9746418,
           "total_oi_return": 0.04570150737007897
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1783621860000,
-        "minute_iso": "2026-07-09T18:31:00.000Z",
-        "field": "open",
-        "price": 63330.1
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1783625460000,
-          "target_iso": "2026-07-09T19:31:00.000Z",
-          "status": "complete",
-          "price": 63201.1,
-          "price_delta": -129,
-          "price_return": -0.00203694609672178,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1783629060000,
-          "target_iso": "2026-07-09T20:31:00.000Z",
-          "status": "complete",
-          "price": 63255.9,
-          "price_delta": -74.19999999999709,
-          "price_return": -0.0011716387626104663,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1783636260000,
-          "target_iso": "2026-07-09T22:31:00.000Z",
-          "status": "complete",
-          "price": 63321,
-          "price_delta": -9.099999999998545,
-          "price_return": -0.00014369154635787004,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1783665060000,
-          "target_iso": "2026-07-10T06:31:00.000Z",
-          "status": "complete",
-          "price": 63900.4,
-          "price_delta": 570.3000000000029,
-          "price_return": 0.00900519658108866,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1783708260000,
-          "target_iso": "2026-07-10T18:31:00.000Z",
-          "status": "complete",
-          "price": 63898.1,
-          "price_delta": 568,
-          "price_return": 0.008968878937503652,
-          "price_source": "binance_futures_1m"
-        }
       ]
     },
     {
@@ -1163,8 +1072,8 @@
         "total_oi_usd": 8083001669.1192,
         "input_fingerprint": "6dbc0784a3089391a32820f42078744820fc34a5dbac0c10cd0cba8b45e8066c"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -1231,67 +1140,6 @@
           "total_oi_delta_usd": 376694879.14522934,
           "total_oi_return": 0.0466033405120251
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1783622760000,
-        "minute_iso": "2026-07-09T18:46:00.000Z",
-        "field": "open",
-        "price": 63323.1
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1783626360000,
-          "target_iso": "2026-07-09T19:46:00.000Z",
-          "status": "complete",
-          "price": 63305.9,
-          "price_delta": -17.19999999999709,
-          "price_return": -0.0002716228359002811,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1783629960000,
-          "target_iso": "2026-07-09T20:46:00.000Z",
-          "status": "complete",
-          "price": 63283.6,
-          "price_delta": -39.5,
-          "price_return": -0.0006237850010501697,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1783637160000,
-          "target_iso": "2026-07-09T22:46:00.000Z",
-          "status": "complete",
-          "price": 63354.7,
-          "price_delta": 31.599999999998545,
-          "price_return": 0.0004990280008401128,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1783665960000,
-          "target_iso": "2026-07-10T06:46:00.000Z",
-          "status": "complete",
-          "price": 63889.8,
-          "price_delta": 566.7000000000044,
-          "price_return": 0.008949340761902123,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1783709160000,
-          "target_iso": "2026-07-10T18:46:00.000Z",
-          "status": "complete",
-          "price": 63840.8,
-          "price_delta": 517.7000000000044,
-          "price_return": 0.008175531520093052,
-          "price_source": "binance_futures_1m"
-        }
       ]
     },
     {
@@ -1321,8 +1169,8 @@
         "total_oi_usd": 8178576032.8539,
         "input_fingerprint": "f7a05b2800aed6f15a1b0ff77ab3c7b0d3b863b856165d8d6b5b067fd66bdd9a"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -1389,67 +1237,6 @@
           "total_oi_delta_usd": 261661140.83689976,
           "total_oi_return": 0.031993483925048694
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1783650660000,
-        "minute_iso": "2026-07-10T02:31:00.000Z",
-        "field": "open",
-        "price": 63779.3
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1783654260000,
-          "target_iso": "2026-07-10T03:31:00.000Z",
-          "status": "complete",
-          "price": 63801.9,
-          "price_delta": 22.599999999998545,
-          "price_return": 0.0003543469432872193,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1783657860000,
-          "target_iso": "2026-07-10T04:31:00.000Z",
-          "status": "complete",
-          "price": 63869.2,
-          "price_delta": 89.89999999999418,
-          "price_return": 0.001409548239005354,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1783665060000,
-          "target_iso": "2026-07-10T06:31:00.000Z",
-          "status": "complete",
-          "price": 63900.4,
-          "price_delta": 121.09999999999854,
-          "price_return": 0.001898735169561261,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1783693860000,
-          "target_iso": "2026-07-10T14:31:00.000Z",
-          "status": "complete",
-          "price": 64124.2,
-          "price_delta": 344.8999999999942,
-          "price_return": 0.005407710652202112,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1783737060000,
-          "target_iso": "2026-07-11T02:31:00.000Z",
-          "status": "complete",
-          "price": 64018,
-          "price_delta": 238.6999999999971,
-          "price_return": 0.0037425936001178606,
-          "price_source": "binance_futures_1m"
-        }
       ]
     },
     {
@@ -1479,8 +1266,8 @@
         "total_oi_usd": 8426361432.422329,
         "input_fingerprint": "d868c873ac06851e8afa6058f6a31f2ed2120f03d75e878d3e518e4e447b1cae"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -1547,67 +1334,6 @@
           "total_oi_delta_usd": 58183231.07698631,
           "total_oi_return": 0.006904905699049792
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1783673160000,
-        "minute_iso": "2026-07-10T08:46:00.000Z",
-        "field": "open",
-        "price": 64157.4
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1783676760000,
-          "target_iso": "2026-07-10T09:46:00.000Z",
-          "status": "complete",
-          "price": 64438.1,
-          "price_delta": 280.6999999999971,
-          "price_return": 0.00437517729833187,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1783680360000,
-          "target_iso": "2026-07-10T10:46:00.000Z",
-          "status": "complete",
-          "price": 64404.8,
-          "price_delta": 247.40000000000146,
-          "price_return": 0.0038561413024842256,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1783687560000,
-          "target_iso": "2026-07-10T12:46:00.000Z",
-          "status": "complete",
-          "price": 64321.2,
-          "price_delta": 163.79999999999563,
-          "price_return": 0.002553095979575164,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1783716360000,
-          "target_iso": "2026-07-10T20:46:00.000Z",
-          "status": "complete",
-          "price": 63840.8,
-          "price_delta": -316.59999999999854,
-          "price_return": -0.004934738627188735,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1783759560000,
-          "target_iso": "2026-07-11T08:46:00.000Z",
-          "status": "complete",
-          "price": 64252.7,
-          "price_delta": 95.29999999999563,
-          "price_return": 0.0014854093214499906,
-          "price_source": "binance_futures_1m"
-        }
       ]
     },
     {
@@ -1637,8 +1363,8 @@
         "total_oi_usd": 8472854969.854385,
         "input_fingerprint": "0a92e3cfecad5c869c6f856e2444ee10d0ba454db8ff440dadae0ab53f1cdbf9"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -1705,67 +1431,6 @@
           "total_oi_delta_usd": 9508148.332814217,
           "total_oi_return": 0.0011221894351600855
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1783675860000,
-        "minute_iso": "2026-07-10T09:31:00.000Z",
-        "field": "open",
-        "price": 64396
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1783679460000,
-          "target_iso": "2026-07-10T10:31:00.000Z",
-          "status": "complete",
-          "price": 64403.8,
-          "price_delta": 7.80000000000291,
-          "price_return": 0.00012112553574760716,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1783683060000,
-          "target_iso": "2026-07-10T11:31:00.000Z",
-          "status": "complete",
-          "price": 64367.2,
-          "price_delta": -28.80000000000291,
-          "price_return": -0.0004472327473756586,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1783690260000,
-          "target_iso": "2026-07-10T13:31:00.000Z",
-          "status": "complete",
-          "price": 64174,
-          "price_delta": -222,
-          "price_return": -0.0034474190943536865,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1783719060000,
-          "target_iso": "2026-07-10T21:31:00.000Z",
-          "status": "complete",
-          "price": 64004.8,
-          "price_delta": -391.1999999999971,
-          "price_return": -0.00607491148518537,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1783762260000,
-          "target_iso": "2026-07-11T09:31:00.000Z",
-          "status": "complete",
-          "price": 64249.6,
-          "price_delta": -146.40000000000146,
-          "price_return": -0.002273433132492724,
-          "price_source": "binance_futures_1m"
-        }
       ]
     },
     {
@@ -1795,8 +1460,8 @@
         "total_oi_usd": 8292503748.0595,
         "input_fingerprint": "8ede45b5ed7a943bf754c4064956d7c3003ae1b63b6598c71bd32e88ab99dd72"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -1863,67 +1528,6 @@
           "total_oi_delta_usd": 161680806.18358612,
           "total_oi_return": 0.019497224372243483
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1783941360000,
-        "minute_iso": "2026-07-13T11:16:00.000Z",
-        "field": "open",
-        "price": 63055
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1783944960000,
-          "target_iso": "2026-07-13T12:16:00.000Z",
-          "status": "complete",
-          "price": 62857.7,
-          "price_delta": -197.3000000000029,
-          "price_return": -0.003129014352549408,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1783948560000,
-          "target_iso": "2026-07-13T13:16:00.000Z",
-          "status": "complete",
-          "price": 62495.6,
-          "price_delta": -559.4000000000015,
-          "price_return": -0.008871620014273277,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1783955760000,
-          "target_iso": "2026-07-13T15:16:00.000Z",
-          "status": "complete",
-          "price": 62774.8,
-          "price_delta": -280.1999999999971,
-          "price_return": -0.00444373959241927,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1783984560000,
-          "target_iso": "2026-07-13T23:16:00.000Z",
-          "status": "complete",
-          "price": 62046.4,
-          "price_delta": -1008.5999999999985,
-          "price_return": -0.01599555943224167,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1784027760000,
-          "target_iso": "2026-07-14T11:16:00.000Z",
-          "status": "complete",
-          "price": 62795.9,
-          "price_delta": -259.09999999999854,
-          "price_return": -0.0041091110934897875,
-          "price_source": "binance_futures_1m"
-        }
       ]
     },
     {
@@ -1953,8 +1557,8 @@
         "total_oi_usd": 8469145133.359859,
         "input_fingerprint": "87181cb87d97c73339146c854981bb83f11cbb4e11174d6aa63712f270ead91e"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -2021,67 +1625,6 @@
           "total_oi_delta_usd": -140263081.23816204,
           "total_oi_return": -0.01656165752617315
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1783952160000,
-        "minute_iso": "2026-07-13T14:16:00.000Z",
-        "field": "open",
-        "price": 62380.2
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1783955760000,
-          "target_iso": "2026-07-13T15:16:00.000Z",
-          "status": "complete",
-          "price": 62774.8,
-          "price_delta": 394.6000000000058,
-          "price_return": 0.006325725149967551,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1783959360000,
-          "target_iso": "2026-07-13T16:16:00.000Z",
-          "status": "complete",
-          "price": 62472.1,
-          "price_delta": 91.90000000000146,
-          "price_return": 0.001473223875524629,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1783966560000,
-          "target_iso": "2026-07-13T18:16:00.000Z",
-          "status": "complete",
-          "price": 61913.6,
-          "price_delta": -466.59999999999854,
-          "price_return": -0.007479937544284863,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1783995360000,
-          "target_iso": "2026-07-14T02:16:00.000Z",
-          "status": "complete",
-          "price": 62458.9,
-          "price_delta": 78.70000000000437,
-          "price_return": 0.0012616182698998138,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1784038560000,
-          "target_iso": "2026-07-14T14:16:00.000Z",
-          "status": "complete",
-          "price": 63810,
-          "price_delta": 1429.800000000003,
-          "price_return": 0.0229207344638203,
-          "price_source": "binance_futures_1m"
-        }
       ]
     },
     {
@@ -2111,8 +1654,8 @@
         "total_oi_usd": 8499948890.5446,
         "input_fingerprint": "c53ded5b82da9746a71347278fc4d181d288773cfa654169ebea07dc9c3dbbe3"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -2179,67 +1722,6 @@
           "total_oi_delta_usd": -166228066.90689945,
           "total_oi_return": -0.019556360755511443
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1783953060000,
-        "minute_iso": "2026-07-13T14:31:00.000Z",
-        "field": "open",
-        "price": 62552.4
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1783956660000,
-          "target_iso": "2026-07-13T15:31:00.000Z",
-          "status": "complete",
-          "price": 62804.6,
-          "price_delta": 252.1999999999971,
-          "price_return": 0.004031819722344739,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1783960260000,
-          "target_iso": "2026-07-13T16:31:00.000Z",
-          "status": "complete",
-          "price": 62240.5,
-          "price_delta": -311.90000000000146,
-          "price_return": -0.004986219553526346,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1783967460000,
-          "target_iso": "2026-07-13T18:31:00.000Z",
-          "status": "complete",
-          "price": 61890.3,
-          "price_delta": -662.0999999999985,
-          "price_return": -0.01058472576591783,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1783996260000,
-          "target_iso": "2026-07-14T02:31:00.000Z",
-          "status": "complete",
-          "price": 62390.2,
-          "price_delta": -162.20000000000437,
-          "price_return": -0.0025930260069958046,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1784039460000,
-          "target_iso": "2026-07-14T14:31:00.000Z",
-          "status": "complete",
-          "price": 63849.6,
-          "price_delta": 1297.199999999997,
-          "price_return": 0.020737813417230945,
-          "price_source": "binance_futures_1m"
-        }
       ]
     },
     {
@@ -2269,8 +1751,8 @@
         "total_oi_usd": 8526368635.251729,
         "input_fingerprint": "1c5ad5ba8864e59308bc1c732d30d26240ad5125538628410c8fa017cea6c74d"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -2337,67 +1819,6 @@
           "total_oi_delta_usd": -168448008.0283289,
           "total_oi_return": -0.019756125407467292
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1783953960000,
-        "minute_iso": "2026-07-13T14:46:00.000Z",
-        "field": "open",
-        "price": 62628.9
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1783957560000,
-          "target_iso": "2026-07-13T15:46:00.000Z",
-          "status": "complete",
-          "price": 62598.2,
-          "price_delta": -30.700000000004366,
-          "price_return": -0.0004901890341360676,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1783961160000,
-          "target_iso": "2026-07-13T16:46:00.000Z",
-          "status": "complete",
-          "price": 62370,
-          "price_delta": -258.90000000000146,
-          "price_return": -0.0041338742976485526,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1783968360000,
-          "target_iso": "2026-07-13T18:46:00.000Z",
-          "status": "complete",
-          "price": 61962.4,
-          "price_delta": -666.5,
-          "price_return": -0.010642051832301063,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1783997160000,
-          "target_iso": "2026-07-14T02:46:00.000Z",
-          "status": "complete",
-          "price": 62569.9,
-          "price_delta": -59,
-          "price_return": -0.0009420571014340025,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1784040360000,
-          "target_iso": "2026-07-14T14:46:00.000Z",
-          "status": "complete",
-          "price": 63988,
-          "price_delta": 1359.0999999999985,
-          "price_return": 0.021700844178965277,
-          "price_source": "binance_futures_1m"
-        }
       ]
     },
     {
@@ -2427,8 +1848,8 @@
         "total_oi_usd": 8570806866.228029,
         "input_fingerprint": "ccde41ec2789098d80efe6300cf1858ad8c5246acddf2b195c0331908d380ebb"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -2495,67 +1916,6 @@
           "total_oi_delta_usd": -164466505.9580288,
           "total_oi_return": -0.019189150861173204
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1783954860000,
-        "minute_iso": "2026-07-13T15:01:00.000Z",
-        "field": "open",
-        "price": 62788.3
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1783958460000,
-          "target_iso": "2026-07-13T16:01:00.000Z",
-          "status": "complete",
-          "price": 62556.7,
-          "price_delta": -231.60000000000582,
-          "price_return": -0.0036885852937570502,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1783962060000,
-          "target_iso": "2026-07-13T17:01:00.000Z",
-          "status": "complete",
-          "price": 62272.8,
-          "price_delta": -515.5,
-          "price_return": -0.008210128320085112,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1783969260000,
-          "target_iso": "2026-07-13T19:01:00.000Z",
-          "status": "complete",
-          "price": 61991.5,
-          "price_delta": -796.8000000000029,
-          "price_return": -0.012690262357796005,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1783998060000,
-          "target_iso": "2026-07-14T03:01:00.000Z",
-          "status": "complete",
-          "price": 62523.1,
-          "price_delta": -265.20000000000437,
-          "price_return": -0.00422371683896529,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1784041260000,
-          "target_iso": "2026-07-14T15:01:00.000Z",
-          "status": "complete",
-          "price": 64227.7,
-          "price_delta": 1439.3999999999942,
-          "price_return": 0.022924653159903902,
-          "price_source": "binance_futures_1m"
-        }
       ]
     },
     {
@@ -2585,8 +1945,8 @@
         "total_oi_usd": 8606040200.831919,
         "input_fingerprint": "30229f264081edb6dec76169597ed0d9a6030e2cab84db7035b206e0eb2fc828"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -2653,67 +2013,6 @@
           "total_oi_delta_usd": -137463226.7212696,
           "total_oi_return": -0.015972877596828035
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1783955760000,
-        "minute_iso": "2026-07-13T15:16:00.000Z",
-        "field": "open",
-        "price": 62774.8
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1783959360000,
-          "target_iso": "2026-07-13T16:16:00.000Z",
-          "status": "complete",
-          "price": 62472.1,
-          "price_delta": -302.70000000000437,
-          "price_return": -0.004821998636395566,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1783962960000,
-          "target_iso": "2026-07-13T17:16:00.000Z",
-          "status": "complete",
-          "price": 62260,
-          "price_delta": -514.8000000000029,
-          "price_return": -0.008200742973295063,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1783970160000,
-          "target_iso": "2026-07-13T19:16:00.000Z",
-          "status": "complete",
-          "price": 62050,
-          "price_delta": -724.8000000000029,
-          "price_return": -0.011546034395967854,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1783998960000,
-          "target_iso": "2026-07-14T03:16:00.000Z",
-          "status": "complete",
-          "price": 62389.6,
-          "price_delta": -385.20000000000437,
-          "price_return": -0.006136220266731305,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1784042160000,
-          "target_iso": "2026-07-14T15:16:00.000Z",
-          "status": "complete",
-          "price": 64187.6,
-          "price_delta": 1412.7999999999956,
-          "price_return": 0.02250584629501003,
-          "price_source": "binance_futures_1m"
-        }
       ]
     },
     {
@@ -2743,8 +2042,8 @@
         "total_oi_usd": 8468576974.110649,
         "input_fingerprint": "44f1e4acbe7248d850b0fb7978c99a6270267e7115ef5850625f60de27131059"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -2811,67 +2110,6 @@
           "total_oi_delta_usd": 324803729.5532036,
           "total_oi_return": 0.038353991532008684
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1784042220000,
-        "minute_iso": "2026-07-14T15:17:00.000Z",
-        "field": "open",
-        "price": 64192.6
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1784045820000,
-          "target_iso": "2026-07-14T16:17:00.000Z",
-          "status": "complete",
-          "price": 64710.1,
-          "price_delta": 517.5,
-          "price_return": 0.008061676891105828,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1784049420000,
-          "target_iso": "2026-07-14T17:17:00.000Z",
-          "status": "complete",
-          "price": 64564.7,
-          "price_delta": 372.09999999999854,
-          "price_return": 0.005796618301798004,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1784056620000,
-          "target_iso": "2026-07-14T19:17:00.000Z",
-          "status": "complete",
-          "price": 64557.4,
-          "price_delta": 364.8000000000029,
-          "price_return": 0.005682898028744792,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1784085420000,
-          "target_iso": "2026-07-15T03:17:00.000Z",
-          "status": "complete",
-          "price": 64588,
-          "price_delta": 395.40000000000146,
-          "price_return": 0.006159588488392766,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1784128620000,
-          "target_iso": "2026-07-15T15:17:00.000Z",
-          "status": "complete",
-          "price": 65293.1,
-          "price_delta": 1100.5,
-          "price_return": 0.01714372061577191,
-          "price_source": "binance_futures_1m"
-        }
       ]
     },
     {
@@ -2901,8 +2139,8 @@
         "total_oi_usd": 8480647570.383301,
         "input_fingerprint": "712284b3c1fe6f649277a241afc5e50525e8b220327fe334e3a448763643bcb9"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -2969,67 +2207,6 @@
           "total_oi_delta_usd": 303516801.87859917,
           "total_oi_return": 0.03578934266040737
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1784043060000,
-        "minute_iso": "2026-07-14T15:31:00.000Z",
-        "field": "open",
-        "price": 64493.9
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1784046660000,
-          "target_iso": "2026-07-14T16:31:00.000Z",
-          "status": "complete",
-          "price": 64812.3,
-          "price_delta": 318.40000000000146,
-          "price_return": 0.004936901009242757,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1784050260000,
-          "target_iso": "2026-07-14T17:31:00.000Z",
-          "status": "complete",
-          "price": 64469.3,
-          "price_delta": -24.599999999998545,
-          "price_return": -0.0003814314221964952,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1784057460000,
-          "target_iso": "2026-07-14T19:31:00.000Z",
-          "status": "complete",
-          "price": 64504.8,
-          "price_delta": 10.900000000001455,
-          "price_return": 0.0001690082317862845,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1784086260000,
-          "target_iso": "2026-07-15T03:31:00.000Z",
-          "status": "complete",
-          "price": 64643.7,
-          "price_delta": 149.79999999999563,
-          "price_return": 0.0023227002863836057,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1784129460000,
-          "target_iso": "2026-07-15T15:31:00.000Z",
-          "status": "complete",
-          "price": 65324.2,
-          "price_delta": 830.2999999999956,
-          "price_return": 0.012874085766250693,
-          "price_source": "binance_futures_1m"
-        }
       ]
     },
     {
@@ -3059,8 +2236,8 @@
         "total_oi_usd": 8595398648.203236,
         "input_fingerprint": "239af46043c48750b29e61968b12f9eb7c9429d45ed813032d6511172ec5fa5f"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -3127,67 +2304,6 @@
           "total_oi_delta_usd": 197742319.35705566,
           "total_oi_return": 0.023005601886585132
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1784043960000,
-        "minute_iso": "2026-07-14T15:46:00.000Z",
-        "field": "open",
-        "price": 64790.1
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1784047560000,
-          "target_iso": "2026-07-14T16:46:00.000Z",
-          "status": "complete",
-          "price": 64763.3,
-          "price_delta": -26.799999999995634,
-          "price_return": -0.00041364344243944115,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1784051160000,
-          "target_iso": "2026-07-14T17:46:00.000Z",
-          "status": "complete",
-          "price": 64507.4,
-          "price_delta": -282.6999999999971,
-          "price_return": -0.004363320939464472,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1784058360000,
-          "target_iso": "2026-07-14T19:46:00.000Z",
-          "status": "complete",
-          "price": 64544.7,
-          "price_delta": -245.40000000000146,
-          "price_return": -0.0037876157005468656,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1784087160000,
-          "target_iso": "2026-07-15T03:46:00.000Z",
-          "status": "complete",
-          "price": 64651.7,
-          "price_delta": -138.40000000000146,
-          "price_return": -0.00213612882215032,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1784130360000,
-          "target_iso": "2026-07-15T15:46:00.000Z",
-          "status": "complete",
-          "price": 65416.4,
-          "price_delta": 626.3000000000029,
-          "price_return": 0.009666600298502439,
-          "price_source": "binance_futures_1m"
-        }
       ]
     },
     {
@@ -3217,8 +2333,8 @@
         "total_oi_usd": 8645286203.8972,
         "input_fingerprint": "61cba0e299c44293dc0eb036f5622ca967ea7782555d8ebd8426f8faab00c490"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -3285,67 +2401,6 @@
           "total_oi_delta_usd": 135123920.20940018,
           "total_oi_return": 0.015629779861826645
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1784044860000,
-        "minute_iso": "2026-07-14T16:01:00.000Z",
-        "field": "open",
-        "price": 64760.7
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1784048460000,
-          "target_iso": "2026-07-14T17:01:00.000Z",
-          "status": "complete",
-          "price": 64678.5,
-          "price_delta": -82.19999999999709,
-          "price_return": -0.0012692883183782308,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1784052060000,
-          "target_iso": "2026-07-14T18:01:00.000Z",
-          "status": "complete",
-          "price": 64580,
-          "price_delta": -180.6999999999971,
-          "price_return": -0.0027902724955103497,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1784059260000,
-          "target_iso": "2026-07-14T20:01:00.000Z",
-          "status": "complete",
-          "price": 64530.5,
-          "price_delta": -230.1999999999971,
-          "price_return": -0.0035546249500082163,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1784088060000,
-          "target_iso": "2026-07-15T04:01:00.000Z",
-          "status": "complete",
-          "price": 64760.9,
-          "price_delta": 0.20000000000436557,
-          "price_return": 0.0000030882927455133375,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1784131260000,
-          "target_iso": "2026-07-15T16:01:00.000Z",
-          "status": "complete",
-          "price": 65362.8,
-          "price_delta": 602.1000000000058,
-          "price_return": 0.009297305310165052,
-          "price_source": "binance_futures_1m"
-        }
       ]
     },
     {
@@ -3375,8 +2430,8 @@
         "total_oi_usd": 8646484672.4946,
         "input_fingerprint": "64c37ceb95f2d4f103f87779f1d5508a91a47e98158214bb8308c58886a17a04"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -3443,67 +2498,6 @@
           "total_oi_delta_usd": 127684340.66445541,
           "total_oi_return": 0.014767196785837494
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1784045760000,
-        "minute_iso": "2026-07-14T16:16:00.000Z",
-        "field": "open",
-        "price": 64699.7
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1784049360000,
-          "target_iso": "2026-07-14T17:16:00.000Z",
-          "status": "complete",
-          "price": 64600.2,
-          "price_delta": -99.5,
-          "price_return": -0.0015378742096176644,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1784052960000,
-          "target_iso": "2026-07-14T18:16:00.000Z",
-          "status": "complete",
-          "price": 64495.9,
-          "price_delta": -203.79999999999563,
-          "price_return": -0.0031499373258298824,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1784060160000,
-          "target_iso": "2026-07-14T20:16:00.000Z",
-          "status": "complete",
-          "price": 64437.7,
-          "price_delta": -262,
-          "price_return": -0.0040494778182897295,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1784088960000,
-          "target_iso": "2026-07-15T04:16:00.000Z",
-          "status": "complete",
-          "price": 64784.5,
-          "price_delta": 84.80000000000291,
-          "price_return": 0.0013106706831716825,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1784132160000,
-          "target_iso": "2026-07-15T16:16:00.000Z",
-          "status": "complete",
-          "price": 65135,
-          "price_delta": 435.3000000000029,
-          "price_return": 0.006728006466799737,
-          "price_source": "binance_futures_1m"
-        }
       ]
     },
     {
@@ -3533,8 +2527,8 @@
         "total_oi_usd": 8627810425.030144,
         "input_fingerprint": "af297e29e9f5e05174d3d211eb0a43fc392d0c4ced9c0e264593d7dae4d809a8"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -3601,67 +2595,6 @@
           "total_oi_delta_usd": 102935693.3595562,
           "total_oi_return": 0.0119306855724286
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1784046660000,
-        "minute_iso": "2026-07-14T16:31:00.000Z",
-        "field": "open",
-        "price": 64812.3
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1784050260000,
-          "target_iso": "2026-07-14T17:31:00.000Z",
-          "status": "complete",
-          "price": 64469.3,
-          "price_delta": -343,
-          "price_return": -0.005292205337567097,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1784053860000,
-          "target_iso": "2026-07-14T18:31:00.000Z",
-          "status": "complete",
-          "price": 64459.6,
-          "price_delta": -352.70000000000437,
-          "price_return": -0.005441868287346759,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1784061060000,
-          "target_iso": "2026-07-14T20:31:00.000Z",
-          "status": "complete",
-          "price": 64419.5,
-          "price_delta": -392.8000000000029,
-          "price_return": -0.006060578007569596,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1784089860000,
-          "target_iso": "2026-07-15T04:31:00.000Z",
-          "status": "complete",
-          "price": 64699.1,
-          "price_delta": -113.20000000000437,
-          "price_return": -0.0017465820530980132,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1784133060000,
-          "target_iso": "2026-07-15T16:31:00.000Z",
-          "status": "complete",
-          "price": 65134.5,
-          "price_delta": 322.1999999999971,
-          "price_return": 0.004971278599895345,
-          "price_source": "binance_futures_1m"
-        }
       ]
     },
     {
@@ -3691,8 +2624,8 @@
         "total_oi_usd": 8661616160.8314,
         "input_fingerprint": "103fd46a8a4476b14e560aa56a2d715088547e4c8b8af33efdc65baa406e37f0"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -3759,67 +2692,6 @@
           "total_oi_delta_usd": -183246015.8755684,
           "total_oi_return": -0.02115609979396492
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1784070060000,
-        "minute_iso": "2026-07-14T23:01:00.000Z",
-        "field": "open",
-        "price": 64852.8
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1784073660000,
-          "target_iso": "2026-07-15T00:01:00.000Z",
-          "status": "complete",
-          "price": 65011.4,
-          "price_delta": 158.59999999999854,
-          "price_return": 0.0024455382034391506,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1784077260000,
-          "target_iso": "2026-07-15T01:01:00.000Z",
-          "status": "complete",
-          "price": 64756.6,
-          "price_delta": -96.20000000000437,
-          "price_return": -0.0014833592381516968,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1784084460000,
-          "target_iso": "2026-07-15T03:01:00.000Z",
-          "status": "complete",
-          "price": 64507.7,
-          "price_delta": -345.1000000000058,
-          "price_return": -0.0053212814250118085,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1784113260000,
-          "target_iso": "2026-07-15T11:01:00.000Z",
-          "status": "complete",
-          "price": 64640,
-          "price_delta": -212.8000000000029,
-          "price_return": -0.00328127698418577,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1784156460000,
-          "target_iso": "2026-07-15T23:01:00.000Z",
-          "status": "complete",
-          "price": 64846.9,
-          "price_delta": -5.900000000001455,
-          "price_return": -0.00009097525473073568,
-          "price_source": "binance_futures_1m"
-        }
       ]
     },
     {
@@ -3849,8 +2721,8 @@
         "total_oi_usd": 8663345541.519794,
         "input_fingerprint": "33c1b2a491c565a54e30900854594b725b9cf70b264bbc946dabcd482a24ebe2"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -3917,67 +2789,6 @@
           "total_oi_delta_usd": -181109429.7110653,
           "total_oi_return": -0.020905252923721383
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1784070960000,
-        "minute_iso": "2026-07-14T23:16:00.000Z",
-        "field": "open",
-        "price": 64944.1
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1784074560000,
-          "target_iso": "2026-07-15T00:16:00.000Z",
-          "status": "complete",
-          "price": 64910.1,
-          "price_delta": -34,
-          "price_return": -0.0005235271564314541,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1784078160000,
-          "target_iso": "2026-07-15T01:16:00.000Z",
-          "status": "complete",
-          "price": 64738.8,
-          "price_delta": -205.29999999999563,
-          "price_return": -0.0031611801533933895,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1784085360000,
-          "target_iso": "2026-07-15T03:16:00.000Z",
-          "status": "complete",
-          "price": 64603.2,
-          "price_delta": -340.90000000000146,
-          "price_return": -0.005249129636102455,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1784114160000,
-          "target_iso": "2026-07-15T11:16:00.000Z",
-          "status": "complete",
-          "price": 64709.5,
-          "price_delta": -234.59999999999854,
-          "price_return": -0.0036123373793770113,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1784157360000,
-          "target_iso": "2026-07-15T23:16:00.000Z",
-          "status": "complete",
-          "price": 64886.1,
-          "price_delta": -58,
-          "price_return": -0.0008930757374418924,
-          "price_source": "binance_futures_1m"
-        }
       ]
     },
     {
@@ -4007,8 +2818,8 @@
         "total_oi_usd": 8686165061.508646,
         "input_fingerprint": "1b289f22f3d5e7737ecb4d53fb03056fff1ca2e672cafc77e8dba2e48300321f"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -4075,67 +2886,6 @@
           "total_oi_delta_usd": -200694172.71344566,
           "total_oi_return": -0.023105037872557806
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1784071860000,
-        "minute_iso": "2026-07-14T23:31:00.000Z",
-        "field": "open",
-        "price": 64895.8
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1784075460000,
-          "target_iso": "2026-07-15T00:31:00.000Z",
-          "status": "complete",
-          "price": 64822.4,
-          "price_delta": -73.40000000000146,
-          "price_return": -0.0011310439196373487,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1784079060000,
-          "target_iso": "2026-07-15T01:31:00.000Z",
-          "status": "complete",
-          "price": 64788,
-          "price_delta": -107.80000000000291,
-          "price_return": -0.0016611244487317039,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1784086260000,
-          "target_iso": "2026-07-15T03:31:00.000Z",
-          "status": "complete",
-          "price": 64643.7,
-          "price_delta": -252.10000000000582,
-          "price_return": -0.0038846889937408247,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1784115060000,
-          "target_iso": "2026-07-15T11:31:00.000Z",
-          "status": "complete",
-          "price": 64625.3,
-          "price_delta": -270.5,
-          "price_return": -0.004168220439535378,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1784158260000,
-          "target_iso": "2026-07-15T23:31:00.000Z",
-          "status": "complete",
-          "price": 64815.7,
-          "price_delta": -80.10000000000582,
-          "price_return": -0.001234286348269161,
-          "price_source": "binance_futures_1m"
-        }
       ]
     },
     {
@@ -4165,8 +2915,8 @@
         "total_oi_usd": 8434806662.087458,
         "input_fingerprint": "cc0ca7f4919f0989909b9505430d844364bb1d7f8b2755d2840a021f5d614f5c"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -4227,63 +2977,6 @@
           "target_iso": "2026-07-21T12:00:00.000Z",
           "status": "pending"
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1784549760000,
-        "minute_iso": "2026-07-20T12:16:00.000Z",
-        "field": "open",
-        "price": 64775.3
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1784553360000,
-          "target_iso": "2026-07-20T13:16:00.000Z",
-          "status": "complete",
-          "price": 64678.9,
-          "price_delta": -96.40000000000146,
-          "price_return": -0.0014882215906371942,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1784556960000,
-          "target_iso": "2026-07-20T14:16:00.000Z",
-          "status": "complete",
-          "price": 64315.7,
-          "price_delta": -459.6000000000058,
-          "price_return": -0.007095297127145776,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1784564160000,
-          "target_iso": "2026-07-20T16:16:00.000Z",
-          "status": "complete",
-          "price": 65472.1,
-          "price_delta": 696.7999999999956,
-          "price_return": 0.010757186767178161,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1784592960000,
-          "target_iso": "2026-07-21T00:16:00.000Z",
-          "status": "complete",
-          "price": 65131.5,
-          "price_delta": 356.1999999999971,
-          "price_return": 0.0054990096533709155,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1784636160000,
-          "target_iso": "2026-07-21T12:16:00.000Z",
-          "status": "pending"
-        }
       ]
     },
     {
@@ -4313,8 +3006,8 @@
         "total_oi_usd": 8450633621.465391,
         "input_fingerprint": "8f929bb704e377eb90100fed067ed5139624574d14c78a650baa7b8021671d7f"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -4375,63 +3068,6 @@
           "target_iso": "2026-07-21T15:30:00.000Z",
           "status": "pending"
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1784562360000,
-        "minute_iso": "2026-07-20T15:46:00.000Z",
-        "field": "open",
-        "price": 65251
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1784565960000,
-          "target_iso": "2026-07-20T16:46:00.000Z",
-          "status": "complete",
-          "price": 65409.5,
-          "price_delta": 158.5,
-          "price_return": 0.002429081546642963,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1784569560000,
-          "target_iso": "2026-07-20T17:46:00.000Z",
-          "status": "complete",
-          "price": 65397.3,
-          "price_delta": 146.3000000000029,
-          "price_return": 0.0022421112320118145,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1784576760000,
-          "target_iso": "2026-07-20T19:46:00.000Z",
-          "status": "complete",
-          "price": 65086.5,
-          "price_delta": -164.5,
-          "price_return": -0.002521034160396009,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1784605560000,
-          "target_iso": "2026-07-21T03:46:00.000Z",
-          "status": "complete",
-          "price": 65467.1,
-          "price_delta": 216.09999999999854,
-          "price_return": 0.003311826638672182,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1784648760000,
-          "target_iso": "2026-07-21T15:46:00.000Z",
-          "status": "pending"
-        }
       ]
     },
     {
@@ -4461,8 +3097,8 @@
         "total_oi_usd": 8498566702.296328,
         "input_fingerprint": "a900751f7524c9ed8a58d1f4ed700033e07015c9fabca97c3ea239a8829765bd"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -4523,63 +3159,6 @@
           "target_iso": "2026-07-21T15:45:00.000Z",
           "status": "pending"
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1784563260000,
-        "minute_iso": "2026-07-20T16:01:00.000Z",
-        "field": "open",
-        "price": 65543.4
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1784566860000,
-          "target_iso": "2026-07-20T17:01:00.000Z",
-          "status": "complete",
-          "price": 65489.4,
-          "price_delta": -53.999999999992724,
-          "price_return": -0.0008238815807540153,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1784570460000,
-          "target_iso": "2026-07-20T18:01:00.000Z",
-          "status": "complete",
-          "price": 65599.9,
-          "price_delta": 56.5,
-          "price_return": 0.0008620242465297804,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1784577660000,
-          "target_iso": "2026-07-20T20:01:00.000Z",
-          "status": "complete",
-          "price": 65120,
-          "price_delta": -423.3999999999942,
-          "price_return": -0.006459841875764673,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1784606460000,
-          "target_iso": "2026-07-21T04:01:00.000Z",
-          "status": "complete",
-          "price": 65503.1,
-          "price_delta": -40.299999999995634,
-          "price_return": -0.0006148597723034759,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1784649660000,
-          "target_iso": "2026-07-21T16:01:00.000Z",
-          "status": "pending"
-        }
       ]
     },
     {
@@ -4609,8 +3188,8 @@
         "total_oi_usd": 8605996801.323109,
         "input_fingerprint": "c2f46254b54e3acb3535a41881a65f405c6fbdae59906a51572a896505837cb6"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -4671,63 +3250,6 @@
           "target_iso": "2026-07-21T16:00:00.000Z",
           "status": "pending"
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1784564160000,
-        "minute_iso": "2026-07-20T16:16:00.000Z",
-        "field": "open",
-        "price": 65472.1
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1784567760000,
-          "target_iso": "2026-07-20T17:16:00.000Z",
-          "status": "complete",
-          "price": 65417.9,
-          "price_delta": -54.19999999999709,
-          "price_return": -0.0008278335352004455,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1784571360000,
-          "target_iso": "2026-07-20T18:16:00.000Z",
-          "status": "complete",
-          "price": 65711.9,
-          "price_delta": 239.79999999999563,
-          "price_return": 0.0036626288144109573,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1784578560000,
-          "target_iso": "2026-07-20T20:16:00.000Z",
-          "status": "complete",
-          "price": 65180,
-          "price_delta": -292.09999999999854,
-          "price_return": -0.0044614423548350905,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1784607360000,
-          "target_iso": "2026-07-21T04:16:00.000Z",
-          "status": "complete",
-          "price": 65566,
-          "price_delta": 93.90000000000146,
-          "price_return": 0.0014341986892126794,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1784650560000,
-          "target_iso": "2026-07-21T16:16:00.000Z",
-          "status": "pending"
-        }
       ]
     },
     {
@@ -4757,8 +3279,8 @@
         "total_oi_usd": 8657259114.0112,
         "input_fingerprint": "db35c980a003a72929ba51e26e8a6fefb3da45deaf368c11ceddb7ef5555ae91"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -4819,63 +3341,6 @@
           "target_iso": "2026-07-21T16:15:00.000Z",
           "status": "pending"
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1784565060000,
-        "minute_iso": "2026-07-20T16:31:00.000Z",
-        "field": "open",
-        "price": 65449.5
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1784568660000,
-          "target_iso": "2026-07-20T17:31:00.000Z",
-          "status": "complete",
-          "price": 65440.3,
-          "price_delta": -9.19999999999709,
-          "price_return": -0.00014056639088147487,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1784572260000,
-          "target_iso": "2026-07-20T18:31:00.000Z",
-          "status": "complete",
-          "price": 65469.9,
-          "price_delta": 20.400000000001455,
-          "price_return": 0.0003116906928242608,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1784579460000,
-          "target_iso": "2026-07-20T20:31:00.000Z",
-          "status": "complete",
-          "price": 65250,
-          "price_delta": -199.5,
-          "price_return": -0.003048151628354686,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1784608260000,
-          "target_iso": "2026-07-21T04:31:00.000Z",
-          "status": "complete",
-          "price": 65483.1,
-          "price_delta": 33.599999999998545,
-          "price_return": 0.0005133729058281354,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1784651460000,
-          "target_iso": "2026-07-21T16:31:00.000Z",
-          "status": "pending"
-        }
       ]
     },
     {
@@ -4905,8 +3370,8 @@
         "total_oi_usd": 8655910969.333118,
         "input_fingerprint": "5c5ff9903f8f0fa73dcbfdffb40a35e62634677ac1199bbc3e6b600ba881e47c"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -4967,63 +3432,6 @@
           "target_iso": "2026-07-21T16:30:00.000Z",
           "status": "pending"
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1784565960000,
-        "minute_iso": "2026-07-20T16:46:00.000Z",
-        "field": "open",
-        "price": 65409.5
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1784569560000,
-          "target_iso": "2026-07-20T17:46:00.000Z",
-          "status": "complete",
-          "price": 65397.3,
-          "price_delta": -12.19999999999709,
-          "price_return": -0.0001865172490234154,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1784573160000,
-          "target_iso": "2026-07-20T18:46:00.000Z",
-          "status": "complete",
-          "price": 65259.7,
-          "price_delta": -149.8000000000029,
-          "price_return": -0.0022901872052225273,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1784580360000,
-          "target_iso": "2026-07-20T20:46:00.000Z",
-          "status": "complete",
-          "price": 65294.3,
-          "price_delta": -115.19999999999709,
-          "price_return": -0.001761212056352626,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1784609160000,
-          "target_iso": "2026-07-21T04:46:00.000Z",
-          "status": "complete",
-          "price": 65498.1,
-          "price_delta": 88.59999999999854,
-          "price_return": 0.0013545433002851044,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1784652360000,
-          "target_iso": "2026-07-21T16:46:00.000Z",
-          "status": "pending"
-        }
       ]
     },
     {
@@ -5053,8 +3461,8 @@
         "total_oi_usd": 8656488207.5994,
         "input_fingerprint": "c09deafd40bdf1b4eafe9dcecc5bfa96ef3d943bda86157496cd10e31a39f5ec"
       },
-      "latest_aggregate_ts": 1784610000000,
-      "latest_aggregate_iso": "2026-07-21T05:00:00.000Z",
+      "latest_aggregate_ts": 1784610900000,
+      "latest_aggregate_iso": "2026-07-21T05:15:00.000Z",
       "horizons": [
         {
           "label": "1h",
@@ -5115,75 +3523,13 @@
           "target_iso": "2026-07-21T16:45:00.000Z",
           "status": "pending"
         }
-      ],
-      "send_price_reference": {
-        "source": "binance_futures_1m",
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "minute_ts": 1784566860000,
-        "minute_iso": "2026-07-20T17:01:00.000Z",
-        "field": "open",
-        "price": 65489.4
-      },
-      "send_horizons": [
-        {
-          "label": "1h",
-          "target_ts": 1784570460000,
-          "target_iso": "2026-07-20T18:01:00.000Z",
-          "status": "complete",
-          "price": 65599.9,
-          "price_delta": 110.49999999999272,
-          "price_return": 0.0016872959593459815,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "2h",
-          "target_ts": 1784574060000,
-          "target_iso": "2026-07-20T19:01:00.000Z",
-          "status": "complete",
-          "price": 65227.8,
-          "price_delta": -261.59999999999854,
-          "price_return": -0.0039945395743433065,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "4h",
-          "target_ts": 1784581260000,
-          "target_iso": "2026-07-20T21:01:00.000Z",
-          "status": "complete",
-          "price": 65300.6,
-          "price_delta": -188.8000000000029,
-          "price_return": -0.002882909295244771,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "12h",
-          "target_ts": 1784610060000,
-          "target_iso": "2026-07-21T05:01:00.000Z",
-          "status": "complete",
-          "price": 65481.9,
-          "price_delta": -7.5,
-          "price_return": -0.0001145223501818615,
-          "price_source": "binance_futures_1m"
-        },
-        {
-          "label": "24h",
-          "target_ts": 1784653260000,
-          "target_iso": "2026-07-21T17:01:00.000Z",
-          "status": "pending"
-        }
       ]
     }
   ],
   "send_price_enrichment": {
-    "ok": true,
-    "source": "Binance USD-M Futures public klines",
-    "symbol": "BTCUSDT",
-    "interval": "1m",
-    "price_field": "open",
-    "note": "Sent price is approximated by the open of the 1-minute candle containing sent_ts; exact message-send tick is not stored.",
-    "complete_horizons": 158,
-    "pending_horizons": 7
+    "ok": false,
+    "reason": "fetch failed",
+    "fallback": "local 15m signal-bucket outcomes remain available in horizons"
   },
   "exported_for_site": true,
   "exported_path": "data/oi-alert-outcomes.json",
